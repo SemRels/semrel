@@ -4,7 +4,7 @@ VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo
 LDFLAGS      := -X github.com/GoSemantics/go-semrel/internal/cli.version=$(VERSION)
 GOFLAGS      := -trimpath
 
-.PHONY: all build test lint clean tidy
+.PHONY: all build test lint reuse clean tidy
 
 all: build
 
@@ -17,6 +17,10 @@ test:
 
 lint:
 	golangci-lint run ./...
+
+# REUSE / SPDX compliance check (requires: pip install reuse)
+reuse:
+	reuse lint
 
 tidy:
 	go mod tidy
