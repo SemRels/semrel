@@ -1,0 +1,37 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+/vendor/
+
+# Test output
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Release artifacts
+/release/
+checksums.txt
+*.sig
+*.intoto.jsonl
+
+# Local config overrides
+.semrel.local.yaml

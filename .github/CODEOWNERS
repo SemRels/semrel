@@ -1,0 +1,21 @@
+# CODEOWNERS
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all maintainers review everything
+*                   @mwaldheim
+
+# Governance and community files
+/GOVERNANCE.md      @mwaldheim
+/MAINTAINERS.md     @mwaldheim
+/SECURITY.md        @mwaldheim
+
+# Core engine
+/internal/          @mwaldheim
+/cmd/               @mwaldheim
+/pkg/               @mwaldheim
+
+# Plugins
+/plugins/           @mwaldheim
+
+# CI/CD
+/.github/           @mwaldheim

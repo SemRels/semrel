@@ -1,0 +1,21 @@
+# DCO — require Signed-off-by on all commits
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    name: DCO Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: tim-actions/dco@7c4b0e76db6d3c26949c0a0bbe9a1cc71e1ab8e7 # v1.1.4
