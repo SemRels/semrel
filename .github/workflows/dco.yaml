@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   dco:
@@ -18,4 +17,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: tim-actions/dco@f2279e6e62d5a7d9115b0cb8e837b777b1b02e21 # v1.1.0
+      - name: Check Signed-off-by on all commits
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          MISSING=0
+
+          while IFS= read -r sha; do
+            body=$(git log -1 --format="%B" "$sha")
+            if ! echo "$body" | grep -qE "^Signed-off-by: .+ <.+>$"; then
+              echo "::error::Commit $sha is missing a valid Signed-off-by trailer."
+              echo "  Message: $(git log -1 --format='%s' $sha)"
+              MISSING=$((MISSING + 1))
+            fi
+          done < <(git log --format="%H" "$BASE..$HEAD")
+
+          if [ "$MISSING" -gt 0 ]; then
+            echo ""
+            echo "::error::$MISSING commit(s) are missing 'Signed-off-by: Name <email>'."
+            echo "Fix with: git rebase --signoff HEAD~$MISSING && git push --force-with-lease"
+            exit 1
+          fi
+          echo "All commits have a valid Signed-off-by trailer ✓"
+

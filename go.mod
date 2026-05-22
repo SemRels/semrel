@@ -2,6 +2,8 @@ module github.com/GoSemantics/go-semrel
 
 go 1.24
 
+toolchain go1.24.0
+
 require github.com/spf13/cobra v1.8.1
 
 require (

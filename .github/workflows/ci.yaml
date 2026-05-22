@@ -15,6 +15,7 @@ jobs:
     name: Test (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go: ["1.24", "1.25", "1.26"]
     steps:
@@ -44,7 +45,7 @@ jobs:
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: "1.24"
+          go-version: stable
           cache: true
 
       - uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6
