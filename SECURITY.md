@@ -35,7 +35,7 @@ We follow responsible disclosure. We will coordinate a public disclosure date wi
 
 ## CVE Process
 
-go-semrel is a CNCF project (prospective). CNCF acts as a CVE Numbering Authority (CNA) for its projects. Once accepted into CNCF, CVEs will be assigned through the CNCF CNA process.
+go-semrel is considering applying for CNCF Sandbox status in the future. Once accepted, CVEs will be assigned through the CNCF CNA process.
 
 ## Security Audits
 

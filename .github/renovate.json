@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "labels": ["type: chore"],
+  "reviewers": ["mwaldheim", "tboerger"],
+  "schedule": ["before 6am on monday"],
+  "golang": {
+    "postUpdateOptions": ["gomodTidy"]
+  },
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions minor/patch updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions",
+      "automerge": false
+    },
+    {
+      "description": "Group Go module minor/patch updates",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Go dependencies",
+      "automerge": false
+    },
+    {
+      "description": "Automerge Go toolchain patch updates",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    }
+  ]
+}

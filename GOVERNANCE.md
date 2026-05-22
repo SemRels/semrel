@@ -36,7 +36,7 @@ Changes to this document require a PR approved by 2/3 of current Maintainers.
 
 ## CNCF
 
-go-semrel intends to apply for CNCF Sandbox status. Once accepted, the project will follow all applicable CNCF policies, including the [CNCF Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md) and IP policy.
+go-semrel is exploring the possibility of applying for CNCF Sandbox status in the future. This is not a commitment and no application has been made. If and when accepted, the project will follow all applicable CNCF policies.
 
 ## Community Meetings
 

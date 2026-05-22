@@ -5,6 +5,7 @@
 | Name | GitHub | Affiliation | Areas |
 |------|--------|-------------|-------|
 | mwaldheim | [@mwaldheim](https://github.com/mwaldheim) | Independent | Core, Plugin Architecture, CI |
+| Thomas Boerger | [@tboerger](https://github.com/tboerger) | Independent | Core, Plugin Architecture, Gitea Integration |
 
 ## Responsibilities
 

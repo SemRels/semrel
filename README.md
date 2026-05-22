@@ -7,7 +7,6 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/GoSemantics/go-semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/GoSemantics/go-semrel)
 
 > **Status: pre-alpha — actively under development. See [ROADMAP.md](ROADMAP.md).**
-
 A Go-based semantic release system with a plugin architecture that automates the full release lifecycle — from commit analysis to publishing artefacts across multiple ecosystems.
 
 ## Features (planned)
