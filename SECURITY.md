@@ -35,7 +35,7 @@ We follow responsible disclosure. We will coordinate a public disclosure date wi
 
 ## CVE Process
 
-go-semrel is considering applying for CNCF Sandbox status in the future. Once accepted, CVEs will be assigned through the CNCF CNA process.
+go-semrel may explore applying for CNCF Sandbox status in the future. No application has been made. This section will be updated if that changes.
 
 ## Security Audits
 

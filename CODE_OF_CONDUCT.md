@@ -1,6 +1,6 @@
 # Code of Conduct
 
-go-semrel follows the [CNCF Community Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md).
+go-semrel is committed to providing a welcoming and harassment-free community. We follow the spirit of the [CNCF Community Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md) as a guideline.
 
 ## Our Pledge
 
@@ -8,15 +8,8 @@ We as members, contributors and leaders pledge to make participation in our comm
 
 ## Reporting
 
-Instances of abusive, harassing or otherwise unacceptable behaviour may be reported to:
-
-- Project maintainers: see [MAINTAINERS.md](MAINTAINERS.md)
-- CNCF: conduct@cncf.io
-
-All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing or otherwise unacceptable behaviour may be reported to the project maintainers listed in [MAINTAINERS.md](MAINTAINERS.md). All complaints will be reviewed and investigated promptly and fairly.
 
 ## Enforcement
 
 Project maintainers are responsible for clarifying and enforcing standards of acceptable behaviour and will take appropriate and fair corrective action in response to any behaviour they deem inappropriate, threatening, offensive or harmful.
-
-Full enforcement guidelines are described in the [CNCF Community Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md).

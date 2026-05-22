@@ -15,7 +15,7 @@ Maintainers are expected to:
 - Triage issues and apply labels
 - Participate in release decisions
 - Uphold the [Code of Conduct](CODE_OF_CONDUCT.md)
-- Represent the project in CNCF processes (once applicable)
+- Represent the project in external community processes where relevant
 
 ## Becoming a Maintainer
 

@@ -14,58 +14,81 @@ A Go-native, plugin-based semantic release system that covers the full release l
 
 ---
 
-## v0.0.1 — CNCF Foundation _(current)_
-**Goal:** Establish all governance, legal and supply-chain security foundations required for CNCF Sandbox eligibility.
+## v0.0.1 — Project Foundation _(current)_
+**Goal:** Establish governance, legal and supply-chain security foundations.
 
 - Apache 2.0 license, SPDX headers, REUSE compliance
-- GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md (CNCF), SECURITY.md
+- GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md, SECURITY.md, ADOPTERS.md
 - DCO enforcement, branch protection, hardened CI workflows
-- OpenSSF Best Practices badge, OpenSSF Scorecard, Dependabot
-- CLOMonitor registration
+- OpenSSF Best Practices badge, OpenSSF Scorecard, Renovate
+- ADR directory (`docs/adr/`)
 
 ## v0.1.0 — Foundation
 **Goal:** Working CLI with core release engine and basic git integration.
 
 - Go module scaffold, Makefile, golangci-lint
-- SemVer parser and version bumping logic
-- Conventional Commits parser
-- Release rules configuration (`.semrel.yaml`)
-- Git tag management (read, create, push)
-- `--dry-run` mode
+- SemVer parser and version bumping logic (incl. vector model from concept doc)
+- Conventional Commits parser (feat/fix/breaking, configurable type→bump mapping)
+- Release rules configuration (`.semrel.yaml` — branches, tag prefix, bump rules)
+- Maintenance branch backport support (`1.x`, `2.x` patterns)
+- Git tag management (read, create annotated tag, push)
+- `--dry-run`, `--force-bump`, `--no-ci` flags
+- ADR docs: `docs/adr/`
+
+## v0.1.5 — Plugin Transport (gRPC)
+**Goal:** Out-of-process plugin foundation using hashicorp/go-plugin + gRPC.
+
+- Protocol Buffers v3: `plugins/v1/proto/semantic_release.proto`
+  - RPCs: `VerifyConditions`, `AnalyzeCommits`, `GenerateNotes`, `Prepare`, `Publish`, `OnSuccess`, `OnFail`
+- hashicorp/go-plugin host integration
+- Plugin discovery: `.semrel/<GOOS>_<GOARCH>/<name>/<version>/`
+- Plugin registry client + auto-download
+- Air-gapped support (pre-populated `.semrel/` dir)
+- Logging contract: stdout reserved for handshake, all logs to stderr
+- Built-in plugin categories: **CI Condition**, **Provider**, **Commit Analyzer**, **Changelog Generator**, **Files Updater**, **Hooks**
 
 ## v0.2.0 — Plugin System
-**Goal:** Extensible plugin architecture with first-party plugins.
+**Goal:** First-party plugins covering the core release workflow.
 
-- Plugin interface (lifecycle hooks: Init, Prepare, Publish, Success, Fail)
+- Plugin interface (lifecycle hooks via gRPC RPCs)
 - Plugin loader and registry
-- Built-in plugins: `git`, `changelog`, `github-releases`, `npm`, `docker`
+- Built-in: `provider-git`, `provider-github`, `provider-gitlab`, `condition-github-actions`, `condition-gitlab-ci`
+- Built-in: `changelog-generator-default`, `files-updater` (generic + presets)
+- Built-in: `github-releases`, `npm`, `docker`
 
 ## v0.2.5 — Changelog Engine
 **Goal:** Multi-format changelog rendering from a single source of truth.
 
-- Structured `ReleaseNotes` model and `Renderer` interface
-- Formats: Keep-a-Changelog, GitHub/GitLab Releases, Helm ArtifactHub, OCI annotations, NuGet, PyPI, notification excerpts, custom Go templates, RSS/Atom
+- Structured `ReleaseNotes` model and `Renderer` / `FileUpdater` interfaces
+- Formats: Keep-a-Changelog (CHANGELOG.md), GitHub/GitLab Release Notes, Helm ArtifactHub annotations, OCI image labels, NuGet `<ReleaseNotes>`, PyPI CHANGES.rst, notification excerpts (Slack/Teams/Discord/Matrix), RSS/Atom
+- Custom Go `text/template` files for any format
+- Per-package changelogs in monorepos
 
 ## v0.3.0 — CI Integration
 **Goal:** First-class GitHub Actions support and notification plugins.
 
 - `action.yml` and reusable workflow templates
 - Notification plugins: Gitter/Matrix, Slack
+- Structured JSON release output (`--output-format json`)
 - End-to-end integration tests
-- Structured JSON release output for downstream steps
 
 ## v0.4.0 — Ecosystem Plugins
 **Goal:** Support every major language ecosystem and forge.
 
-- Plugins: GitLab Releases, Helm, Go binaries, Python/PyPI, Java Gradle, Java Maven, Rust/Cargo, .NET/NuGet, Homebrew Tap, Terraform, OCI/ORAS, SBOM, Cosign/SLSA, Gitea/Forgejo
-- Notifications: Discord, Microsoft Teams, Generic Webhook
+- Forges: GitLab Releases, Gitea/Forgejo, Gitea Go Package Registry
+- Languages: Go binaries (cross-compile), Python/PyPI, Java Gradle, Java Maven, Rust/Cargo, .NET/NuGet, Helm
+- Infrastructure: Homebrew Tap, Terraform/OpenTofu registry, OCI/ORAS artifacts
+- Security: SBOM (CycloneDX/SPDX), Cosign signing, SLSA provenance
+- Notifications: Discord, Microsoft Teams, Generic HTTP webhook
 
 ## v0.5.0 — Monorepo & Advanced
 **Goal:** Full monorepo support and advanced release workflows.
 
-- Workspace/package discovery
-- Independent and synchronised versioning per package
+- Workspace/package discovery (auto-detect Go, npm, Python, Java, Helm, ...)
+- Independent versioning per package with tag namespacing (`packages/api/v1.2.3`)
+- Synchronised / lockstep versioning mode
+- Inter-package dependency graph and topological release ordering
 - Plugin instancing (multiple instances of same plugin with different configs)
 - Pre-release channels (alpha/beta/rc) per branch
-- Release lock, Commitlint integration, Interactive release notes editor
-- Jira/Linear issue auto-close, Plugin SDK for third-party plugins
+- Release lock, Commitlint, Interactive release notes editor
+- Jira/Linear issue auto-close, Release analytics, Plugin SDK for third-party plugins
