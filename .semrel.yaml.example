@@ -1,0 +1,36 @@
+# go-semrel — Example configuration
+
+# Branches that trigger a release and their channel mapping.
+branches:
+  - name: main          # stable releases
+  - name: next          # pre-release channel "next"  (e.g. 1.2.0-next.1)
+    prerelease: next
+  - name: beta          # pre-release channel "beta"
+    prerelease: beta
+  - name: alpha         # pre-release channel "alpha"
+    prerelease: alpha
+
+# Tag prefix applied to all version tags (e.g. "v" → v1.2.3).
+tagPrefix: "v"
+
+# Commit type → SemVer bump level mapping.
+# Types not listed here are ignored for versioning (but may appear in changelog).
+rules:
+  - type: feat
+    bump: minor
+  - type: fix
+    bump: patch
+  - type: perf
+    bump: patch
+  - type: revert
+    bump: patch
+  # breaking change (footer BREAKING CHANGE: or type!) always triggers major
+
+# Release plugins executed in order.
+plugins:
+  - uses: git           # create annotated tag and push
+  - uses: changelog     # generate/update CHANGELOG.md
+  - uses: github        # create GitHub Release with release notes
+  # - uses: npm
+  # - uses: docker
+  # - uses: helm
