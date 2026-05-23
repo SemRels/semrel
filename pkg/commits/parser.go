@@ -1,13 +1,9 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package commits provides conventional commit parsing.
 // See: https://github.com/GoSemantics/semrel/issues/3
 package commits
-
-import (
-"regexp"
-)
 
 // Commit represents a parsed conventional commit.
 type Commit struct {

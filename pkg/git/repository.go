@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package git provides Git repository operations.
