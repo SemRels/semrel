@@ -11,6 +11,8 @@ marked accordingly.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [ADR-001](ADR-001-grpc-plugin-transport.md) | Out-of-process plugin transport via hashicorp/go-plugin + gRPC | Accepted |
+| [ADR-002](ADR-002-repository-separation.md) | Repository separation — semrel core vs. semrel-plugins | Accepted |
+| [ADR-003](ADR-003-apache2-license.md) | Apache License 2.0 as project license | Accepted |
 
 ## Format
 

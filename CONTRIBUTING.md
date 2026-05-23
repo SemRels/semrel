@@ -29,6 +29,18 @@ PRs with unsigned commits will be blocked by the DCO check.
 5. Run the linter (`make lint`)
 6. Push and open a PR targeting `main`
 
+## Branch Strategy
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Protected. Only accepts PRs with passing CI, DCO, and at least one review. No direct pushes. |
+| `feat/<n>-slug` | Feature / fix branches. Branch from `main`, PR back to `main`. |
+| `release/N.x` | Maintenance branches for backport releases. Branch from the release tag. |
+
+Required status checks on `main`: `CI / Test`, `DCO`, `REUSE`, `Scorecard`.
+All commits on `main` must be signed (GPG / SSH / Vigilant mode).
+Merge strategy: squash-merge or rebase — no merge commits.
+
 ## Commit Messages
 
 We use [Conventional Commits](https://www.conventionalcommits.org/):
@@ -53,6 +65,12 @@ Breaking changes: append `!` to the type or add `BREAKING CHANGE:` footer.
 - [ ] All commits are signed off (`git commit -s`)
 - [ ] Relevant docs updated
 - [ ] Issue referenced in PR description (`Closes #<number>`)
+
+## Architecture Decision Records
+
+Significant technical decisions are documented as [Architecture Decision Records](docs/adr/README.md) in `docs/adr/`.
+Before making a large architectural change, check whether an existing ADR covers the area.
+For new architectural decisions, open a PR that adds a new ADR following the [template](docs/adr/ADR-000-template.md).
 
 ## Code Style
 
