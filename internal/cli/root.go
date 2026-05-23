@@ -59,4 +59,3 @@ func newLintCommand(configFile *string) *cobra.Command {
 		},
 	}
 }
-

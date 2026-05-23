@@ -17,4 +17,3 @@ func TestNewRootCommand(t *testing.T) {
 		t.Errorf("expected Use=semrel, got %q", cmd.Use)
 	}
 }
-
