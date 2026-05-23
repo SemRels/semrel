@@ -6,9 +6,7 @@ toolchain go1.24.0
 
 require (
 	github.com/spf13/cobra v1.8.1
-	github.com/GoSemantics/go-semrel-api v0.1.0
 	github.com/GoSemantics/go-semrel-plugins v0.1.0
-	github.com/GoSemantics/go-semrel-lib v0.1.0
 )
 
 require (

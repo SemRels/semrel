@@ -34,20 +34,19 @@ During project inception, go-semrel was structured as a monorepo containing:
 
 ## Decision
 
-**Split go-semrel into four separate, independently-versioned repositories:**
+**Split go-semrel into two separate, independently-versioned repositories:**
 
-| Repo | Purpose | Root Module |
-|------|---------|-------------|
-| **go-semrel** | CLI binary, release orchestration | `github.com/GoSemantics/go-semrel` |
-| **go-semrel-api** | gRPC API, Protocol Buffers | `github.com/GoSemantics/go-semrel-api` |
-| **go-semrel-plugins** | Plugin SDK library | `github.com/GoSemantics/go-semrel-plugins` |
-| **go-semrel-lib** | Public libraries (changelog, commits, semver) | `github.com/GoSemantics/go-semrel-lib` |
+| Repo | Purpose | Contents |
+|------|---------|----------|
+| **go-semrel** | Core CLI, release engine, API definitions | `cmd/`, `internal/`, `api/proto/v1/`, `pkg/` |
+| **go-semrel-plugins** | Plugin SDK library for external developers | Plugin SDK, examples, built-in plugins |
 
 ### Key Principles
-1. **Independent versioning:** API v2 ≠ CLI v2
-2. **Decoupled releases:** Plugins ship independently
-3. **Clear boundaries:** Import only what you need
-4. **Clearer ownership:** Each repo has clear scope
+1. **Keep internals internal:** api/proto/v1 and pkg/ stay in go-semrel
+2. **Plugin SDK separated:** External developers only need go-semrel-plugins
+3. **Decoupled releases:** Plugin SDK versions independently
+4. **Clear boundaries:** Import only what you need
+5. **Clearer ownership:** Plugin SDK has dedicated maintainers
 
 ## Important: Monorepo Support as a FEATURE
 
