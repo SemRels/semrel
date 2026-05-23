@@ -21,9 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          persist-credentials: true
 
       - uses: ossf/scorecard-action@v2.4.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
