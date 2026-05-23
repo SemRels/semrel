@@ -1,4 +1,4 @@
-# Contributing to go-semrel
+# Contributing to semrel
 
 Thank you for your interest in contributing! 🎉
 
@@ -63,3 +63,4 @@ Breaking changes: append `!` to the type or add `BREAKING CHANGE:` footer.
 ## Reporting Issues
 
 Use the [GitHub Issue templates](.github/ISSUE_TEMPLATE/) for bug reports and feature requests. For security vulnerabilities, follow [SECURITY.md](SECURITY.md).
+

@@ -1,18 +1,18 @@
 ﻿<!--
-SPDX-FileCopyrightText: 2026 The go-semrel Authors
+SPDX-FileCopyrightText: 2026 The semrel Authors
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# ADR-002: Repository Separation — Why go-semrel Itself Uses Multiple Repos (Not a Monorepo)
+# ADR-002: Repository Separation — Why semrel Itself Uses Multiple Repos (Not a Monorepo)
 
 **Status:** Accepted  
 **Date:** 2026-05-23  
-**Deciders:** go-semrel maintainers  
+**Deciders:** semrel maintainers  
 **Affected Parties:** Contributors, plugin developers, library consumers  
 
 ## Context
 
-During project inception, go-semrel was structured as a monorepo containing:
+During project inception, semrel was structured as a monorepo containing:
 - Core CLI and release engine (`cmd/`, `internal/`)
 - gRPC API and Protocol Buffers (`api/proto/v1/`)
 - Plugin SDK and built-in plugins (`plugins/`)
@@ -34,12 +34,12 @@ During project inception, go-semrel was structured as a monorepo containing:
 
 ## Decision
 
-**Split go-semrel into two separate, independently-versioned repositories:**
+**Split semrel into two separate, independently-versioned repositories:**
 
 | Repo | Purpose | Contents |
 |------|---------|----------|
-| **go-semrel** | Core CLI, release engine, API definitions | `cmd/`, `internal/`, `api/proto/v1/`, `pkg/` |
-| **go-semrel-plugins** | Plugin SDK library for external developers | Plugin SDK, examples, built-in plugins |
+| **semrel** | Core CLI, release engine, API definitions | `cmd/`, `internal/`, `api/proto/v1/`, `pkg/` |
+| **semrel-plugins** | Plugin SDK library for external developers | Plugin SDK, examples, built-in plugins |
 
 ### Key Principles
 1. **Keep internals internal:** api/proto/v1 and pkg/ stay in go-semrel
@@ -58,7 +58,7 @@ Issues #40–43 remain fully in scope:
 - #42: Synchronized versioning mode
 - #43: Inter-package dependency graphs
 
-These are FEATURES for go-semrel users, not architectural constraints on go-semrel itself.
+These are FEATURES for semrel users, not architectural constraints on semrel itself.
 
 ## Consequences
 

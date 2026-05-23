@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 The go-semrel Authors
+// SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package cli provides placeholder tests for the root command.
 package cli
@@ -13,7 +13,8 @@ func TestNewRootCommand(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected non-nil root command")
 	}
-	if cmd.Use != "go-semrel" {
-		t.Errorf("expected Use=go-semrel, got %q", cmd.Use)
+	if cmd.Use != "semrel" {
+		t.Errorf("expected Use=semrel, got %q", cmd.Use)
 	}
 }
+
