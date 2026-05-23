@@ -26,10 +26,11 @@ jobs:
       - uses: ossf/scorecard-action@v2.4.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SCORECARD_TOKEN: ${{ secrets.SCORECARD_TOKEN }}
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
-          publish_results: false
+          publish_results: true
 
       - uses: actions/upload-artifact@v4
         with:
