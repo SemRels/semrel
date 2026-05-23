@@ -35,3 +35,6 @@ checksums.txt
 
 # Local config overrides
 .semrel.local.yaml
+
+# Generated protobuf/gRPC code (run `buf generate` to regenerate)
+/api/gen/

@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: .
+    name: buf.build/goSemantics/go-semrel
+    lint:
+      use:
+        - STANDARD
+      except:
+        # Allow proto3 optional without explicit field presence syntax
+        - FIELD_NOT_REQUIRED
+    breaking:
+      use:
+        - FILE

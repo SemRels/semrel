@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2026 The go-semrel Authors
+
+syntax = "proto3";
+
+package semantic_release.v1;
+
+option go_package = "github.com/GoSemantics/go-semrel/api/gen/v1;semrelv1";
+
+// ----------------------------------------------------------------------------
+// Shared types
+// ----------------------------------------------------------------------------
+
+// SemanticVersion represents a parsed semantic version.
+message SemanticVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+  uint32 patch = 3;
+  string pre_release = 4; // e.g. "alpha.1", "rc.2"
+  string build_metadata = 5; // e.g. "20240101"
+}
+
+// Commit represents a parsed VCS commit.
+message Commit {
+  string sha = 1;
+  string raw_message = 2;
+  repeated string files_changed = 3;
+  string author_name = 4;
+  string author_email = 5;
+  // Unix timestamp (seconds).
+  int64 timestamp = 6;
+}
+
+// ReleaseContext carries the full context of an in-progress release.
+// It is passed to most plugin RPCs so they do not need to re-fetch data.
+message ReleaseContext {
+  // Repository information.
+  string repo_owner = 1;
+  string repo_name = 2;
+  string repo_url = 3;
+  // Branch being released.
+  string branch = 4;
+  // Last released version. Empty string if no prior release exists.
+  SemanticVersion last_version = 5;
+  // Next version determined by CommitAnalyzer.
+  SemanticVersion next_version = 6;
+  // Commits since last release.
+  repeated Commit commits = 7;
+  // Dry-run mode — no side-effects should be applied.
+  bool dry_run = 8;
+  // Arbitrary key-value pairs from .semrel.yaml plugin config block.
+  map<string, string> config = 9;
+}
+
+// ----------------------------------------------------------------------------
+// Provider plugin
+// Abstracts VCS platform operations (GitHub, GitLab, Gitea, bare git).
+// ----------------------------------------------------------------------------
+
+service ProviderPlugin {
+  // GetLastRelease returns the last released version and its tag SHA.
+  rpc GetLastRelease(GetLastReleaseRequest) returns (GetLastReleaseResponse);
+  // GetCommitsSince returns all commits between the given ref and HEAD.
+  rpc GetCommitsSince(GetCommitsSinceRequest) returns (GetCommitsSinceResponse);
+  // CreateRelease creates (or updates) the VCS release/tag for next_version.
+  rpc CreateRelease(CreateReleaseRequest) returns (CreateReleaseResponse);
+  // UploadAsset uploads a release artifact to an existing release.
+  rpc UploadAsset(UploadAssetRequest) returns (UploadAssetResponse);
+}
+
+message GetLastReleaseRequest {
+  ReleaseContext ctx = 1;
+}
+
+message GetLastReleaseResponse {
+  // Empty version indicates no prior release.
+  SemanticVersion version = 1;
+  string tag_sha = 2;
+}
+
+message GetCommitsSinceRequest {
+  ReleaseContext ctx = 1;
+  string since_sha = 2;
+}
+
+message GetCommitsSinceResponse {
+  repeated Commit commits = 1;
+}
+
+message CreateReleaseRequest {
+  ReleaseContext ctx = 1;
+  string changelog = 2; // Rendered release notes (from ChangelogGenerator).
+}
+
+message CreateReleaseResponse {
+  string release_url = 1;
+  string release_id = 2; // Platform-specific identifier.
+}
+
+message UploadAssetRequest {
+  ReleaseContext ctx = 1;
+  string release_id = 2;
+  string asset_path = 3; // Absolute path on the local filesystem.
+  string asset_name = 4; // Display name / filename in the release.
+  string content_type = 5;
+}
+
+message UploadAssetResponse {
+  string asset_url = 1;
+}
+
+// ----------------------------------------------------------------------------
+// CICondition plugin
+// Verifies that the release is being run in an authorised CI environment.
+// ----------------------------------------------------------------------------
+
+service CIConditionPlugin {
+  // VerifyConditions checks the current environment (env vars, branch, etc.)
+  // and returns an error if the release should be aborted.
+  rpc VerifyConditions(VerifyConditionsRequest) returns (VerifyConditionsResponse);
+}
+
+message VerifyConditionsRequest {
+  ReleaseContext ctx = 1;
+}
+
+message VerifyConditionsResponse {
+  // Non-empty indicates a failure; the release must be aborted.
+  string error_message = 1;
+  // Human-readable details / remediation hint.
+  string details = 2;
+}
+
+// ----------------------------------------------------------------------------
+// CommitAnalyzer plugin
+// Parses commits and determines the version bump type.
+// ----------------------------------------------------------------------------
+
+// BumpLevel encodes the semver increment required by the analysed commits.
+enum BumpLevel {
+  BUMP_LEVEL_UNSPECIFIED = 0;
+  // No release required.
+  BUMP_LEVEL_NONE = 1;
+  BUMP_LEVEL_PATCH = 2;
+  BUMP_LEVEL_MINOR = 3;
+  BUMP_LEVEL_MAJOR = 4;
+}
+
+service CommitAnalyzerPlugin {
+  // AnalyzeCommits inspects the commits in ctx and returns the required bump.
+  rpc AnalyzeCommits(AnalyzeCommitsRequest) returns (AnalyzeCommitsResponse);
+}
+
+message AnalyzeCommitsRequest {
+  ReleaseContext ctx = 1;
+}
+
+message AnalyzeCommitsResponse {
+  BumpLevel bump = 1;
+  // Human-readable summary of why this bump level was chosen.
+  string reason = 2;
+}
+
+// ----------------------------------------------------------------------------
+// ChangelogGenerator plugin
+// Renders release notes from the commit list.
+// ----------------------------------------------------------------------------
+
+service ChangelogGeneratorPlugin {
+  // GenerateNotes renders the changelog/release-notes for the next version.
+  rpc GenerateNotes(GenerateNotesRequest) returns (GenerateNotesResponse);
+}
+
+message GenerateNotesRequest {
+  ReleaseContext ctx = 1;
+}
+
+message GenerateNotesResponse {
+  // Rendered changelog fragment (Markdown, reStructuredText, YAML, etc.
+  // depending on plugin configuration).
+  string notes = 1;
+}
+
+// ----------------------------------------------------------------------------
+// FilesUpdater plugin
+// Updates version strings in project files before the release commit/tag.
+// ----------------------------------------------------------------------------
+
+service FilesUpdaterPlugin {
+  // UpdateFiles writes the next version into the configured project files
+  // (e.g. Chart.yaml, package.json, setup.cfg, build.gradle).
+  rpc UpdateFiles(UpdateFilesRequest) returns (UpdateFilesResponse);
+}
+
+message UpdateFilesRequest {
+  ReleaseContext ctx = 1;
+}
+
+message UpdateFilesResponse {
+  // Paths of files that were modified.
+  repeated string updated_files = 1;
+  // Non-empty indicates a failure.
+  string error_message = 2;
+}
+
+// ----------------------------------------------------------------------------
+// Hooks plugin
+// Lifecycle callbacks — typically used for notifications.
+// ----------------------------------------------------------------------------
+
+service HooksPlugin {
+  // OnSuccess is called after a successful release.
+  rpc OnSuccess(OnSuccessRequest) returns (OnSuccessResponse);
+  // OnFail is called when the release pipeline encounters an unrecoverable error.
+  rpc OnFail(OnFailRequest) returns (OnFailResponse);
+}
+
+message OnSuccessRequest {
+  ReleaseContext ctx = 1;
+  string release_url = 2;
+}
+
+message OnSuccessResponse {}
+
+message OnFailRequest {
+  ReleaseContext ctx = 1;
+  string error_message = 2;
+}
+
+message OnFailResponse {}
