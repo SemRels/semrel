@@ -9,7 +9,7 @@ import "context"
 
 // Repository represents a Git repository.
 type Repository struct {
-	path string // path to the repository
+	Path string // path to the repository
 }
 
 // OpenRepository opens a Git repository at the given path.
