@@ -7,23 +7,23 @@ package commits
 
 // Commit represents a parsed conventional commit.
 type Commit struct {
-Type             string
-Scope            string
-Description      string
-Body             string
-IsBreakingChange bool
-Raw              string
+	Type             string
+	Scope            string
+	Description      string
+	Body             string
+	IsBreakingChange bool
+	Raw              string
 }
 
 // Parser parses conventional commits.
 // Issue: https://github.com/GoSemantics/semrel/issues/3
 type Parser struct {
-// Compiled patterns for commit parsing
+	_ struct{} // Placeholder for future patterns
 }
 
 // NewParser creates a new conventional commit parser.
 func NewParser() *Parser {
-return &Parser{}
+	return &Parser{}
 }
 
 // Parse parses a commit message into a Commit struct.
@@ -32,6 +32,6 @@ return &Parser{}
 // optional body
 // optional BREAKING CHANGE: explanation
 func (p *Parser) Parse(message string) (*Commit, error) {
-// TODO: Implement parser
-panic("not implemented")
+	// TODO: Implement parser
+	panic("not implemented")
 }

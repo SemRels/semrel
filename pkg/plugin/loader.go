@@ -11,24 +11,24 @@ import "context"
 // Plugins are loaded as gRPC services.
 // Issue: https://github.com/GoSemantics/semrel/issues/8
 type Plugin interface {
-Name() string
-Version() string
-PreRelease(ctx context.Context, config map[string]interface{}) error
-PostRelease(ctx context.Context, config map[string]interface{}) error
+	Name() string
+	Version() string
+	PreRelease(ctx context.Context, config map[string]interface{}) error
+	PostRelease(ctx context.Context, config map[string]interface{}) error
 }
 
 // Loader loads plugins from the .semrel/ directory.
 type Loader struct {
-// Plugin discovery and loading
+	// Plugin discovery and loading
 }
 
 // NewLoader creates a new plugin loader.
 func NewLoader() *Loader {
-return &Loader{}
+	return &Loader{}
 }
 
 // LoadPlugins discovers and loads plugins from .semrel/
 func (l *Loader) LoadPlugins(dir string) ([]Plugin, error) {
-// TODO: Implement plugin discovery
-panic("not implemented")
+	// TODO: Implement plugin discovery
+	panic("not implemented")
 }

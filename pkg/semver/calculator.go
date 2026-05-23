@@ -7,22 +7,22 @@ package semver
 
 // Version represents a semantic version.
 type Version struct {
-Major      int
-Minor      int
-Patch      int
-Prerelease string
-Metadata   string
+	Major      int
+	Minor      int
+	Patch      int
+	Prerelease string
+	Metadata   string
 }
 
 // Calculator determines the next semantic version.
 // Issue: https://github.com/GoSemantics/semrel/issues/2
 type Calculator struct {
-// Version bump rules
+	// Version bump rules
 }
 
 // NewCalculator creates a new SemVer calculator.
 func NewCalculator() *Calculator {
-return &Calculator{}
+	return &Calculator{}
 }
 
 // NextVersion determines the next version based on commit types.
@@ -31,6 +31,6 @@ return &Calculator{}
 // - feat → minor
 // - fix → patch
 func (c *Calculator) NextVersion(current *Version, hasFeat, hasFix, hasBreaking bool) *Version {
-// TODO: Implement version bumping
-panic("not implemented")
+	// TODO: Implement version bumping
+	panic("not implemented")
 }

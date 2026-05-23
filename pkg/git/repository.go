@@ -9,24 +9,24 @@ import "context"
 
 // Repository represents a Git repository.
 type Repository struct {
-path string
+	path string // path to the repository
 }
 
 // OpenRepository opens a Git repository at the given path.
 // Issue: https://github.com/GoSemantics/semrel/issues/5
 func OpenRepository(path string) (*Repository, error) {
-// TODO: Implement git.Open
-panic("not implemented")
+	// TODO: Implement git.Open
+	panic("not implemented")
 }
 
 // LastTag returns the most recent Git tag.
 func (r *Repository) LastTag(ctx context.Context) (string, error) {
-// TODO: Implement
-panic("not implemented")
+	// TODO: Implement
+	panic("not implemented")
 }
 
 // CommitsSince returns commits since the given ref.
 func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, error) {
-// TODO: Implement
-panic("not implemented")
+	// TODO: Implement
+	panic("not implemented")
 }
