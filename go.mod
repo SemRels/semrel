@@ -1,4 +1,4 @@
-module github.com/GoSemantics/go-semrel
+module github.com/GoSemantics/semrel
 
 go 1.24
 
@@ -6,10 +6,11 @@ toolchain go1.24.0
 
 require (
 	github.com/spf13/cobra v1.8.1
-	github.com/GoSemantics/go-semrel-plugins v0.1.0
+	github.com/GoSemantics/semrel-plugins v0.1.0
 )
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 )
+
