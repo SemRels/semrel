@@ -2,7 +2,7 @@
 
 ## Overview
 
-go-semrel is an open source project governed by its maintainers and community contributors. This document describes how decisions are made and how to participate.
+semrel is an open source project governed by its maintainers and community contributors. This document describes how decisions are made and how to participate.
 
 ## Project Roles
 
@@ -41,3 +41,4 @@ The project is exploring the possibility of applying for CNCF Sandbox status at 
 ## Community Meetings
 
 Community calls will be scheduled once the project reaches Sandbox status. Agendas and notes will be published in the `docs/community/` directory.
+
