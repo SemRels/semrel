@@ -1,6 +1,6 @@
 # Code of Conduct
 
-go-semrel is committed to providing a welcoming and harassment-free community. We follow the spirit of the [CNCF Community Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md) as a guideline.
+semrel is committed to providing a welcoming and harassment-free community. We follow the spirit of the [CNCF Community Code of Conduct](https://github.com/cncf/foundation/blob/main/code-of-conduct.md) as a guideline.
 
 ## Our Pledge
 
@@ -13,3 +13,4 @@ Instances of abusive, harassing or otherwise unacceptable behaviour may be repor
 ## Enforcement
 
 Project maintainers are responsible for clarifying and enforcing standards of acceptable behaviour and will take appropriate and fair corrective action in response to any behaviour they deem inappropriate, threatening, offensive or harmful.
+

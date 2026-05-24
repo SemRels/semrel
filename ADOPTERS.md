@@ -1,8 +1,8 @@
 # Adopters
 
-This file lists organisations and individuals using go-semrel in production or evaluation.
+This file lists organisations and individuals using semrel in production or evaluation.
 
-> Are you using go-semrel? We'd love to know! Please open a PR to add your organisation.
+> Are you using semrel? We'd love to know! Please open a PR to add your organisation.
 
 ## How to add your organisation
 
@@ -21,3 +21,4 @@ This file lists organisations and individuals using go-semrel in production or e
 | Organisation | Description |
 |-------------|-------------|
 | _(your org here)_ | _(brief description)_ |
+

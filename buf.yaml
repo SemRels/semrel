@@ -1,7 +1,7 @@
 version: v2
 modules:
   - path: .
-    name: buf.build/goSemantics/go-semrel
+    name: buf.build/goSemantics/semrel
     lint:
       use:
         - STANDARD
@@ -11,3 +11,4 @@ modules:
     breaking:
       use:
         - FILE
+

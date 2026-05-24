@@ -1,9 +1,7 @@
-# CI — build, test and lint on every push and PR
+# CI — build, test and lint on PR to main
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 

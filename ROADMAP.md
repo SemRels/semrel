@@ -1,6 +1,6 @@
 # Roadmap
 
-This document describes the planned milestones for go-semrel. For detailed issue tracking see the [GitHub Milestones](https://github.com/GoSemantics/go-semrel/milestones).
+This document describes the planned milestones for semrel. For detailed issue tracking see the [GitHub Milestones](https://github.com/GoSemantics/semrel/milestones).
 
 ## What we are building
 
@@ -92,3 +92,4 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Pre-release channels (alpha/beta/rc) per branch
 - Release lock, Commitlint, Interactive release notes editor
 - Jira/Linear issue auto-close, Release analytics, Plugin SDK for third-party plugins
+

@@ -12,7 +12,7 @@ Once stable releases are published this table will list supported version ranges
 
 **Please do not open a public GitHub Issue for security vulnerabilities.**
 
-Report security issues privately via **[GitHub Security Advisories](https://github.com/GoSemantics/go-semrel/security/advisories/new)**.
+Report security issues privately via **[GitHub Security Advisories](https://github.com/GoSemantics/semrel/security/advisories/new)**.
 
 You can also reach the maintainers at the addresses listed in [MAINTAINERS.md](MAINTAINERS.md).
 
@@ -35,8 +35,9 @@ We follow responsible disclosure. We will coordinate a public disclosure date wi
 
 ## CVE Process
 
-go-semrel may explore applying for CNCF Sandbox status in the future. No application has been made. This section will be updated if that changes.
+semrel may explore applying for CNCF Sandbox status in the future. No application has been made. This section will be updated if that changes.
 
 ## Security Audits
 
 No formal security audit has been conducted yet. This section will be updated when one is completed.
+
