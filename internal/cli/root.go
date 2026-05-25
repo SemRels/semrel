@@ -100,6 +100,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.AddCommand(newReleaseCommand(&dryRun, &configFile, &outputFormat))
 	root.AddCommand(newLintCommand(&configFile, &outputFormat))
 	root.AddCommand(newCommitlintCommand(&outputFormat))
+	root.AddCommand(newPluginCommand())
 
 	return root
 }
