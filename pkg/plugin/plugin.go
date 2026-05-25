@@ -164,6 +164,16 @@ func (r *Registry) List() []string {
 	return names
 }
 
+// Execute runs a single plugin by name with the given release context.
+// Returns ErrInvalidConfig if the plugin is not found.
+func (r *Registry) Execute(name string, ctx context.Context, rel ReleaseContext) (*Result, error) {
+	p, ok := r.executors[name]
+	if !ok {
+		return nil, fmt.Errorf("plugin %q not found in registry", name)
+	}
+	return p.Execute(ctx, rel)
+}
+
 // RunAll executes all registered plugins in sequence.
 // If a plugin returns an error, execution stops and the error is returned.
 func (r *Registry) RunAll(ctx context.Context, rel ReleaseContext) ([]*Result, error) {
