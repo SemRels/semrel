@@ -45,16 +45,20 @@ configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Hel
 }
 
 func newReleaseCommand(dryRun *bool, configFile *string) *cobra.Command {
-	return &cobra.Command{
+	var forcePatch bool
+	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile)
+			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch)
 		},
 	}
+	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
+		"Force a patch release even when no releasable commits are found")
+	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool) error {
 	if dryRun {
 		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -96,7 +100,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string) error {
 		return fmt.Errorf("getting commits: %w", err)
 	}
 
-	if len(rawMessages) == 0 {
+	if len(rawMessages) == 0 && !forcePatch {
 		fmt.Println("No commits since last release — nothing to release.")
 		return nil
 	}
@@ -131,9 +135,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string) error {
 	}
 
 	bump := semver.BumpFromRules(commitTypes, ruleMap, hasBreaking)
-	if bump == "" {
+	if bump == "" && !forcePatch {
 		fmt.Println("No releasable commits found — nothing to release.")
 		return nil
+	}
+	if bump == "" && forcePatch {
+		bump = "patch"
 	}
 
 	// 7. Calculate next version
@@ -144,8 +151,13 @@ func runRelease(ctx context.Context, dryRun bool, configFile string) error {
 	calc := semver.NewCalculator()
 	nextVer := calc.NextVersion(currentVersion, hasFeat, hasFix, hasBreaking)
 	if nextVer == nil {
-		fmt.Println("No releasable commits found — nothing to release.")
-		return nil
+		if forcePatch {
+			nextVer = calc.ForcePatch(currentVersion)
+			fmt.Println("[force-bump-patch-version] No releasable commits — forcing patch bump.")
+		} else {
+			fmt.Println("No releasable commits found — nothing to release.")
+			return nil
+		}
 	}
 
 	nextTag := cfg.TagPrefix + nextVer.String()

@@ -212,6 +212,18 @@ func prereleaseCounter(prerelease, channel string) int {
 	return n
 }
 
+// ForcePatch always bumps the patch component, regardless of commits.
+// Useful with --force-bump-patch-version to guarantee a release even when
+// no releasable conventional commits were found.
+// See: https://github.com/SemRels/semrel/issues/96
+func (c *Calculator) ForcePatch(current *Version) *Version {
+	return &Version{
+		Major: current.Major,
+		Minor: current.Minor,
+		Patch: current.Patch + 1,
+	}
+}
+
 // BumpFromRules analyses commits against release rules and returns the bump level.
 func BumpFromRules(commitTypes []string, rules map[string]string, hasBreaking bool) string {
 	if hasBreaking {
