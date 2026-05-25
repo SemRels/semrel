@@ -283,13 +283,24 @@ func TestNextPrereleaseVersion_BreakingDuringBeta(t *testing.T) {
 	}
 }
 
-func TestNextPrereleaseVersion_NoCommits(t *testing.T) {
+func TestForcePatch(t *testing.T) {
 	c := NewCalculator()
-	cur := &Version{Major: 1, Minor: 2, Patch: 3}
 
-	got := c.NextPrereleaseVersion(cur, false, false, false, "beta")
-	if got != nil {
-		t.Errorf("expected nil for no releasable commits, got %v", got)
+	tests := []struct {
+		name    string
+		current *Version
+		want    string
+	}{
+		{"from stable", &Version{Major: 1, Minor: 2, Patch: 3}, "1.2.4"},
+		{"from zero", &Version{}, "0.0.1"},
+		{"after minor", &Version{Major: 2, Minor: 0, Patch: 0}, "2.0.1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := c.ForcePatch(tt.current)
+			if got == nil || got.String() != tt.want {
+				t.Errorf("got %v, want %s", got, tt.want)
+			}
+		})
 	}
 }
-
