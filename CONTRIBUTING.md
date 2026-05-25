@@ -78,6 +78,17 @@ For new architectural decisions, open a PR that adds a new ADR following the [te
 - All exported symbols must have godoc comments
 - Add `// SPDX-License-Identifier: Apache-2.0` and `// SPDX-FileCopyrightText:` headers to new files
 
+## OpenSSF Best Practices Badge
+
+To improve the OpenSSF Scorecard score, register the project at:
+<https://www.bestpractices.dev/en/projects/new>
+
+Sign in with the `SemRels` GitHub account, enter the repository URL `https://github.com/SemRels/semrel`, and complete the questionnaire. Then update `README.md` with the returned project ID badge URL:
+
+```markdown
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<ID>/badge)](https://www.bestpractices.dev/projects/<ID>)
+```
+
 ## Reporting Issues
 
 Use the [GitHub Issue templates](.github/ISSUE_TEMPLATE/) for bug reports and feature requests. For security vulnerabilities, follow [SECURITY.md](SECURITY.md).
