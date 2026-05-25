@@ -102,3 +102,66 @@ func (p *Parser) ParseAll(messages []string) []*Commit {
 	}
 	return result
 }
+
+// ParseMulti parses a commit message that may contain multiple conventional commit
+// entries — for example, a squash-merge message with multiple "type: desc" lines.
+// It returns one Commit per recognized conventional commit line found in the message.
+// The highest-priority type (breaking > feat > fix/perf/revert > other) is used for
+// the first returned commit so callers that only look at [0] still get the right bump.
+// See: https://github.com/SemRels/semrel/issues/107
+func (p *Parser) ParseMulti(message string) ([]*Commit, error) {
+	if message == "" {
+		return nil, fmt.Errorf("empty commit message")
+	}
+
+	var result []*Commit
+	for _, line := range strings.Split(message, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		c, err := p.Parse(line)
+		if err == nil && c != nil && c.Type != "" {
+			result = append(result, c)
+		}
+	}
+
+	// If no multi-type entries found, fall back to whole-message parse
+	if len(result) == 0 {
+		c, err := p.Parse(message)
+		if err != nil {
+			return nil, err
+		}
+		return []*Commit{c}, nil
+	}
+
+	// Sort by bump priority so the highest-impact commit is first
+	result = sortByPriority(result)
+	return result, nil
+}
+
+// bumpPriority returns a numeric priority for sorting (higher = more impactful).
+func bumpPriority(c *Commit) int {
+	if c.IsBreakingChange {
+		return 4
+	}
+	switch c.Type {
+	case "feat":
+		return 3
+	case "fix", "perf", "revert":
+		return 2
+	default:
+		return 1
+	}
+}
+
+func sortByPriority(cs []*Commit) []*Commit {
+	// Insertion sort (typically few items — no need for sort.Slice overhead)
+	for i := 1; i < len(cs); i++ {
+		for j := i; j > 0 && bumpPriority(cs[j]) > bumpPriority(cs[j-1]); j-- {
+			cs[j], cs[j-1] = cs[j-1], cs[j]
+		}
+	}
+	return cs
+}
+

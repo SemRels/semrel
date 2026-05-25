@@ -141,18 +141,78 @@ func TestParseAll(t *testing.T) {
 	}
 }
 
-func TestParseAll_Empty(t *testing.T) {
+func TestParseMulti_MultipleTypes(t *testing.T) {
 	p := NewParser()
-	cs := p.ParseAll(nil)
-	if len(cs) != 0 {
-		t.Errorf("expected 0 commits, got %d", len(cs))
+	msg := "feat(api): add webhook support\nfix(api): validate empty payload\nchore: update deps"
+	cs, err := p.ParseMulti(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// feat should be first (highest priority)
+	if len(cs) == 0 {
+		t.Fatal("expected commits")
+	}
+	if cs[0].Type != "feat" {
+		t.Errorf("first commit should be feat, got %q", cs[0].Type)
+	}
+	// Should have all three types
+	types := make(map[string]bool)
+	for _, c := range cs {
+		types[c.Type] = true
+	}
+	if !types["feat"] || !types["fix"] || !types["chore"] {
+		t.Errorf("missing types: %v", types)
 	}
 }
 
-func TestParseAll_AllInvalid(t *testing.T) {
+func TestParseMulti_BreakingFirst(t *testing.T) {
 	p := NewParser()
-	cs := p.ParseAll([]string{"", "", ""})
-	if len(cs) != 0 {
-		t.Errorf("expected 0 commits for all empty, got %d", len(cs))
+	msg := "fix: small fix\nfeat!: breaking feature"
+	cs, err := p.ParseMulti(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cs) == 0 {
+		t.Fatal("expected commits")
+	}
+	if !cs[0].IsBreakingChange {
+		t.Errorf("breaking commit should be first, got type=%q breaking=%v", cs[0].Type, cs[0].IsBreakingChange)
 	}
 }
+
+func TestParseMulti_FallbackSingleCommit(t *testing.T) {
+	p := NewParser()
+	msg := "feat: single conventional commit"
+	cs, err := p.ParseMulti(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("expected 1 commit, got %d", len(cs))
+	}
+	if cs[0].Type != "feat" {
+		t.Errorf("got type %q want feat", cs[0].Type)
+	}
+}
+
+func TestParseMulti_FeatPlusFix_ResultsInMinor(t *testing.T) {
+	p := NewParser()
+	// feat+fix in one commit should yield highest = minor (feat)
+	msg := "feat: add new endpoint\nfix: correct validation"
+	cs, err := p.ParseMulti(msg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cs[0].Type != "feat" {
+		t.Errorf("expected feat first, got %q", cs[0].Type)
+	}
+}
+
+func TestParseMulti_EmptyMessage(t *testing.T) {
+	p := NewParser()
+	_, err := p.ParseMulti("")
+	if err == nil {
+		t.Error("expected error for empty message")
+	}
+}
+
