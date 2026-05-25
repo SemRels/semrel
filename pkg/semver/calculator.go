@@ -121,7 +121,24 @@ func (c *Calculator) NextVersion(current *Version, hasFeat, hasFix, hasBreaking 
 	return next
 }
 
-// BumpFromRules analyses commits against release rules and returns the bump level.
+// NextVersionForBranch is like NextVersion but respects maintenance branch restrictions.
+// On a maintenance branch only patch bumps are allowed; major/minor bumps are capped to patch.
+// See: https://github.com/SemRels/semrel/issues/95
+func (c *Calculator) NextVersionForBranch(current *Version, hasFeat, hasFix, hasBreaking, isMaintenance bool) *Version {
+	if isMaintenance {
+		// On maintenance branches only bug/security patches are allowed.
+		if !hasFix && !hasBreaking && !hasFeat {
+			return nil
+		}
+		next := &Version{
+			Major: current.Major,
+			Minor: current.Minor,
+			Patch: current.Patch + 1,
+		}
+		return next
+	}
+	return c.NextVersion(current, hasFeat, hasFix, hasBreaking)
+}
 // Returns "" if no releasable commits exist.
 func BumpFromRules(commitTypes []string, rules map[string]string, hasBreaking bool) string {
 	if hasBreaking {

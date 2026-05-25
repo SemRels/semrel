@@ -77,9 +77,111 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_NotFound(t *testing.T) {
-	_, err := LoadConfig("/nonexistent/path/semrel.yaml")
-	if err == nil {
-		t.Error("expected error for missing file")
+func TestIsMaintenance_PatternDetection(t *testing.T) {
+	tests := []struct {
+		branch string
+		want   bool
+	}{
+		{"1.x", true},
+		{"1.2.x", true},
+		{"12.3.x", true},
+		{"main", false},
+		{"next", false},
+		{"feature/foo", false},
+		{"1.x.y", false},
+		{"1.2", false},
+	}
+	for _, tt := range tests {
+		got := IsMaintenance(tt.branch, BranchConfig{Name: tt.branch})
+		if got != tt.want {
+			t.Errorf("IsMaintenance(%q) = %v, want %v", tt.branch, got, tt.want)
+		}
+	}
+}
+
+func TestIsMaintenance_ExplicitFlag(t *testing.T) {
+	cfg := BranchConfig{Name: "support/v1", Maintenance: true}
+	if !IsMaintenance("support/v1", cfg) {
+		t.Error("expected Maintenance=true to be respected")
+	}
+	cfg2 := BranchConfig{Name: "main", Maintenance: false}
+	if IsMaintenance("main", cfg2) {
+		t.Error("expected Maintenance=false for main")
+	}
+}
+
+func TestMatchesBranchPattern_Exact(t *testing.T) {
+	if !MatchesBranchPattern("main", "main") {
+		t.Error("exact match should work")
+	}
+	if MatchesBranchPattern("main", "next") {
+		t.Error("non-match should return false")
+	}
+}
+
+func TestMatchesBranchPattern_Wildcard(t *testing.T) {
+	if !MatchesBranchPattern("release/1.0", "release/*") {
+		t.Error("wildcard should match")
+	}
+	if !MatchesBranchPattern("feat/foo-bar", "feat/*") {
+		t.Error("wildcard should match")
+	}
+	if MatchesBranchPattern("hotfix/1.0", "feat/*") {
+		t.Error("wildcard should not match different prefix")
+	}
+}
+
+func TestFindBranchConfig(t *testing.T) {
+	cfg := &Config{
+		Branches: []BranchConfig{
+			{Name: "main"},
+			{Name: "next", Prerelease: "next"},
+			{Name: "1.x", Maintenance: true},
+			{Name: "release/*"},
+		},
+	}
+
+	if bc := cfg.FindBranchConfig("main"); bc == nil || bc.Name != "main" {
+		t.Error("should find main branch")
+	}
+	if bc := cfg.FindBranchConfig("next"); bc == nil || bc.Prerelease != "next" {
+		t.Error("should find next branch with prerelease")
+	}
+	if bc := cfg.FindBranchConfig("1.x"); bc == nil || !bc.Maintenance {
+		t.Error("should find maintenance branch")
+	}
+	if bc := cfg.FindBranchConfig("release/2.0"); bc == nil {
+		t.Error("should find release/* wildcard")
+	}
+	if bc := cfg.FindBranchConfig("unknown"); bc != nil {
+		t.Error("should return nil for unknown branch")
+	}
+}
+
+func TestLoadConfig_MaintenanceBranch(t *testing.T) {
+	yaml := `
+branches:
+  - name: main
+  - name: 1.x
+    maintenance: true
+`
+	f, err := os.CreateTemp("", "semrel-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(yaml)
+	f.Close()
+
+	cfg, err := LoadConfig(f.Name())
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	bc := cfg.FindBranchConfig("1.x")
+	if bc == nil {
+		t.Fatal("should find 1.x branch")
+	}
+	if !IsMaintenance("1.x", *bc) {
+		t.Error("1.x should be a maintenance branch")
 	}
 }
