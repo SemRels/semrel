@@ -8,10 +8,7 @@ on:
     - cron: "0 5 * * 1"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+permissions: read-all
 
 concurrency:
   group: renovate
@@ -21,11 +18,15 @@ jobs:
   renovate:
     name: Renovate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Run Renovate
-        uses: renovatebot/github-action@v46.1.14
+        uses: renovatebot/github-action@693b9ef15eec82123529a37c782242f091365961 # v46.1.14
         with:
           token: ${{ secrets.RENOVATE_TOKEN != '' && secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}

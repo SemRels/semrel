@@ -7,16 +7,17 @@ on:
   pull_request:
     branches: ["main"]
 
-permissions:
-  contents: read
+permissions: read-all
 
 jobs:
   reuse:
     name: REUSE Compliance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: REUSE lint
-        uses: fsfe/reuse-action@v5
+        uses: fsfe/reuse-action@ef1dfe28dda4d13f5d580f0444eb27dda9746e9b # v5

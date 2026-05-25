@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+
 # OpenSSF Scorecard
 name: Scorecard
 
@@ -19,11 +22,11 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           persist-credentials: true
 
-      - uses: ossf/scorecard-action@v2.4.3
+      - uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2 # v2.4.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCORECARD_TOKEN: ${{ secrets.SCORECARD_TOKEN }}
@@ -32,12 +35,12 @@ jobs:
           results_format: sarif
           publish_results: true
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: scorecard-results
           path: scorecard-results.sarif
           retention-days: 5
 
-      - uses: github/codeql-action/upload-sarif@v4
+      - uses: github/codeql-action/upload-sarif@dc73d59c2d7bd4f8194098a91219eeee6d8a1719 # v4
         with:
           sarif_file: scorecard-results.sarif
