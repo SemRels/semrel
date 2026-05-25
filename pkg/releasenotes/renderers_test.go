@@ -9,6 +9,79 @@ import (
 	"time"
 )
 
+func TestRenderOCI_Basic(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v1.2.0",
+		Date:    time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
+		Features: []Entry{
+			{Type: "feat", Description: "add webhook support"},
+		},
+		Fixes: []Entry{
+			{Type: "fix", Description: "fix null pointer"},
+		},
+		Breaking: []Entry{
+			{Type: "feat", Description: "remove legacy auth", IsBreaking: true},
+		},
+	}
+	out := rn.RenderOCI("abc1234")
+
+	if !strings.Contains(out, "org.opencontainers.image.version=v1.2.0") {
+		t.Error("missing version annotation")
+	}
+	if !strings.Contains(out, "org.opencontainers.image.created=2026-05-25T00:00:00Z") {
+		t.Error("missing created annotation")
+	}
+	if !strings.Contains(out, "org.opencontainers.image.revision=abc1234") {
+		t.Error("missing revision annotation")
+	}
+	if !strings.Contains(out, "org.opencontainers.image.description=") {
+		t.Error("missing description annotation")
+	}
+	if !strings.Contains(out, "kind=security") {
+		t.Error("expected security kind for breaking change")
+	}
+	if !strings.Contains(out, "kind=added") {
+		t.Error("expected added kind for feature")
+	}
+	if !strings.Contains(out, "kind=fixed") {
+		t.Error("expected fixed kind for fix")
+	}
+}
+
+func TestRenderOCI_NoRevision(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version:  "v1.0.0",
+		Features: []Entry{{Type: "feat", Description: "new thing"}},
+	}
+	out := rn.RenderOCI("")
+	if strings.Contains(out, "revision") {
+		t.Error("should not have revision when empty")
+	}
+}
+
+func TestRenderOCI_Empty(t *testing.T) {
+	rn := &ReleaseNotes{Version: "v1.0.0"}
+	out := rn.RenderOCI("")
+	if !strings.Contains(out, "org.opencontainers.image.version=v1.0.0") {
+		t.Error("should still have version annotation")
+	}
+	if strings.Contains(out, "description=") {
+		t.Error("should not have description for empty release")
+	}
+}
+
+func TestRenderOCI_ScopedEntry(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v1.0.0",
+		Fixes:   []Entry{{Type: "fix", Scope: "api", Description: "null check"}},
+	}
+	out := rn.RenderOCI("")
+	if !strings.Contains(out, "api: null check") {
+		t.Errorf("expected scoped description in:\n%s", out)
+	}
+}
+
+
 func TestRenderArtifactHub_Basic(t *testing.T) {
 	rn := &ReleaseNotes{
 		Version: "v1.2.0",
