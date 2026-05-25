@@ -21,4 +21,4 @@ Closes #<!-- issue number -->
 - [ ] All commits are signed off (`git commit -s` / DCO)
 - [ ] New Go files have SPDX license headers
 - [ ] Relevant documentation updated
-- [ ] CHANGELOG entry not required (generated automatically by go-semrel)
+- [ ] CHANGELOG entry not required (generated automatically by semrel)
