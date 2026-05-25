@@ -126,3 +126,42 @@ func TestNewRootCommand_DryRunDefault(t *testing.T) {
 		t.Errorf("expected default dry-run=false, got %q", f.DefValue)
 	}
 }
+
+func TestNewRootCommand_OutputFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	f := cmd.PersistentFlags().Lookup("output")
+	if f == nil {
+		t.Fatal("expected --output flag")
+	}
+	if f.DefValue != "text" {
+		t.Errorf("expected default output=text, got %q", f.DefValue)
+	}
+}
+
+func TestPrintSummary_TextFormat(t *testing.T) {
+	// printSummary with "text" and released=false should produce no output
+	s := ReleaseSummary{Released: false}
+	if err := printSummary(s, "text"); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestReleaseSummary_Fields(t *testing.T) {
+	s := ReleaseSummary{
+		Released:    true,
+		NextVersion: "v1.2.3",
+		Bump:        "minor",
+		Commits:     5,
+		Breaking:    false,
+		Features:    true,
+	}
+	if s.NextVersion != "v1.2.3" {
+		t.Errorf("wrong NextVersion: %s", s.NextVersion)
+	}
+	if s.Commits != 5 {
+		t.Errorf("wrong Commits: %d", s.Commits)
+	}
+	if !s.Released {
+		t.Error("expected Released=true")
+	}
+}
