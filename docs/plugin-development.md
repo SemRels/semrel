@@ -41,12 +41,15 @@ When a plugin is invoked, semrel:
 
 | Variable | Description |
 |----------|-------------|
-| `SEMREL_VERSION` | New version string |
-| `SEMREL_TAG_NAME` | Full tag name |
+| `SEMREL_VERSION` | New version string (e.g. `1.2.3`) |
+| `SEMREL_NEXT_VERSION` | Same as `SEMREL_VERSION` (alias) |
+| `SEMREL_TAG_NAME` | Full tag name including prefix (e.g. `v1.2.3`) |
+| `SEMREL_CURRENT_VERSION` | Previous version before this release |
+| `SEMREL_BUMP` | Bump type: `major`, `minor`, or `patch` |
+| `SEMREL_BRANCH` | Current branch name |
+| `SEMREL_TAG_PREFIX` | Tag prefix configured in `.semrel.yaml` |
 | `SEMREL_CHANGELOG` | Generated release changelog |
-| `SEMREL_REPOSITORY` | Repository slug |
 | `SEMREL_DRY_RUN` | `true` or `false` |
-| `SEMREL_IS_PRERELEASE` | `true` or `false` |
 
 ### Plugin config from `args:`
 
