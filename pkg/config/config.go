@@ -5,26 +5,28 @@
 // See: https://github.com/GoSemantics/semrel/issues/4
 package config
 
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Config represents the semrel configuration.
 type Config struct {
-	Version  string         `yaml:"version"`
-	Branches []BranchConfig `yaml:"branches"`
-	Release  ReleaseConfig  `yaml:"release"`
-	Plugins  []PluginConfig `yaml:"plugins,omitempty"`
+	Branches  []BranchConfig `yaml:"branches"`
+	TagPrefix string         `yaml:"tagPrefix"`
+	Rules     []ReleaseRule  `yaml:"rules"`
+	Plugins   []PluginConfig `yaml:"plugins,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
 type BranchConfig struct {
 	Name       string `yaml:"name"`
-	Prerelease bool   `yaml:"prerelease"`
+	Prerelease string `yaml:"prerelease,omitempty"`
 }
 
-// ReleaseConfig configures release rules.
-type ReleaseConfig struct {
-	Rules []ReleaseRule `yaml:"rules"`
-}
-
-// ReleaseRule maps commit type to version bump.
+// ReleaseRule maps commit type to version bump level.
 type ReleaseRule struct {
 	Type string `yaml:"type"`
 	Bump string `yaml:"bump"` // major, minor, patch
@@ -32,14 +34,40 @@ type ReleaseRule struct {
 
 // PluginConfig configures a plugin.
 type PluginConfig struct {
-	Name string                 `yaml:"name"`
+	Uses string                 `yaml:"uses"`
 	Path string                 `yaml:"path,omitempty"`
 	Args map[string]interface{} `yaml:"args,omitempty"`
 }
 
-// LoadConfig loads configuration from .semrel.yaml.
+// LoadConfig loads configuration from the given YAML file path.
 // Issue: https://github.com/GoSemantics/semrel/issues/4
 func LoadConfig(path string) (*Config, error) {
-	// TODO: Implement YAML parsing
-	panic("not implemented")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	}
+
+	// Apply defaults
+	if cfg.TagPrefix == "" {
+		cfg.TagPrefix = "v"
+	}
+	if len(cfg.Rules) == 0 {
+		cfg.Rules = defaultRules()
+	}
+
+	return &cfg, nil
+}
+
+func defaultRules() []ReleaseRule {
+	return []ReleaseRule{
+		{Type: "feat", Bump: "minor"},
+		{Type: "fix", Bump: "patch"},
+		{Type: "perf", Bump: "patch"},
+		{Type: "revert", Bump: "patch"},
+	}
 }
