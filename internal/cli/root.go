@@ -14,6 +14,7 @@ import (
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
 	gitpkg "github.com/GoSemantics/semrel/pkg/git"
+	"github.com/GoSemantics/semrel/pkg/lock"
 	"github.com/GoSemantics/semrel/pkg/semver"
 	"github.com/spf13/cobra"
 )
@@ -117,6 +118,20 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)
+	}
+
+	// Acquire release lock to prevent concurrent releases (skip in dry-run)
+	// See: https://github.com/SemRels/semrel/issues/46
+	if !dryRun {
+		rl := lock.New(repo.Path)
+		if err := rl.Acquire(""); err != nil {
+			return fmt.Errorf("acquiring release lock: %w", err)
+		}
+		defer func() {
+			if releaseErr := rl.Release(); releaseErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not release lock: %v\n", releaseErr)
+			}
+		}()
 	}
 
 	// 3. Get current branch
