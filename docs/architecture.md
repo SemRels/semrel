@@ -60,7 +60,7 @@ This document describes the high-level architecture of semrel, how the release p
 
 | Package                 | Responsibility                                                    |
 |-------------------------|-------------------------------------------------------------------|
-| `cmd/go-semrel`         | CLI entry point (`main.go`)                                       |
+| `cmd/semrel`            | CLI entry point (`main.go`)                                       |
 | `internal/cli`          | Cobra commands: `release`, `lint`                                 |
 | `internal/version`      | Build-time version constant                                       |
 | `internal/registry`     | Plugin registry client — download/cache plugins                  |

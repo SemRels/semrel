@@ -1,4 +1,4 @@
-# go-semrel — Example configuration
+# semrel — Example configuration
 
 # Branches that trigger a release and their channel mapping.
 branches:

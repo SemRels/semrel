@@ -10,8 +10,8 @@ before:
     - go mod tidy
 
 builds:
-  - id: go-semrel
-    main: ./cmd/go-semrel
+  - id: semrel
+    main: ./cmd/semrel
     binary: semrel
     env:
       - CGO_ENABLED=0

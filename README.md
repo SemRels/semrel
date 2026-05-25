@@ -27,7 +27,7 @@ A Go-based semantic versioning and release system with a plugin architecture tha
 
 ```bash
 # Install
-go install github.com/GoSemantics/semrel/cmd/go-semrel@latest
+go install github.com/GoSemantics/semrel/cmd/semrel@latest
 
 # Check version
 semrel --version

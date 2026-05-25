@@ -26,8 +26,8 @@ func TestFetchMetadataUsesCacheAndETag(t *testing.T) {
 	const etag = `"registry-v1"`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
-		if got := r.Header.Get("User-Agent"); !strings.HasPrefix(got, "go-semrel/") {
-			t.Fatalf("expected go-semrel user agent, got %q", got)
+		if got := r.Header.Get("User-Agent"); !strings.HasPrefix(got, "semrel/") {
+			t.Fatalf("expected semrel user agent, got %q", got)
 		}
 		if requestCount.Load() > 1 {
 			if got := r.Header.Get("If-None-Match"); got != etag {

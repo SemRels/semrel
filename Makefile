@@ -10,7 +10,7 @@ all: build
 
 build:
 	@mkdir -p $(BIN_DIR)
-	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/go-semrel
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/semrel
 
 test:
 	go test ./... -race -count=1 -coverprofile=coverage.txt -covermode=atomic
