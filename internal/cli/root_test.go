@@ -165,3 +165,96 @@ func TestReleaseSummary_Fields(t *testing.T) {
 		t.Error("expected Released=true")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// commitlint tests
+// ---------------------------------------------------------------------------
+
+func TestCommitlintCommand_Exists(t *testing.T) {
+	cmd := NewRootCommand()
+	names := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		names[sub.Use] = true
+	}
+	found := false
+	for n := range names {
+		if strings.HasPrefix(n, "commitlint") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'commitlint' subcommand")
+	}
+}
+
+func TestRunCommitlint_ValidMessages(t *testing.T) {
+	err := runCommitlint(nil, []string{
+		"feat: add feature",
+		"fix(auth): patch login bug",
+		"chore!: drop support",
+	}, "", "HEAD", false, "text")
+	if err != nil {
+		t.Errorf("expected no error for valid messages, got: %v", err)
+	}
+}
+
+func TestRunCommitlint_InvalidMessage(t *testing.T) {
+	err := runCommitlint(nil, []string{"not a conventional commit"}, "", "HEAD", false, "text")
+	if err == nil {
+		t.Fatal("expected error for invalid message")
+	}
+	if !strings.Contains(err.Error(), "1 invalid") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCommitlint_MixedMessages(t *testing.T) {
+	err := runCommitlint(nil, []string{
+		"feat: valid",
+		"bad message without type",
+	}, "", "HEAD", false, "text")
+	if err == nil {
+		t.Fatal("expected error for mixed messages")
+	}
+	if !strings.Contains(err.Error(), "1 invalid") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRunCommitlint_JSONOutput(t *testing.T) {
+	// JSON output for valid messages should not error
+	err := runCommitlint(nil, []string{"feat: valid"}, "", "HEAD", false, "json")
+	if err != nil {
+		t.Errorf("expected no error for valid JSON output, got: %v", err)
+	}
+}
+
+func TestRunCommitlint_NoArgs_Error(t *testing.T) {
+	err := runCommitlint(nil, []string{}, "", "HEAD", false, "text")
+	if err == nil {
+		t.Fatal("expected error when no args provided")
+	}
+}
+
+func TestCommitlintSummary_Fields(t *testing.T) {
+	s := CommitlintSummary{
+		Valid:  false,
+		Total:  3,
+		Passed: 2,
+		Failed: 1,
+		Results: []CommitlintResult{
+			{Message: "feat: ok", Valid: true},
+			{Message: "fix: ok", Valid: true},
+			{Message: "bad", Valid: false, Error: "not a Conventional Commit"},
+		},
+	}
+	if s.Failed != 1 {
+		t.Errorf("expected Failed=1, got %d", s.Failed)
+	}
+	if s.Passed != 2 {
+		t.Errorf("expected Passed=2, got %d", s.Passed)
+	}
+	if len(s.Results) != 3 {
+		t.Errorf("expected 3 results, got %d", len(s.Results))
+	}
+}

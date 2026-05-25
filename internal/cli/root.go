@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -94,6 +95,7 @@ Documentation: https://github.com/SemRels/semrel`,
 
 	root.AddCommand(newReleaseCommand(&dryRun, &configFile, &outputFormat))
 	root.AddCommand(newLintCommand(&configFile, &outputFormat))
+	root.AddCommand(newCommitlintCommand(&outputFormat))
 
 	return root
 }
@@ -409,3 +411,166 @@ func prependChangelog(path, entry string) error {
 	}
 	return os.WriteFile(path, []byte(entry+existing), 0o644)
 }
+
+// CommitlintResult holds the result of linting a single commit message.
+type CommitlintResult struct {
+	Message string `json:"message"`
+	Valid   bool   `json:"valid"`
+	Error   string `json:"error,omitempty"`
+}
+
+// CommitlintSummary is the structured output for the commitlint command.
+// See: https://github.com/SemRels/semrel/issues/47
+type CommitlintSummary struct {
+	Valid   bool               `json:"valid"`
+	Total   int                `json:"total"`
+	Passed  int                `json:"passed"`
+	Failed  int                `json:"failed"`
+	Results []CommitlintResult `json:"results,omitempty"`
+}
+
+// newCommitlintCommand returns the commitlint sub-command.
+// It validates one or more commit messages against the Conventional Commits spec.
+//
+// Usage:
+//
+//	semrel commitlint "feat: add feature"
+//	echo "fix: typo" | semrel commitlint --stdin
+//	semrel commitlint --from HEAD~5 --to HEAD
+func newCommitlintCommand(outputFormat *string) *cobra.Command {
+	var fromRef, toRef string
+	var stdin bool
+
+	cmd := &cobra.Command{
+		Use:   "commitlint [message...]",
+		Short: "Validate commit messages against Conventional Commits",
+		Long: `commitlint validates commit messages against the Conventional Commits
+specification (https://www.conventionalcommits.org/).
+
+Examples:
+  # Lint a single message passed as an argument
+  semrel commitlint "feat(auth): add OAuth2 support"
+
+  # Lint a commit range (HEAD~5 through HEAD)
+  semrel commitlint --from HEAD~5 --to HEAD
+
+  # Lint the PR head range in CI (GitHub Actions)
+  semrel commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
+
+  # Pipe a message from stdin
+  echo "fix: typo" | semrel commitlint --stdin
+
+Exit code 0 means all messages are valid; non-zero means at least one is invalid.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCommitlint(cmd.Context(), args, fromRef, toRef, stdin, *outputFormat)
+		},
+	}
+
+	cmd.Flags().StringVar(&fromRef, "from", "", "Start ref (exclusive) for commit range")
+	cmd.Flags().StringVar(&toRef, "to", "HEAD", "End ref (inclusive) for commit range (default: HEAD)")
+	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read a single commit message from stdin")
+
+	return cmd
+}
+
+func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, stdinMode bool, outputFormat string) error {
+	parser := commits.NewParser()
+
+	var messages []string
+
+	switch {
+	case stdinMode:
+		// Read from stdin
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("reading stdin: %w", err)
+		}
+		msg := strings.TrimSpace(string(data))
+		if msg != "" {
+			messages = append(messages, msg)
+		}
+	case fromRef != "":
+		// Read from git log range
+		repo, err := gitpkg.OpenRepository(".")
+		if err != nil {
+			return fmt.Errorf("opening repository: %w", err)
+		}
+		msgs, err := repo.CommitsSince(ctx, fromRef)
+		if err != nil {
+			return fmt.Errorf("getting commits: %w", err)
+		}
+		messages = msgs
+	case len(args) > 0:
+		messages = args
+	default:
+		return fmt.Errorf("provide commit messages as arguments, use --from/--to for a git range, or use --stdin")
+	}
+
+	if len(messages) == 0 {
+		fmt.Println("No commit messages to lint.")
+		return nil
+	}
+
+	var results []CommitlintResult
+	for _, msg := range messages {
+		firstLine := strings.SplitN(msg, "\n", 2)[0]
+		c, err := parser.Parse(msg)
+		r := CommitlintResult{Message: firstLine, Valid: true}
+		if err != nil {
+			r.Valid = false
+			r.Error = err.Error()
+		} else if c.Type == "" {
+			r.Valid = false
+			r.Error = "not a Conventional Commit (missing type)"
+		}
+		results = append(results, r)
+	}
+
+	passed := 0
+	failed := 0
+	for _, r := range results {
+		if r.Valid {
+			passed++
+		} else {
+			failed++
+		}
+	}
+
+	summary := CommitlintSummary{
+		Valid:   failed == 0,
+		Total:   len(results),
+		Passed:  passed,
+		Failed:  failed,
+		Results: results,
+	}
+
+	if outputFormat == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(summary)
+	} else {
+		for _, r := range results {
+			if r.Valid {
+				fmt.Println(colors.Success(fmt.Sprintf("  ✓ %s", r.Message)))
+			} else {
+				fmt.Println(colors.Error(fmt.Sprintf("  ✗ %s", r.Message)))
+				if r.Error != "" {
+					fmt.Printf("      %s\n", colors.Red(r.Error))
+				}
+			}
+		}
+		fmt.Println()
+		if summary.Valid {
+			fmt.Println(colors.Success(fmt.Sprintf("All %d commit(s) are valid.", summary.Total)))
+		} else {
+			fmt.Fprintf(os.Stderr, "%s\n",
+				colors.Error(fmt.Sprintf("%d of %d commit(s) failed validation.", summary.Failed, summary.Total)))
+		}
+	}
+
+	if !summary.Valid {
+		return fmt.Errorf("commitlint failed: %d invalid commit(s)", summary.Failed)
+	}
+	return nil
+}
+
