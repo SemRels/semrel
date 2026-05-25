@@ -32,25 +32,29 @@ semrel --version
 # Validate commit messages
 semrel lint
 
-# Dry-run release (not yet implemented)
+# Dry-run release (preview what would happen)
 semrel release --dry-run
+
+# Run the full release pipeline
+semrel release
 ```
 
 ## Configuration
 
-Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [docs/config-reference.md](docs/config-reference.md) (coming soon).
+Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [docs/config-reference.md](docs/config-reference.md) for all options.
 
 ## Architecture
 
 - **Core Engine**: Conventional Commits analysis, SemVer calculation, changelog generation
-- **Plugin System**: gRPC-based out-of-process plugins (see [ADR-001](docs/adr/ADR-001-grpc-plugin-transport.md))
+- **Plugin System**: gRPC-based out-of-process plugins (see [docs/architecture.md](docs/architecture.md))
 - **Plugin SDK**: [`semrel-plugins`](https://github.com/SemRels/semrel-plugins) — reference SDK for external plugins
 
 ## Documentation
 
-- [Architecture Overview](docs/adr/) — ADRs and design documents
-- [Plugin Development Guide](https://github.com/SemRels/semrel-plugins) — Plugin SDK
-- [Configuration Reference](docs/config-reference.md) _(coming soon)_
+- [Architecture Overview](docs/architecture.md) — pipeline design and component overview
+- [Configuration Reference](docs/config-reference.md) — all `.semrel.yaml` options
+- [Plugin Development Guide](docs/plugin-development.md) — build custom plugins
+- [ADRs](docs/adr/) — architectural decision records
 - [ROADMAP](ROADMAP.md) — public project roadmap
 
 ## Contributing
