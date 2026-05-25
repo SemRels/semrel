@@ -55,6 +55,12 @@ func newReleaseCommand(dryRun *bool, configFile *string) *cobra.Command {
 }
 
 func runRelease(ctx context.Context, dryRun bool, configFile string) error {
+	if dryRun {
+		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
+		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
+		fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
+	}
+
 	// 1. Load config
 	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
@@ -157,6 +163,9 @@ func runRelease(ctx context.Context, dryRun bool, configFile string) error {
 	fmt.Printf("\n%s", changelogEntry)
 
 	if dryRun {
+		fmt.Println("\n[dry-run] Would perform:")
+		fmt.Printf("  • git tag %s\n", nextTag)
+		fmt.Println("  • prepend entry to CHANGELOG.md")
 		fmt.Println("\n[dry-run] No changes made.")
 		return nil
 	}
@@ -227,6 +236,7 @@ func runLint(ctx context.Context, configFile string) error {
 }
 
 // isBranchConfigured checks whether the given branch name is in the release branches list.
+// Supports exact matches.
 func isBranchConfigured(branch string, branches []config.BranchConfig) bool {
 	if len(branches) == 0 {
 		return true // no restriction configured
