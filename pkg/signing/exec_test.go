@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -146,15 +147,13 @@ func TestSigningCommandErrorsIncludeToolOutput(t *testing.T) {
 
 func TestAvailabilityHelpersRespectPATH(t *testing.T) {
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "cosign.cmd"), []byte("@echo off\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(cosign) error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(binDir, "gpg.cmd"), []byte("@echo off\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(gpg) error = %v", err)
-	}
+	createLookPathBinary(t, binDir, "cosign")
+	createLookPathBinary(t, binDir, "gpg")
 
 	t.Setenv("PATH", binDir)
-	t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	if runtime.GOOS == "windows" {
+		t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	}
 
 	if !IsCosignAvailable() {
 		t.Fatal("expected cosign to be available")
@@ -171,7 +170,9 @@ func TestAvailabilityHelpersRespectPATH(t *testing.T) {
 
 func TestAvailabilityHelpersReturnFalseWhenMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	if runtime.GOOS == "windows" {
+		t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	}
 
 	if IsCosignAvailable() {
 		t.Fatal("expected cosign to be unavailable")
@@ -181,6 +182,22 @@ func TestAvailabilityHelpersReturnFalseWhenMissing(t *testing.T) {
 	}
 	if len(SupportedBackends()) != 0 {
 		t.Fatalf("SupportedBackends() = %#v, want empty", SupportedBackends())
+	}
+}
+
+func createLookPathBinary(t *testing.T, dir, name string) {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+	contents := []byte("#!/bin/sh\nexit 0\n")
+	perm := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+		contents = []byte("@echo off\r\n")
+		perm = 0o644
+	}
+	if err := os.WriteFile(path, contents, perm); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", name, err)
 	}
 }
 
