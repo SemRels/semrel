@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -303,23 +304,27 @@ func TestPluginEnvKey(t *testing.T) {
 
 func TestResolvePluginBinaryPrefersLocalInstall(t *testing.T) {
 	home := t.TempDir()
-	pathDir := t.TempDir()
 	local := filepath.Join(home, ".semrel", "plugins")
 	if err := os.MkdirAll(local, 0o755); err != nil {
 		t.Fatalf("mkdir local plugin dir: %v", err)
 	}
-	localPlugin := filepath.Join(local, "semrel-plugin-demo.cmd")
-	pathPlugin := filepath.Join(pathDir, "semrel-plugin-demo.cmd")
-	if err := os.WriteFile(localPlugin, []byte("@echo off\r\n"), 0o644); err != nil {
-		t.Fatalf("write local plugin: %v", err)
+
+	// Create a platform-appropriate local plugin binary.
+	var localPlugin string
+	if runtime.GOOS == "windows" {
+		localPlugin = filepath.Join(local, "semrel-plugin-demo.cmd")
+		if err := os.WriteFile(localPlugin, []byte("@echo off\r\n"), 0o644); err != nil {
+			t.Fatalf("write local plugin: %v", err)
+		}
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("PATHEXT", ".CMD;.EXE")
+	} else {
+		localPlugin = filepath.Join(local, "semrel-plugin-demo")
+		if err := os.WriteFile(localPlugin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write local plugin: %v", err)
+		}
+		t.Setenv("HOME", home)
 	}
-	if err := os.WriteFile(pathPlugin, []byte("@echo off\r\n"), 0o644); err != nil {
-		t.Fatalf("write path plugin: %v", err)
-	}
-	oldPath := os.Getenv("PATH")
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("PATH", pathDir+string(os.PathListSeparator)+oldPath)
-	t.Setenv("PATHEXT", ".CMD;.EXE")
 
 	resolved, err := resolvePluginBinary(plugininstance.PluginSpec{Uses: "demo"})
 	if err != nil {
