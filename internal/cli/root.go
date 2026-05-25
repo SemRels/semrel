@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,44 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ReleaseSummary holds the structured output of a release run.
+// See: https://github.com/SemRels/semrel/issues/20
+type ReleaseSummary struct {
+	Released       bool   `json:"released"`
+	DryRun         bool   `json:"dry_run"`
+	CurrentVersion string `json:"current_version"`
+	NextVersion    string `json:"next_version,omitempty"`
+	Bump           string `json:"bump,omitempty"`
+	Commits        int    `json:"commits"`
+	Breaking       bool   `json:"breaking"`
+	Features       bool   `json:"features"`
+	Fixes          bool   `json:"fixes"`
+	ForcedPatch    bool   `json:"forced_patch,omitempty"`
+	Changelog      string `json:"changelog,omitempty"`
+	Branch         string `json:"branch"`
+	TagPrefix      string `json:"tag_prefix"`
+}
+
+// printSummary writes the summary to stdout in the selected format.
+func printSummary(s ReleaseSummary, format string) error {
+	if format == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(s)
+	}
+	// default: text
+	if !s.Released {
+		return nil
+	}
+	fmt.Printf("Current version : %s\n", s.CurrentVersion)
+	fmt.Printf("Next version    : %s\n", s.NextVersion)
+	fmt.Printf("Bump type       : %s\n", s.Bump)
+	fmt.Printf("Commits         : %d (breaking=%v feat=%v fix=%v)\n",
+		s.Commits, s.Breaking, s.Features, s.Fixes)
+	fmt.Printf("\n%s", s.Changelog)
+	return nil
+}
+
 // version is set via ldflags at build time.
 var version = "dev"
 
@@ -24,6 +63,7 @@ var version = "dev"
 func NewRootCommand() *cobra.Command {
 	var dryRun bool
 	var configFile string
+	var outputFormat string
 
 	root := &cobra.Command{
 		Use:   "semrel",
@@ -37,20 +77,22 @@ configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Hel
 
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Simulate the release without making any changes")
 	root.PersistentFlags().StringVar(&configFile, "config", ".semrel.yaml", "Path to configuration file")
+	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
+		"Output format: text or json")
 
-	root.AddCommand(newReleaseCommand(&dryRun, &configFile))
-	root.AddCommand(newLintCommand(&configFile))
+	root.AddCommand(newReleaseCommand(&dryRun, &configFile, &outputFormat))
+	root.AddCommand(newLintCommand(&configFile, &outputFormat))
 
 	return root
 }
 
-func newReleaseCommand(dryRun *bool, configFile *string) *cobra.Command {
+func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *cobra.Command {
 	var forcePatch bool
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch)
+			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, *outputFormat)
 		},
 	}
 	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
@@ -58,7 +100,7 @@ func newReleaseCommand(dryRun *bool, configFile *string) *cobra.Command {
 	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, outputFormat string) error {
 	if dryRun {
 		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -85,7 +127,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// Check if the current branch is configured for release
 	if !isBranchConfigured(branch, cfg.Branches) {
-		fmt.Printf("Branch %q is not configured for release — skipping.\n", branch)
+		msg := fmt.Sprintf("Branch %q is not configured for release — skipping.", branch)
+		if outputFormat == "json" {
+			return printSummary(ReleaseSummary{Released: false, Branch: branch, TagPrefix: cfg.TagPrefix}, outputFormat)
+		}
+		fmt.Println(msg)
 		return nil
 	}
 
@@ -100,7 +146,22 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("getting commits: %w", err)
 	}
 
+	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, cfg.TagPrefix))
+	if err != nil {
+		currentVersion = &semver.Version{}
+	}
+	currentTag := cfg.TagPrefix + currentVersion.String()
+
 	if len(rawMessages) == 0 && !forcePatch {
+		if outputFormat == "json" {
+			return printSummary(ReleaseSummary{
+				Released:       false,
+				DryRun:         dryRun,
+				CurrentVersion: currentTag,
+				Branch:         branch,
+				TagPrefix:      cfg.TagPrefix,
+			}, outputFormat)
+		}
 		fmt.Println("No commits since last release — nothing to release.")
 		return nil
 	}
@@ -136,6 +197,16 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	bump := semver.BumpFromRules(commitTypes, ruleMap, hasBreaking)
 	if bump == "" && !forcePatch {
+		if outputFormat == "json" {
+			return printSummary(ReleaseSummary{
+				Released:       false,
+				DryRun:         dryRun,
+				CurrentVersion: currentTag,
+				Commits:        len(parsed),
+				Branch:         branch,
+				TagPrefix:      cfg.TagPrefix,
+			}, outputFormat)
+		}
 		fmt.Println("No releasable commits found — nothing to release.")
 		return nil
 	}
@@ -144,16 +215,16 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	// 7. Calculate next version
-	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, cfg.TagPrefix))
-	if err != nil {
-		currentVersion = &semver.Version{}
-	}
 	calc := semver.NewCalculator()
 	nextVer := calc.NextVersion(currentVersion, hasFeat, hasFix, hasBreaking)
+	forcedPatch := false
 	if nextVer == nil {
 		if forcePatch {
 			nextVer = calc.ForcePatch(currentVersion)
-			fmt.Println("[force-bump-patch-version] No releasable commits — forcing patch bump.")
+			forcedPatch = true
+			if outputFormat != "json" {
+				fmt.Println("[force-bump-patch-version] No releasable commits — forcing patch bump.")
+			}
 		} else {
 			fmt.Println("No releasable commits found — nothing to release.")
 			return nil
@@ -166,19 +237,38 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	gen := changelog.NewGenerator()
 	changelogEntry := gen.Generate(nextTag, parsed)
 
+	summary := ReleaseSummary{
+		Released:       true,
+		DryRun:         dryRun,
+		CurrentVersion: currentTag,
+		NextVersion:    nextTag,
+		Bump:           bump,
+		Commits:        len(parsed),
+		Breaking:       hasBreaking,
+		Features:       hasFeat,
+		Fixes:          hasFix,
+		ForcedPatch:    forcedPatch,
+		Changelog:      changelogEntry,
+		Branch:         branch,
+		TagPrefix:      cfg.TagPrefix,
+	}
+
 	// 9. Output results
-	fmt.Printf("Current version : %s%s\n", cfg.TagPrefix, currentVersion.String())
-	fmt.Printf("Next version    : %s\n", nextTag)
-	fmt.Printf("Bump type       : %s\n", bump)
-	fmt.Printf("Commits         : %d (breaking=%v feat=%v fix=%v)\n",
-		len(parsed), hasBreaking, hasFeat, hasFix)
-	fmt.Printf("\n%s", changelogEntry)
+	if outputFormat != "json" {
+		if err := printSummary(summary, outputFormat); err != nil {
+			return err
+		}
+	}
 
 	if dryRun {
-		fmt.Println("\n[dry-run] Would perform:")
-		fmt.Printf("  • git tag %s\n", nextTag)
-		fmt.Println("  • prepend entry to CHANGELOG.md")
-		fmt.Println("\n[dry-run] No changes made.")
+		if outputFormat != "json" {
+			fmt.Println("\n[dry-run] Would perform:")
+			fmt.Printf("  • git tag %s\n", nextTag)
+			fmt.Println("  • prepend entry to CHANGELOG.md")
+			fmt.Println("\n[dry-run] No changes made.")
+		} else {
+			return printSummary(summary, outputFormat)
+		}
 		return nil
 	}
 
@@ -186,29 +276,41 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	if err := repo.CreateTag(ctx, nextTag, "Release "+nextTag); err != nil {
 		return fmt.Errorf("creating tag: %w", err)
 	}
-	fmt.Printf("✓ Created tag %s\n", nextTag)
+	if outputFormat != "json" {
+		fmt.Printf("✓ Created tag %s\n", nextTag)
+	}
 
 	// 11. Write CHANGELOG.md (prepend)
 	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not update CHANGELOG.md: %v\n", err)
-	} else {
+	} else if outputFormat != "json" {
 		fmt.Println("✓ Updated CHANGELOG.md")
 	}
 
+	if outputFormat == "json" {
+		return printSummary(summary, outputFormat)
+	}
 	return nil
 }
 
-func newLintCommand(configFile *string) *cobra.Command {
+func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
 		Short: "Validate commit messages since the last release",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLint(cmd.Context(), *configFile)
+			return runLint(cmd.Context(), *configFile, *outputFormat)
 		},
 	}
 }
 
-func runLint(ctx context.Context, configFile string) error {
+// LintSummary holds the structured output of a lint run.
+type LintSummary struct {
+	Valid   bool     `json:"valid"`
+	Total   int      `json:"total"`
+	Invalid []string `json:"invalid,omitempty"`
+}
+
+func runLint(ctx context.Context, configFile string, outputFormat string) error {
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)
@@ -236,13 +338,24 @@ func runLint(ctx context.Context, configFile string) error {
 	}
 
 	if len(invalid) > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d non-conventional commit(s):\n", len(invalid))
-		for _, m := range invalid {
-			fmt.Fprintf(os.Stderr, "  - %s\n", m)
+		if outputFormat == "json" {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(LintSummary{Valid: false, Total: len(rawMessages), Invalid: invalid})
+		} else {
+			fmt.Fprintf(os.Stderr, "Found %d non-conventional commit(s):\n", len(invalid))
+			for _, m := range invalid {
+				fmt.Fprintf(os.Stderr, "  - %s\n", m)
+			}
 		}
 		return fmt.Errorf("lint failed: %d non-conventional commit(s)", len(invalid))
 	}
 
+	if outputFormat == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(LintSummary{Valid: true, Total: len(rawMessages)})
+	}
 	fmt.Printf("✓ All %d commit(s) follow Conventional Commits.\n", len(rawMessages))
 	return nil
 }
