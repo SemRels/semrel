@@ -1,220 +1,184 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: 2026 The semrel Authors -->
+
 # Plugin Development Guide
 
-This guide explains how to write a semrel plugin. It covers the plugin transport,
-stdout/stderr contract, lifecycle hooks, and the gRPC API.
+This guide explains how to write a semrel plugin using the `pkg/plugin.Executor`
+interface. Plugins execute **in-process** as part of the semrel release pipeline.
 
-## Architecture Overview
+## Plugin Interface
 
-semrel uses [hashicorp/go-plugin](https://github.com/hashicorp/go-plugin) as the
-plugin transport layer. Each plugin runs as a **separate process**, communicating
-with the semrel host via **gRPC over a Unix socket** (or named pipe on Windows).
-
-```
-semrel (host)
-    │
-    ├─ spawns ──▶ plugin-process (plugin binary)
-    │                │
-    │◄──── gRPC ─────┤  (VerifyConditions / AnalyzeCommits / GenerateNotes / ...)
-    │                │
-    └─────────────────
-```
-
-## ⚠ Critical: stdout/stderr Contract
-
-**Plugins MUST NEVER write to stdout.**
-
-The host process reads the plugin's `stdout` at startup to receive the gRPC
-socket address (the go-plugin handshake). Any write to `stdout` before or after
-this handshake corrupts the protocol and silently breaks the connection.
-
-### Rules
-
-| Stream   | Purpose                                        | Allowed?      |
-|----------|------------------------------------------------|---------------|
-| `stdout` | go-plugin handshake (socket address)           | ❌ Reserved   |
-| `stderr` | All plugin logs, warnings, errors              | ✅ Use this   |
-
-### Logging with `hclog`
-
-Use [hashicorp/go-hclog](https://github.com/hashicorp/go-hclog) and set `Output: os.Stderr`:
+All plugins implement `pkg/plugin.Executor`:
 
 ```go
-import (
-    "os"
-    hclog "github.com/hashicorp/go-hclog"
-)
-
-logger := hclog.New(&hclog.LoggerOptions{
-    Name:   "my-plugin",
-    Output: os.Stderr,  // MUST be stderr
-    Level:  hclog.Info,
-})
-logger.Info("plugin started")
+// Executor is the in-process plugin interface.
+type Executor interface {
+    Name()    string    // unique name used in .semrel.yaml `uses:`
+    Version() string    // plugin version string (e.g. "1.0.0")
+    Validate() error    // validate config without side-effects
+    Execute(ctx context.Context, rel ReleaseContext) (*Result, error)
+}
 ```
 
-Never use:
-- `fmt.Println(...)` — writes to stdout ❌
-- `log.Print(...)` — writes to stdout by default ❌
-- `os.Stdout.Write(...)` — direct stdout write ❌
+### ReleaseContext
 
-## Plugin Categories
-
-semrel defines six plugin categories, each with its own gRPC service:
-
-| Category             | Service                  | RPC(s)                          |
-|---------------------|--------------------------|---------------------------------|
-| CI Condition         | `CIConditionPlugin`      | `VerifyConditions`              |
-| Provider             | `ProviderPlugin`         | `GetLastRelease`, `GetCommitsSince`, `CreateRelease`, `UploadAsset` |
-| Commit Analyzer      | `CommitAnalyzerPlugin`   | `AnalyzeCommits`                |
-| Changelog Generator  | `ChangelogGeneratorPlugin` | `GenerateNotes`              |
-| Files Updater        | `FilesUpdaterPlugin`     | `UpdateFiles`                   |
-| Hooks                | `HooksPlugin`            | `OnSuccess`, `OnFail`           |
-
-See [`api/proto/v1/semantic_release.proto`](../api/proto/v1/semantic_release.proto) for the full API.
-
-## Writing a Plugin
-
-### 1. Scaffold your plugin repo
-
-A plugin is a standalone Go binary. Minimum structure:
-
-```
-my-plugin/
-├── main.go
-├── plugin.go         # gRPC service implementation
-├── go.mod
-└── .semrel.yaml      # optional: plugin self-description
-```
-
-### 2. Implement the gRPC service
+`Execute` receives all release information:
 
 ```go
-// plugin.go
-package main
+type ReleaseContext struct {
+    Version         string            // new version, e.g. "1.2.3"
+    PreviousVersion string            // previous version
+    TagName         string            // git tag name, e.g. "v1.2.3"
+    Repository      string            // "owner/repo"
+    Changelog       string            // generated changelog text
+    CommitSHA       string            // HEAD commit SHA
+    IsPrerelease    bool
+    IsDryRun        bool
+    Metadata        map[string]string // args from .semrel.yaml
+}
+```
+
+### Result
+
+Return a `*Result` from `Execute`:
+
+```go
+type Result struct {
+    Name       string
+    Outputs    map[string]string // key-value pairs, e.g. {"release_url": "..."}
+    Skipped    bool
+    SkipReason string
+}
+
+// Helpers
+plugin.SuccessResult(name, outputs)       // success with outputs
+plugin.SkippedResult(name, reason)        // graceful skip
+```
+
+## Writing a Built-in Style Plugin
+
+Use `plugin.BasePlugin` to get default `Validate()` and version boilerplate:
+
+```go
+package myplugin
 
 import (
     "context"
+    "fmt"
     "os"
 
-    hclog "github.com/hashicorp/go-hclog"
-    semrelv1 "github.com/GoSemantics/semrel/api/gen/v1"
+    "github.com/GoSemantics/semrel/pkg/plugin"
 )
 
-type MyCommitAnalyzer struct {
-    logger hclog.Logger
+type MyPlugin struct{ plugin.BasePlugin }
+
+func New() *MyPlugin {
+    return &MyPlugin{plugin.NewBasePlugin("myplugin", "1.0.0")}
 }
 
-func (a *MyCommitAnalyzer) AnalyzeCommits(
-    ctx context.Context,
-    req *semrelv1.AnalyzeCommitsRequest,
-) (*semrelv1.AnalyzeCommitsResponse, error) {
-    a.logger.Info("analyzing commits", "count", len(req.Ctx.Commits))
+func (p *MyPlugin) Validate() error {
+    if os.Getenv("MY_TOKEN") == "" {
+        return plugin.ErrInvalidConfig{
+            Plugin:  p.Name(),
+            Message: "MY_TOKEN env var is required",
+        }
+    }
+    return nil
+}
 
-    // Example: always return patch bump
-    return &semrelv1.AnalyzeCommitsResponse{
-        Bump:   semrelv1.BumpLevel_BUMP_LEVEL_PATCH,
-        Reason: "all commits are patch-level",
-    }, nil
+func (p *MyPlugin) Execute(ctx context.Context, rel plugin.ReleaseContext) (*plugin.Result, error) {
+    // Always respect dry-run
+    if rel.IsDryRun {
+        return plugin.SuccessResult(p.Name(), map[string]string{"dry_run": "true"}), nil
+    }
+
+    token := os.Getenv("MY_TOKEN")
+    // ... do the actual work ...
+
+    return plugin.SuccessResult(p.Name(), map[string]string{
+        "version": rel.Version,
+        "url":     fmt.Sprintf("https://example.com/releases/%s", rel.TagName),
+    }), nil
 }
 ```
 
-### 3. Wire up go-plugin in main.go
+## Registering Your Plugin
+
+Add it to `pkg/builtins/registry.go` `allBuiltins()` to make it a core built-in,
+or register it dynamically:
 
 ```go
-// main.go
-package main
-
-import (
-    "os"
-
-    "github.com/hashicorp/go-plugin"
-    hclog "github.com/hashicorp/go-hclog"
-)
-
-func main() {
-    logger := hclog.New(&hclog.LoggerOptions{
-        Name:   "my-commit-analyzer",
-        Output: os.Stderr,   // Always stderr
-        Level:  hclog.Debug,
-    })
-
-    plugin.Serve(&plugin.ServeConfig{
-        HandshakeConfig: plugin.HandshakeConfig{
-            ProtocolVersion:  1,
-            MagicCookieKey:   "SEMREL_PLUGIN",
-            MagicCookieValue: "semrel",
-        },
-        Plugins: map[string]plugin.Plugin{
-            "commit-analyzer": &CommitAnalyzerGRPCPlugin{
-                Impl: &MyCommitAnalyzer{logger: logger},
-            },
-        },
-        GRPCServer: plugin.DefaultGRPCServer,
-        Logger:     logger,
-    })
-}
+reg := plugin.NewRegistry()
+_ = reg.Register(myplugin.New())
+result, err := reg.Execute("myplugin", ctx, relCtx)
 ```
 
-### 4. Reference the plugin in `.semrel.yaml`
+## Configuration in `.semrel.yaml`
 
 ```yaml
 plugins:
-  - uses: my-commit-analyzer
-    with:
-      some_option: value
+  - uses: myplugin
+    args:
+      endpoint: https://custom.example.com   # available as rel.Metadata["endpoint"]
 ```
 
-## Plugin Discovery
+`args` values are passed as `rel.Metadata` (all values converted to `string`).
 
-semrel discovers plugins at:
+## Design Rules
 
-```
-.semrel/<GOOS>_<GOARCH>/<plugin-name>/<version>/<plugin-binary>
-```
-
-Example:
-```
-.semrel/linux_amd64/my-commit-analyzer/1.0.0/my-commit-analyzer
-```
-
-Plugins can also be auto-downloaded from the plugin registry when a `registry_url`
-is configured in `.semrel.yaml`.
-
-## CI/CD Notes
-
-- Plugin binaries must be executable (`chmod +x`)
-- On Windows, plugin binaries must end in `.exe`
-- Air-gapped environments: pre-populate the `.semrel/` directory instead of using auto-download
-- Plugins run with the same environment variables as the semrel process
+| Rule | Reason |
+|------|--------|
+| **Always handle `IsDryRun`** — return `SuccessResult` with `dry_run=true` | Dry-run must never have side-effects |
+| **Return `SkippedResult` when misconfigured** (optional config) | Graceful degradation vs. hard errors |
+| **Return error for required config** (token missing) | Fail fast before any mutations |
+| **Read config from env vars** with `args:` overrides | Standard semrel convention |
+| **All logging to `os.Stderr`** | stdout is reserved for `--output-format json` |
 
 ## Testing Your Plugin
 
-To verify your plugin does not write to stdout, add a test:
-
 ```go
-func TestPluginDoesNotWriteToStdout(t *testing.T) {
-    // Redirect stdout to a pipe
-    orig := os.Stdout
-    r, w, _ := os.Pipe()
-    os.Stdout = w
+func TestMyPlugin_DryRun(t *testing.T) {
+    p := myplugin.New()
+    result, err := p.Execute(context.Background(), plugin.ReleaseContext{
+        Version:  "1.2.3",
+        TagName:  "v1.2.3",
+        IsDryRun: true,
+    })
+    if err != nil {
+        t.Fatal(err)
+    }
+    if result.Outputs["dry_run"] != "true" {
+        t.Error("expected dry_run=true")
+    }
+}
 
-    // Start plugin (integration test)
-    runPluginLogic()
-
-    w.Close()
-    os.Stdout = orig
-    var buf bytes.Buffer
-    io.Copy(&buf, r)
-
-    if buf.Len() > 0 {
-        t.Errorf("plugin wrote %d bytes to stdout (forbidden): %q", buf.Len(), buf.String())
+func TestMyPlugin_SkipWhenNotConfigured(t *testing.T) {
+    p := myplugin.New()
+    // No env vars set
+    result, err := p.Execute(context.Background(), plugin.ReleaseContext{Version: "1.0.0"})
+    if err != nil {
+        t.Fatal(err)
+    }
+    if !result.Skipped {
+        t.Error("expected plugin to be skipped when not configured")
     }
 }
 ```
 
+See `pkg/builtins/registry_test.go` for a complete test example covering all built-ins.
+
+## External Plugins (Planned)
+
+Future versions of semrel will support **out-of-process external plugins** as
+standalone binaries, discoverable via the plugin registry at
+`https://semrels.github.io/semrel-registry`. These will communicate over gRPC
+using `api/proto/v1`.
+
+For now, all custom plugins must be registered in-process via `pkg/plugin.Registry`.
+
 ## Related
 
-- [ADR-001: gRPC Plugin Transport](adr/ADR-001-grpc-plugin-transport.md)
-- [Plugin proto definition](../api/proto/v1/semantic_release.proto)
-- [hashicorp/go-plugin](https://github.com/hashicorp/go-plugin)
-- [hashicorp/go-hclog](https://github.com/hashicorp/go-hclog)
+- [`pkg/plugin/plugin.go`](../pkg/plugin/plugin.go) — `Executor` interface + `Registry`
+- [`pkg/builtins/registry.go`](../pkg/builtins/registry.go) — 13 built-in plugin implementations
+- [Configuration Reference](config-reference.md) — `plugins:` config section
+- [ADR-001: gRPC Plugin Transport](adr/ADR-001-grpc-plugin-transport.md) — future external plugin transport

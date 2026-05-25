@@ -40,11 +40,10 @@ rules:
     bump: patch
 
 plugins:
-  - uses: git
-  - uses: changelog
   - uses: github
+  - uses: npm
     args:
-      repo: SemRels/semrel
+      registry: https://registry.npmjs.org
 ```
 
 ## Options
@@ -132,24 +131,49 @@ Defines the ordered list of plugins to run during a release.
 
 ```yaml
 plugins:
-  - uses: git                  # Built-in: create and push git tag
-  - uses: changelog            # Built-in: update CHANGELOG.md
-  - uses: github               # Built-in: create GitHub Release
+  - uses: github               # Built-in: create GitHub Release (env: GITHUB_TOKEN)
+  - uses: npm                  # Built-in: publish to npm (env: NPM_TOKEN)
+  - uses: docker               # Built-in: tag + push Docker image (env: DOCKER_IMAGE)
     args:
-      repo: owner/repo
-  - uses: custom-plugin        # External plugin binary
+      image: myrepo/myapp      # overrides DOCKER_IMAGE env var
+  - uses: slack                # Built-in: Slack notification (env: SLACK_WEBHOOK_URL)
+  - uses: custom-plugin        # External plugin binary (future)
     path: ./bin/custom-plugin
     args:
       key: value
 ```
 
+#### Built-in plugins
+
+The following plugins are available out of the box. Each reads its configuration
+from environment variables, with optional `args:` overrides per `.semrel.yaml`.
+
+| Name       | Category     | Required env var(s)                    | Description                        |
+|------------|-------------|----------------------------------------|------------------------------------|
+| `github`   | forge        | `GITHUB_TOKEN`                         | Create GitHub Release              |
+| `gitlab`   | forge        | `GITLAB_TOKEN`                         | Create GitLab Release              |
+| `gitea`    | forge        | `GITEA_TOKEN`, `GITEA_BASE_URL`        | Create Gitea Release               |
+| `npm`      | package      | `NPM_TOKEN`                            | Publish to npm registry            |
+| `docker`   | container    | `DOCKER_IMAGE`                         | Tag + push Docker image            |
+| `helm`     | container    | —                                      | Update `Chart.yaml` + package      |
+| `cargo`    | package      | `CARGO_REGISTRY_TOKEN`                 | Publish Rust crate                 |
+| `python`   | package      | `PYPI_TOKEN`                           | Publish Python package via twine   |
+| `gradle`   | package      | —                                      | Run `gradle publish`               |
+| `maven`    | package      | —                                      | Run `mvn deploy`                   |
+| `gobinary` | binary       | —                                      | Cross-compile Go binaries          |
+| `slack`    | notify       | `SLACK_WEBHOOK_URL`                    | Post Slack notification            |
+| `matrix`   | notify       | `MATRIX_HOMESERVER_URL`, `MATRIX_ROOM_ID`, `MATRIX_ACCESS_TOKEN` | Post Matrix/Element notification |
+
+> **Note:** Git tag creation (step 10) and CHANGELOG.md update (step 11) are always
+> performed by the core pipeline — they are not configurable as plugins.
+
 #### Plugin fields
 
 | Field  | Type   | Description                                                          |
 |--------|--------|----------------------------------------------------------------------|
-| `uses` | string | Plugin name (built-in) or identifier                                 |
-| `path` | string | Path to plugin binary (for external plugins)                         |
-| `args` | map    | Plugin-specific arguments (string keys, any value)                   |
+| `uses` | string | Built-in plugin name or identifier                                   |
+| `path` | string | Path to external plugin binary (future: for custom external plugins) |
+| `args` | map    | Plugin-specific arguments — override env var defaults                |
 
 ## CLI Flags
 
@@ -173,6 +197,7 @@ Runs the full release pipeline:
 7. Generate changelog
 8. Create annotated git tag
 9. Prepend to CHANGELOG.md
+10. Execute configured `plugins:` in order (github, npm, docker, …)
 
 ```bash
 semrel release
