@@ -158,6 +158,106 @@ func TestFindBranchConfig(t *testing.T) {
 	}
 }
 
+func TestValidate_Valid(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Branches:  []BranchConfig{{Name: "main"}},
+		Rules: []ReleaseRule{
+			{Type: "feat", Bump: "minor"},
+			{Type: "fix", Bump: "patch"},
+		},
+		Plugins: []PluginConfig{{Uses: "git"}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidate_EmptyBranchName(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Branches:  []BranchConfig{{Name: ""}},
+		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for empty branch name")
+	}
+}
+
+func TestValidate_DuplicateBranch(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Branches:  []BranchConfig{{Name: "main"}, {Name: "main"}},
+		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for duplicate branch name")
+	}
+}
+
+func TestValidate_InvalidBump(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules:     []ReleaseRule{{Type: "feat", Bump: "invalid"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for invalid bump value")
+	}
+}
+
+func TestValidate_DuplicateRuleType(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "feat", Bump: "minor"},
+			{Type: "feat", Bump: "major"},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for duplicate rule type")
+	}
+}
+
+func TestValidate_PluginMissingUsesAndPath(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
+		Plugins:   []PluginConfig{{Args: map[string]interface{}{"key": "value"}}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for plugin missing uses and path")
+	}
+}
+
+func TestValidate_TagPrefixWithSpace(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v ",
+		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for tagPrefix with whitespace")
+	}
+}
+
+func TestValidate_MultipleErrors(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v\t",
+		Branches:  []BranchConfig{{Name: ""}},
+		Rules: []ReleaseRule{
+			{Type: "", Bump: "badvalue"},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected multiple errors")
+	}
+	// Should mention multiple issues
+	errMsg := err.Error()
+	if len(errMsg) < 50 {
+		t.Errorf("expected detailed error message, got: %q", errMsg)
+	}
+}
+
 func TestLoadConfig_MaintenanceBranch(t *testing.T) {
 	yaml := `
 branches:
