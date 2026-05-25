@@ -3,182 +3,166 @@
 
 # Plugin Development Guide
 
-This guide explains how to write a semrel plugin using the `pkg/plugin.Executor`
-interface. Plugins execute **in-process** as part of the semrel release pipeline.
+semrel plugins are standalone executables. The core `semrel` binary discovers a plugin binary, starts it as a subprocess, and passes release context through environment variables.
 
-## Plugin Interface
+## Start here
 
-All plugins implement `pkg/plugin.Executor`:
+- Use [SemRels/plugin-template](https://github.com/SemRels/plugin-template) as the starting point for a new plugin.
+- See the standalone plugin repositories under [SemRels](https://github.com/SemRels) for reference implementations.
+- Plugins can be written in any language that can read environment variables and exit with the correct status code.
 
-```go
-// Executor is the in-process plugin interface.
-type Executor interface {
-    Name()    string    // unique name used in .semrel.yaml `uses:`
-    Version() string    // plugin version string (e.g. "1.0.0")
-    Validate() error    // validate config without side-effects
-    Execute(ctx context.Context, rel ReleaseContext) (*Result, error)
-}
-```
+## Execution model
 
-### ReleaseContext
-
-`Execute` receives all release information:
-
-```go
-type ReleaseContext struct {
-    Version         string            // new version, e.g. "1.2.3"
-    PreviousVersion string            // previous version
-    TagName         string            // git tag name, e.g. "v1.2.3"
-    Repository      string            // "owner/repo"
-    Changelog       string            // generated changelog text
-    CommitSHA       string            // HEAD commit SHA
-    IsPrerelease    bool
-    IsDryRun        bool
-    Metadata        map[string]string // args from .semrel.yaml
-}
-```
-
-### Result
-
-Return a `*Result` from `Execute`:
-
-```go
-type Result struct {
-    Name       string
-    Outputs    map[string]string // key-value pairs, e.g. {"release_url": "..."}
-    Skipped    bool
-    SkipReason string
-}
-
-// Helpers
-plugin.SuccessResult(name, outputs)       // success with outputs
-plugin.SkippedResult(name, reason)        // graceful skip
-```
-
-## Writing a Built-in Style Plugin
-
-Use `plugin.BasePlugin` to get default `Validate()` and version boilerplate:
-
-```go
-package myplugin
-
-import (
-    "context"
-    "fmt"
-    "os"
-
-    "github.com/GoSemantics/semrel/pkg/plugin"
-)
-
-type MyPlugin struct{ plugin.BasePlugin }
-
-func New() *MyPlugin {
-    return &MyPlugin{plugin.NewBasePlugin("myplugin", "1.0.0")}
-}
-
-func (p *MyPlugin) Validate() error {
-    if os.Getenv("MY_TOKEN") == "" {
-        return plugin.ErrInvalidConfig{
-            Plugin:  p.Name(),
-            Message: "MY_TOKEN env var is required",
-        }
-    }
-    return nil
-}
-
-func (p *MyPlugin) Execute(ctx context.Context, rel plugin.ReleaseContext) (*plugin.Result, error) {
-    // Always respect dry-run
-    if rel.IsDryRun {
-        return plugin.SuccessResult(p.Name(), map[string]string{"dry_run": "true"}), nil
-    }
-
-    token := os.Getenv("MY_TOKEN")
-    // ... do the actual work ...
-
-    return plugin.SuccessResult(p.Name(), map[string]string{
-        "version": rel.Version,
-        "url":     fmt.Sprintf("https://example.com/releases/%s", rel.TagName),
-    }), nil
-}
-```
-
-## Registering Your Plugin
-
-Add it to `pkg/builtins/registry.go` `allBuiltins()` to make it a core built-in,
-or register it dynamically:
-
-```go
-reg := plugin.NewRegistry()
-_ = reg.Register(myplugin.New())
-result, err := reg.Execute("myplugin", ctx, relCtx)
-```
-
-## Configuration in `.semrel.yaml`
+A config entry such as:
 
 ```yaml
 plugins:
-  - uses: myplugin
+  - uses: github
+```
+
+resolves to a binary named `semrel-plugin-github`.
+
+semrel resolves plugin binaries in this order:
+
+1. `path:` from `.semrel.yaml`
+2. `~/.semrel/plugins/semrel-plugin-<name>`
+3. `semrel-plugin-<name>` in `$PATH`
+
+When a plugin is invoked, semrel:
+
+1. Creates a child process for the plugin binary
+2. Passes release context as environment variables
+3. Adds plugin-specific config from `args:` as `SEMREL_PLUGIN_<KEY>` variables
+4. Treats exit code `0` as success and any non-zero exit code as failure
+
+## Environment variables
+
+### Release context
+
+| Variable | Description |
+|----------|-------------|
+| `SEMREL_VERSION` | New version string |
+| `SEMREL_TAG_NAME` | Full tag name |
+| `SEMREL_CHANGELOG` | Generated release changelog |
+| `SEMREL_REPOSITORY` | Repository slug |
+| `SEMREL_DRY_RUN` | `true` or `false` |
+| `SEMREL_IS_PRERELEASE` | `true` or `false` |
+
+### Plugin config from `args:`
+
+Each key in the plugin's `args:` block becomes `SEMREL_PLUGIN_<KEY>`.
+
+```yaml
+plugins:
+  - uses: docker
     args:
-      endpoint: https://custom.example.com   # available as rel.Metadata["endpoint"]
+      image: myorg/myapp
+      registry-url: ghcr.io
 ```
 
-`args` values are passed as `rel.Metadata` (all values converted to `string`).
+The plugin process receives:
 
-## Design Rules
+- `SEMREL_PLUGIN_IMAGE=myorg/myapp`
+- `SEMREL_PLUGIN_REGISTRY_URL=ghcr.io`
 
-| Rule | Reason |
-|------|--------|
-| **Always handle `IsDryRun`** — return `SuccessResult` with `dry_run=true` | Dry-run must never have side-effects |
-| **Return `SkippedResult` when misconfigured** (optional config) | Graceful degradation vs. hard errors |
-| **Return error for required config** (token missing) | Fail fast before any mutations |
-| **Read config from env vars** with `args:` overrides | Standard semrel convention |
-| **All logging to `os.Stderr`** | stdout is reserved for `--output-format json` |
+Key normalization rules:
 
-## Testing Your Plugin
+- Convert to uppercase
+- Replace `-` with `_`
+- Replace `.` with `_`
+- Replace spaces with `_`
 
-```go
-func TestMyPlugin_DryRun(t *testing.T) {
-    p := myplugin.New()
-    result, err := p.Execute(context.Background(), plugin.ReleaseContext{
-        Version:  "1.2.3",
-        TagName:  "v1.2.3",
-        IsDryRun: true,
-    })
-    if err != nil {
-        t.Fatal(err)
-    }
-    if result.Outputs["dry_run"] != "true" {
-        t.Error("expected dry_run=true")
-    }
-}
+## Minimal plugin contract
 
-func TestMyPlugin_SkipWhenNotConfigured(t *testing.T) {
-    p := myplugin.New()
-    // No env vars set
-    result, err := p.Execute(context.Background(), plugin.ReleaseContext{Version: "1.0.0"})
-    if err != nil {
-        t.Fatal(err)
-    }
-    if !result.Skipped {
-        t.Error("expected plugin to be skipped when not configured")
-    }
-}
+Your plugin binary should:
+
+1. Read the required `SEMREL_*` environment variables
+2. Perform its work
+3. Exit with `0` on success
+4. Exit with a non-zero code on failure
+
+A typical flow is:
+
+```text
+read env vars -> validate config -> respect dry-run -> perform action -> exit 0
 ```
 
-See `pkg/builtins/registry_test.go` for a complete test example covering all built-ins.
+## Example
 
-## External Plugins (Planned)
+This shell-style pseudocode shows the contract:
 
-Future versions of semrel will support **out-of-process external plugins** as
-standalone binaries, discoverable via the plugin registry at
-`https://semrels.github.io/semrel-registry`. These will communicate over gRPC
-using `api/proto/v1`.
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-For now, all custom plugins must be registered in-process via `pkg/plugin.Registry`.
+version="${SEMREL_VERSION}"
+tag="${SEMREL_TAG_NAME}"
+dry_run="${SEMREL_DRY_RUN}"
+image="${SEMREL_PLUGIN_IMAGE:-}"
+
+if [ -z "$image" ]; then
+  echo "SEMREL_PLUGIN_IMAGE is required" >&2
+  exit 1
+fi
+
+if [ "$dry_run" = "true" ]; then
+  echo "[dry-run] would publish $image:$version"
+  exit 0
+fi
+
+# perform the real publish step here
+
+echo "published $image:$tag"
+exit 0
+```
+
+## Local development workflow
+
+Build your plugin binary locally and point `path:` at it while iterating:
+
+```yaml
+plugins:
+  - path: ./bin/semrel-plugin-demo
+    args:
+      endpoint: https://staging.example.com
+```
+
+You can also install it into the standard location:
+
+```bash
+semrel plugin install demo
+```
+
+or manually place the binary in:
+
+- Unix/macOS: `~/.semrel/plugins/semrel-plugin-demo`
+- Windows: `~/.semrel/plugins/semrel-plugin-demo.exe` or `.cmd`
+
+## Reference implementations
+
+The standalone SemRels plugin repositories are the reference implementation for the current architecture, including providers, updaters, and hooks.
+
+Examples:
+
+- [SemRels/provider-github](https://github.com/SemRels/provider-github)
+- [SemRels/provider-gitlab](https://github.com/SemRels/provider-gitlab)
+- [SemRels/updater-npm](https://github.com/SemRels/updater-npm)
+- [SemRels/updater-docker](https://github.com/SemRels/updater-docker)
+- [SemRels/hook-slack](https://github.com/SemRels/hook-slack)
+- [SemRels/hook-jira](https://github.com/SemRels/hook-jira)
+
+## Design guidelines
+
+| Guideline | Why it matters |
+|-----------|----------------|
+| Respect `SEMREL_DRY_RUN` | Dry-run must not have side effects |
+| Fail fast for missing required config | Misconfiguration should be obvious |
+| Keep logs human-readable | Plugin output is streamed directly to the user |
+| Treat `args:` as plugin-owned config | Keeps the core binary generic |
+| Publish from a standalone repo | Lets plugins version and release independently |
 
 ## Related
 
-- [`pkg/plugin/plugin.go`](../pkg/plugin/plugin.go) — `Executor` interface + `Registry`
-- [`pkg/builtins/registry.go`](../pkg/builtins/registry.go) — 13 built-in plugin implementations
+- [Architecture Overview](architecture.md) — plugin execution flow and protocol
 - [Configuration Reference](config-reference.md) — `plugins:` config section
-- [ADR-001: gRPC Plugin Transport](adr/ADR-001-grpc-plugin-transport.md) — future external plugin transport
+- [SemRels/plugin-template](https://github.com/SemRels/plugin-template) — recommended starting point

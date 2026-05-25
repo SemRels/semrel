@@ -35,24 +35,23 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - `semrel release --dry-run`, `--force-bump-patch-version`, `--edit` flags
 - ADR docs: `docs/adr/`
 
-## v0.1.5 — Plugin Transport (gRPC)
-**Goal:** Out-of-process plugin foundation using hashicorp/go-plugin + gRPC.
+## v0.1.5 — Plugin Runtime ✅ (shipped)
+**Goal:** Out-of-process plugin execution using standalone binaries.
 
-- Protocol Buffers v3: `plugins/v1/proto/semantic_release.proto`
-  - RPCs: `VerifyConditions`, `AnalyzeCommits`, `GenerateNotes`, `Prepare`, `Publish`, `OnSuccess`, `OnFail`
-- hashicorp/go-plugin host integration
-- Plugin discovery: `.semrel/<GOOS>_<GOARCH>/<name>/<version>/`
-- Plugin registry client + auto-download
-- Air-gapped support (pre-populated `.semrel/` dir)
-- Logging contract: stdout reserved for handshake, all logs to stderr
-- Built-in plugin categories: **CI Condition**, **Provider**, **Commit Analyzer**, **Changelog Generator**, **Files Updater**, **Hooks**
+- Plugin discovery from `~/.semrel/plugins/semrel-plugin-<name>` and `$PATH`
+- Subprocess execution model for plugin binaries
+- Install flow via `semrel plugin install <name>`
+- Environment-variable contract for release context and plugin args
+- Logging contract: plugin output is streamed directly to the user
+- Plugin categories: **Provider**, **Updater**, **Hook**
 
 ## v0.2.0 — Plugin System ✅ (shipped)
-**Goal:** First-party plugins covering the core release workflow.
+**Goal:** Stable core/plugin boundary.
 
-- Plugin `Executor` interface and in-process `Registry` (`pkg/plugin`)
-- `pkg/builtins.DefaultRegistry()` wired into release pipeline (step 12)
-- Built-in plugins: `github`, `gitlab`, `gitea`, `npm`, `docker`, `helm`, `cargo`, `python`, `gradle`, `maven`, `gobinary`, `slack`, `matrix`
+- `pkg/plugininstance.Orchestrator` wired into the release pipeline
+- `pkg/builtins.DefaultRegistry()` reduced to an empty compatibility registry
+- Core binary ships with no bundled plugin implementations
+- Repeated plugin instances supported with different configs
 
 ## v0.2.5 — Changelog Engine
 **Goal:** Multi-format changelog rendering from a single source of truth.
@@ -71,13 +70,13 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Reusable workflow templates (pending: needs `workflow` OAuth scope — issues #17, #76)
 
 ## v0.4.0 — Ecosystem Plugins ✅ (shipped)
-**Goal:** Support every major language ecosystem and forge.
+**Goal:** Support every major language ecosystem and forge through standalone repos.
 
-- Forges: GitLab Releases, Gitea/Forgejo ✅
-- Languages: Go binaries (cross-compile), Python/PyPI, Java Gradle, Java Maven, Rust/Cargo, Helm ✅
-- Infrastructure: Homebrew Tap, Terraform/OpenTofu registry, OCI/ORAS artifacts (packages exist, not yet in DefaultRegistry)
-- Security: SBOM (CycloneDX/SPDX), Cosign signing, SLSA provenance
-- Notifications: Discord, Microsoft Teams, Generic HTTP webhook
+- Providers: GitHub, GitLab, Gitea/Forgejo, Bitbucket ✅
+- Updaters: npm, Docker, Helm, Cargo, Python, Gradle, Maven, Go binary, NuGet, Homebrew, Terraform ✅
+- Hooks: Slack, Matrix, Email, Jira, Git plugin ✅
+- Plugins version and release independently from the core CLI
+- Security and release integrations continue to land in standalone plugin repos
 
 ## v0.5.0 — Monorepo & Advanced
 **Goal:** Full monorepo support and advanced release workflows.
@@ -90,4 +89,3 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Pre-release channels (alpha/beta/rc) per branch
 - Release lock, Commitlint, Interactive release notes editor
 - Jira/Linear issue auto-close, Release analytics, Plugin SDK for third-party plugins
-
