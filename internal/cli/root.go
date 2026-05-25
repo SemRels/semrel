@@ -12,12 +12,14 @@ import (
 	"strings"
 
 	"github.com/GoSemantics/semrel/internal/colors"
+	"github.com/GoSemantics/semrel/pkg/builtins"
 	"github.com/GoSemantics/semrel/pkg/changelog"
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
 	"github.com/GoSemantics/semrel/pkg/editor"
 	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/lock"
+	"github.com/GoSemantics/semrel/pkg/plugin"
 	"github.com/GoSemantics/semrel/pkg/semver"
 	"github.com/spf13/cobra"
 )
@@ -330,10 +332,49 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		fmt.Println(colors.Success("Updated CHANGELOG.md"))
 	}
 
+	// 12. Run configured plugins
+	if len(cfg.Plugins) > 0 {
+		reg := builtins.DefaultRegistry()
+		relCtx := plugin.ReleaseContext{
+			Version:      nextVer.String(),
+			TagName:      nextTag,
+			Repository:   os.Getenv("SEMREL_REPOSITORY"),
+			Changelog:    changelogEntry,
+			IsPrerelease: nextVer.Prerelease != "",
+			IsDryRun:     dryRun,
+		}
+		for _, p := range cfg.Plugins {
+			relCtx.Metadata = argsToMeta(p.Args)
+			result, err := reg.Execute(p.Uses, ctx, relCtx)
+			if err != nil {
+				return fmt.Errorf("plugin %q failed: %w", p.Uses, err)
+			}
+			if result != nil && result.Skipped {
+				if outputFormat != "json" {
+					fmt.Println(colors.Warning(fmt.Sprintf("Plugin %q skipped: %s", p.Uses, result.SkipReason)))
+				}
+			} else if outputFormat != "json" {
+				fmt.Println(colors.Success(fmt.Sprintf("Plugin %q executed successfully", p.Uses)))
+			}
+		}
+	}
+
 	if outputFormat == "json" {
 		return printSummary(summary, outputFormat)
 	}
 	return nil
+}
+
+// argsToMeta converts plugin args (map[string]interface{}) to map[string]string.
+func argsToMeta(args map[string]interface{}) map[string]string {
+	if len(args) == 0 {
+		return nil
+	}
+	meta := make(map[string]string, len(args))
+	for k, v := range args {
+		meta[k] = fmt.Sprintf("%v", v)
+	}
+	return meta
 }
 
 func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {
