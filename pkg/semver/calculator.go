@@ -139,7 +139,80 @@ func (c *Calculator) NextVersionForBranch(current *Version, hasFeat, hasFix, has
 	}
 	return c.NextVersion(current, hasFeat, hasFix, hasBreaking)
 }
-// Returns "" if no releasable commits exist.
+
+// NextPrereleaseVersion computes the next pre-release version for a given channel.
+//
+// Algorithm:
+//  1. If current is not a pre-release: compute next stable base, start at <base>-<channel>.1.
+//  2. If current is already a pre-release for the same channel:
+//     - If hasBreaking and major must go higher: start fresh at new major base.
+//     - Otherwise: increment the pre-release counter (base doesn't change).
+//  3. If current is a pre-release for a different channel: start at <current base>-<channel>.1.
+//
+// Example: channel="beta", current=1.2.3, hasFeat=true    → 1.3.0-beta.1
+//
+//	channel="beta", current=1.3.0-beta.1, hasFeat=true → 1.3.0-beta.2
+//	channel="beta", current=1.3.0-beta.2, hasBreaking=true → 2.0.0-beta.1
+//	channel="beta", current=1.3.0-alpha.5, hasFeat=true → 1.3.0-beta.1
+//
+// See: https://github.com/SemRels/semrel/issues/45
+func (c *Calculator) NextPrereleaseVersion(current *Version, hasFeat, hasFix, hasBreaking bool, channel string) *Version {
+	if !hasFeat && !hasFix && !hasBreaking {
+		return nil
+	}
+	if channel == "" {
+		return c.NextVersion(current, hasFeat, hasFix, hasBreaking)
+	}
+
+	currentBase := &Version{Major: current.Major, Minor: current.Minor, Patch: current.Patch}
+
+	if current.Prerelease != "" {
+		counter := prereleaseCounter(current.Prerelease, channel)
+
+		if counter > 0 {
+			// Same channel — check if a major bump is required
+			if hasBreaking {
+				// Breaking change requires a new major base
+				newBase := &Version{Major: currentBase.Major + 1, Minor: 0, Patch: 0}
+				newBase.Prerelease = channel + ".1"
+				return newBase
+			}
+			// Stay on the same base, increment counter
+			result := &Version{Major: currentBase.Major, Minor: currentBase.Minor, Patch: currentBase.Patch}
+			result.Prerelease = fmt.Sprintf("%s.%d", channel, counter+1)
+			return result
+		}
+
+		// Different channel — start fresh series on the SAME base
+		result := &Version{Major: currentBase.Major, Minor: currentBase.Minor, Patch: currentBase.Patch}
+		result.Prerelease = channel + ".1"
+		return result
+	}
+
+	// Current is stable — compute next stable base and start fresh
+	base := c.NextVersion(currentBase, hasFeat, hasFix, hasBreaking)
+	if base == nil {
+		return nil
+	}
+	base.Prerelease = channel + ".1"
+	return base
+}
+
+// prereleaseCounter returns the numeric counter from a pre-release string like "beta.3".
+// Returns 0 if the string does not match the expected format for the given channel.
+func prereleaseCounter(prerelease, channel string) int {
+	prefix := channel + "."
+	if !strings.HasPrefix(prerelease, prefix) {
+		return 0
+	}
+	n, err := strconv.Atoi(prerelease[len(prefix):])
+	if err != nil || n < 1 {
+		return 0
+	}
+	return n
+}
+
+// BumpFromRules analyses commits against release rules and returns the bump level.
 func BumpFromRules(commitTypes []string, rules map[string]string, hasBreaking bool) string {
 	if hasBreaking {
 		return "major"
