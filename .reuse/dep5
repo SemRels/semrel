@@ -23,6 +23,7 @@ Files: Makefile
  buf.yaml
  buf.gen.yaml
  .semrel.yaml.example
+ .goreleaser.yaml
 Copyright: 2026 The semrel Authors
 License: Apache-2.0
 
