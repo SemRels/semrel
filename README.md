@@ -2,9 +2,9 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/GoSemantics/semrel)](https://goreportcard.com/report/github.com/GoSemantics/semrel)
-[![CI](https://github.com/GoSemantics/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/GoSemantics/semrel/actions/workflows/ci.yaml)
+[![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/0/badge)](https://www.bestpractices.dev/projects/0)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/GoSemantics/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/GoSemantics/semrel)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 
 > **Status: pre-alpha — actively under development. See [ROADMAP.md](ROADMAP.md).**
 
@@ -44,12 +44,12 @@ Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [d
 
 - **Core Engine**: Conventional Commits analysis, SemVer calculation, changelog generation
 - **Plugin System**: gRPC-based out-of-process plugins (see [ADR-001](docs/adr/ADR-001-grpc-plugin-transport.md))
-- **Plugin SDK**: [`semrel-plugins`](https://github.com/GoSemantics/semrel-plugins) — reference SDK for external plugins
+- **Plugin SDK**: [`semrel-plugins`](https://github.com/SemRels/semrel-plugins) — reference SDK for external plugins
 
 ## Documentation
 
 - [Architecture Overview](docs/adr/) — ADRs and design documents
-- [Plugin Development Guide](https://github.com/GoSemantics/semrel-plugins) — Plugin SDK
+- [Plugin Development Guide](https://github.com/SemRels/semrel-plugins) — Plugin SDK
 - [Configuration Reference](docs/config-reference.md) _(coming soon)_
 - [ROADMAP](ROADMAP.md) — public project roadmap
 
@@ -62,7 +62,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions require:
 
 ## Security
 
-Please report vulnerabilities via [GitHub Security Advisories](https://github.com/GoSemantics/semrel/security/advisories/new). See [SECURITY.md](SECURITY.md) for the full policy.
+Please report vulnerabilities via [GitHub Security Advisories](https://github.com/SemRels/semrel/security/advisories/new). See [SECURITY.md](SECURITY.md) for the full policy.
 
 ## License
 

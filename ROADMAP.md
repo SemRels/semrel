@@ -1,6 +1,6 @@
 # Roadmap
 
-This document describes the planned milestones for semrel. For detailed issue tracking see the [GitHub Milestones](https://github.com/GoSemantics/semrel/milestones).
+This document describes the planned milestones for semrel. For detailed issue tracking see the [GitHub Milestones](https://github.com/SemRels/semrel/milestones).
 
 ## What we are building
 

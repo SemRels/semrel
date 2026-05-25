@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package config provides .semrel.yaml configuration parsing.
-// See: https://github.com/GoSemantics/semrel/issues/4
+// See: https://github.com/SemRels/semrel/issues/4
 package config
 
 import (
@@ -40,7 +40,7 @@ type PluginConfig struct {
 }
 
 // LoadConfig loads configuration from the given YAML file path.
-// Issue: https://github.com/GoSemantics/semrel/issues/4
+// Issue: https://github.com/SemRels/semrel/issues/4
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package semver provides semantic version parsing and bumping.
-// See: https://github.com/GoSemantics/semrel/issues/2
+// See: https://github.com/SemRels/semrel/issues/2
 package semver
 
 import (
@@ -82,7 +82,7 @@ func ParseVersion(s string) (*Version, error) {
 }
 
 // Calculator determines the next semantic version.
-// Issue: https://github.com/GoSemantics/semrel/issues/2
+// Issue: https://github.com/SemRels/semrel/issues/2
 type Calculator struct{}
 
 // NewCalculator creates a new SemVer calculator.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// SPDX-FileCopyrightText: 2026 The go-semrel Authors
+// SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // go-semrel is a Go-based semantic release system with a plugin architecture.
 package main
