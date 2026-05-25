@@ -42,22 +42,23 @@ rules:
 plugins:
   - uses: github
   - uses: npm
+  - uses: docker
     args:
-      registry: https://registry.npmjs.org
+      image: myorg/myapp
 ```
 
 ## Options
 
 ### `tagPrefix`
 
-| Field       | Type   | Default | Description                                      |
-|-------------|--------|---------|--------------------------------------------------|
-| `tagPrefix` | string | `"v"`   | Prefix prepended to the version number in git tags. |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tagPrefix` | string | `"v"` | Prefix prepended to the version number in git tags. |
 
 ```yaml
-tagPrefix: "v"       # creates tags like v1.2.3
-tagPrefix: ""        # creates tags like 1.2.3
-tagPrefix: "release-" # creates tags like release-1.2.3
+tagPrefix: "v"         # creates tags like v1.2.3
+tagPrefix: ""          # creates tags like 1.2.3
+tagPrefix: "release-"  # creates tags like release-1.2.3
 ```
 
 ### `branches`
@@ -68,26 +69,25 @@ If omitted, all branches are eligible.
 
 ```yaml
 branches:
-  - name: main              # Stable releases
-  - name: next              # Pre-release channel "next"
+  - name: main
+  - name: next
     prerelease: next
-  - name: 1.x               # Maintenance — patch bumps only
+  - name: 1.x
     maintenance: true
-  - name: release/*         # Wildcard pattern
+  - name: release/*
 ```
 
 #### Branch fields
 
-| Field         | Type    | Default | Description                                           |
-|---------------|---------|---------|-------------------------------------------------------|
-| `name`        | string  | —       | Branch name or glob pattern (e.g. `release/*`)        |
-| `prerelease`  | string  | —       | Pre-release channel name (e.g. `alpha`, `beta`, `next`). Versions will be `1.3.0-beta.1`, `1.3.0-beta.2`, … |
-| `maintenance` | boolean | `false` | If `true` (or if name matches `N.x`/`N.M.x`), only patch bumps are allowed. |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | — | Branch name or glob pattern (for example `release/*`) |
+| `prerelease` | string | — | Pre-release channel name such as `alpha`, `beta`, or `next` |
+| `maintenance` | boolean | `false` | If `true` (or if name matches `N.x` or `N.M.x`), only patch bumps are allowed |
 
 #### Maintenance branch auto-detection
 
-Branches matching the pattern `N.x` or `N.M.x` (e.g. `1.x`, `1.2.x`, `2.x`)
-are automatically treated as maintenance branches without setting `maintenance: true`.
+Branches matching the pattern `N.x` or `N.M.x` (for example `1.x`, `1.2.x`, `2.x`) are automatically treated as maintenance branches without setting `maintenance: true`.
 
 ### `rules`
 
@@ -106,82 +106,96 @@ rules:
     bump: patch
 ```
 
-Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** bump
-regardless of the rules.
+Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** bump regardless of the rules.
 
 #### Rule fields
 
-| Field  | Type   | Description                                          |
-|--------|--------|------------------------------------------------------|
-| `type` | string | Conventional commit type (e.g. `feat`, `fix`, `docs`) |
-| `bump` | string | One of `major`, `minor`, `patch`                    |
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Conventional commit type (for example `feat`, `fix`, `docs`) |
+| `bump` | string | One of `major`, `minor`, `patch` |
 
 #### Default rules
 
-| Commit type | Bump  |
-|-------------|-------|
-| `feat`      | minor |
-| `fix`       | patch |
-| `perf`      | patch |
-| `revert`    | patch |
+| Commit type | Bump |
+|-------------|------|
+| `feat` | minor |
+| `fix` | patch |
+| `perf` | patch |
+| `revert` | patch |
 
 ### `plugins`
 
-Defines the ordered list of plugins to run during a release.
+Defines the ordered list of external plugin binaries to run during a release.
+
+- `uses: github` resolves to `semrel-plugin-github`
+- semrel first checks `~/.semrel/plugins/`, then falls back to `$PATH`
+- `path:` can be used to point at a specific binary
+- Install a plugin with `semrel plugin install github`, or place the binary manually in `~/.semrel/plugins/`
 
 ```yaml
 plugins:
-  - uses: github               # Built-in: create GitHub Release (env: GITHUB_TOKEN)
-  - uses: npm                  # Built-in: publish to npm (env: NPM_TOKEN)
-  - uses: docker               # Built-in: tag + push Docker image (env: DOCKER_IMAGE)
+  - uses: github
+  - uses: npm
+  - uses: docker
     args:
-      image: myrepo/myapp      # overrides DOCKER_IMAGE env var
-  - uses: slack                # Built-in: Slack notification (env: SLACK_WEBHOOK_URL)
-  - uses: custom-plugin        # External plugin binary (future)
-    path: ./bin/custom-plugin
-    args:
-      key: value
+      image: myorg/myapp
 ```
 
-#### Built-in plugins
+`args:` values are exposed to the plugin process as `SEMREL_PLUGIN_<KEY>` environment variables. Keys are uppercased and normalized by replacing `-`, `.`, and spaces with `_`.
 
-The following plugins are available out of the box. Each reads its configuration
-from environment variables, with optional `args:` overrides per `.semrel.yaml`.
+#### Common standalone plugins
 
-| Name       | Category     | Required env var(s)                    | Description                        |
-|------------|-------------|----------------------------------------|------------------------------------|
-| `github`   | forge        | `GITHUB_TOKEN`                         | Create GitHub Release              |
-| `gitlab`   | forge        | `GITLAB_TOKEN`                         | Create GitLab Release              |
-| `gitea`    | forge        | `GITEA_TOKEN`, `GITEA_BASE_URL`        | Create Gitea Release               |
-| `npm`      | package      | `NPM_TOKEN`                            | Publish to npm registry            |
-| `docker`   | container    | `DOCKER_IMAGE`                         | Tag + push Docker image            |
-| `helm`     | container    | —                                      | Update `Chart.yaml` + package      |
-| `cargo`    | package      | `CARGO_REGISTRY_TOKEN`                 | Publish Rust crate                 |
-| `python`   | package      | `PYPI_TOKEN`                           | Publish Python package via twine   |
-| `gradle`   | package      | —                                      | Run `gradle publish`               |
-| `maven`    | package      | —                                      | Run `mvn deploy`                   |
-| `gobinary` | binary       | —                                      | Cross-compile Go binaries          |
-| `slack`    | notify       | `SLACK_WEBHOOK_URL`                    | Post Slack notification            |
-| `matrix`   | notify       | `MATRIX_HOMESERVER_URL`, `MATRIX_ROOM_ID`, `MATRIX_ACCESS_TOKEN` | Post Matrix/Element notification |
+| Name | Type | Binary | Repository |
+|------|------|--------|------------|
+| `github` | Provider | `semrel-plugin-github` | [SemRels/provider-github](https://github.com/SemRels/provider-github) |
+| `gitlab` | Provider | `semrel-plugin-gitlab` | [SemRels/provider-gitlab](https://github.com/SemRels/provider-gitlab) |
+| `gitea` | Provider | `semrel-plugin-gitea` | [SemRels/provider-gitea](https://github.com/SemRels/provider-gitea) |
+| `bitbucket` | Provider | `semrel-plugin-bitbucket` | [SemRels/provider-bitbucket](https://github.com/SemRels/provider-bitbucket) |
+| `npm` | Updater | `semrel-plugin-npm` | [SemRels/updater-npm](https://github.com/SemRels/updater-npm) |
+| `docker` | Updater | `semrel-plugin-docker` | [SemRels/updater-docker](https://github.com/SemRels/updater-docker) |
+| `helm` | Updater | `semrel-plugin-helm` | [SemRels/updater-helm](https://github.com/SemRels/updater-helm) |
+| `cargo` | Updater | `semrel-plugin-cargo` | [SemRels/updater-cargo](https://github.com/SemRels/updater-cargo) |
+| `python` | Updater | `semrel-plugin-python` | [SemRels/updater-python](https://github.com/SemRels/updater-python) |
+| `gradle` | Updater | `semrel-plugin-gradle` | [SemRels/updater-gradle](https://github.com/SemRels/updater-gradle) |
+| `maven` | Updater | `semrel-plugin-maven` | [SemRels/updater-maven](https://github.com/SemRels/updater-maven) |
+| `gobinary` | Updater | `semrel-plugin-gobinary` | [SemRels/updater-go](https://github.com/SemRels/updater-go) |
+| `nuget` | Updater | `semrel-plugin-nuget` | [SemRels/updater-nuget](https://github.com/SemRels/updater-nuget) |
+| `homebrew` | Updater | `semrel-plugin-homebrew` | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
+| `terraform` | Updater | `semrel-plugin-terraform` | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
+| `slack` | Hook | `semrel-plugin-slack` | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
+| `matrix` | Hook | `semrel-plugin-matrix` | [SemRels/hook-matrix](https://github.com/SemRels/hook-matrix) |
+| `email` | Hook | `semrel-plugin-email` | [SemRels/hook-email](https://github.com/SemRels/hook-email) |
+| `jira` | Hook | `semrel-plugin-jira` | [SemRels/hook-jira](https://github.com/SemRels/hook-jira) |
 
-> **Note:** Git tag creation (step 10) and CHANGELOG.md update (step 11) are always
-> performed by the core pipeline — they are not configurable as plugins.
+> **Note:** Git tag creation and `CHANGELOG.md` updates are always performed by the core pipeline. They are not configured as plugins.
 
 #### Plugin fields
 
-| Field  | Type   | Description                                                          |
-|--------|--------|----------------------------------------------------------------------|
-| `uses` | string | Built-in plugin name or identifier                                   |
-| `path` | string | Path to external plugin binary (future: for custom external plugins) |
-| `args` | map    | Plugin-specific arguments — override env var defaults                |
+| Field | Type | Description |
+|-------|------|-------------|
+| `uses` | string | Plugin name that resolves to `semrel-plugin-<uses>` |
+| `path` | string | Optional explicit path to a plugin binary |
+| `args` | map | Plugin-specific arguments, exposed as `SEMREL_PLUGIN_<KEY>` env vars |
+
+#### Local development example
+
+```yaml
+plugins:
+  - path: ./bin/semrel-plugin-demo
+    args:
+      endpoint: https://staging.example.com
+```
+
+When `path:` is set, semrel skips normal name-based discovery and executes that binary directly.
 
 ## CLI Flags
 
-| Flag        | Type   | Default          | Description                              |
-|-------------|--------|------------------|------------------------------------------|
-| `--config`  | string | `.semrel.yaml`   | Path to configuration file               |
-| `--dry-run` | bool   | `false`          | Simulate release without making changes  |
-| `--version` | —      | —                | Print version and exit                   |
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--config` | string | `.semrel.yaml` | Path to configuration file |
+| `--dry-run` | bool | `false` | Simulate release without making changes |
+| `--version` | — | — | Print version and exit |
 
 ## Subcommands
 
@@ -193,16 +207,25 @@ Runs the full release pipeline:
 3. Read git tags to find the last released version
 4. Collect commits since the last tag
 5. Parse commits using Conventional Commits
-6. Calculate next version (respecting maintenance/prerelease settings)
+6. Calculate next version
 7. Generate changelog
 8. Create annotated git tag
-9. Prepend to CHANGELOG.md
-10. Execute configured `plugins:` in order (github, npm, docker, …)
+9. Prepend to `CHANGELOG.md`
+10. Execute configured plugin binaries in order
 
 ```bash
 semrel release
-semrel release --dry-run      # Preview without making changes
+semrel release --dry-run
 semrel release --config .semrel.yaml
+```
+
+### `semrel plugin install`
+
+Installs a standalone plugin binary into `~/.semrel/plugins/`.
+
+```bash
+semrel plugin install github
+semrel plugin install npm
 ```
 
 ### `semrel lint`

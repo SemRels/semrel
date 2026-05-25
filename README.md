@@ -13,25 +13,33 @@ A Go-based semantic versioning and release system with a plugin architecture tha
 ## Features
 
 - 🔍 **Conventional Commits** parser with configurable bump rules
-- 📦 **13 built-in plugins** — GitHub Releases, GitLab, Gitea, npm, Docker, Helm, Cargo, PyPI, Gradle, Maven, Go binary, Slack, Matrix
-- 📝 **Multi-format Changelog** — Markdown (Keep a Changelog), per-package monorepo changelogs
+- 🔌 **Rich ecosystem of standalone plugins** for providers, package updaters, and hooks
+- 📝 **Multi-format changelog** — Markdown (Keep a Changelog), per-package monorepo changelogs
 - 🏗️ **Monorepo support** — independent/lockstep versioning, package discovery, dependency graph, per-package changelogs
 - 🔐 **Supply-chain security** — Cosign signing, CycloneDX/SPDX SBOM, SLSA Level 1 provenance
 - ⚙️ **GitHub Actions** native integration
-- 🔌 **Plugin SDK** — build in-process plugins with the official Go interface; external gRPC plugins planned
+- 🧩 **Plugin runtime** — subprocess-based plugin execution from `~/.semrel/plugins/` or `$PATH`
 - 🔗 **Issue tracking** — Jira and GitHub issue reference extraction from commit messages
 - 📊 **Release analytics** — append-only NDJSON release history tracking
 - ✅ **commitlint** — validate commit messages from CLI, git range, or stdin
 
+## Installation
+
+```bash
+go install github.com/GoSemantics/semrel/cmd/semrel@latest
+semrel --version
+```
+
+Install any plugins you want to use:
+
+```bash
+semrel plugin install github
+semrel plugin install npm
+```
+
 ## Quick Start
 
 ```bash
-# Install
-go install github.com/GoSemantics/semrel/cmd/semrel@latest
-
-# Check version
-semrel --version
-
 # Validate commit messages
 semrel lint
 
@@ -42,21 +50,58 @@ semrel release --dry-run
 semrel release
 ```
 
+## Available Plugins
+
+| Plugin | Type | Repo |
+|--------|------|------|
+| github | Provider | [SemRels/provider-github](https://github.com/SemRels/provider-github) |
+| gitlab | Provider | [SemRels/provider-gitlab](https://github.com/SemRels/provider-gitlab) |
+| gitea | Provider | [SemRels/provider-gitea](https://github.com/SemRels/provider-gitea) |
+| bitbucket | Provider | [SemRels/provider-bitbucket](https://github.com/SemRels/provider-bitbucket) |
+| npm | Updater | [SemRels/updater-npm](https://github.com/SemRels/updater-npm) |
+| docker | Updater | [SemRels/updater-docker](https://github.com/SemRels/updater-docker) |
+| helm | Updater | [SemRels/updater-helm](https://github.com/SemRels/updater-helm) |
+| cargo | Updater | [SemRels/updater-cargo](https://github.com/SemRels/updater-cargo) |
+| python | Updater | [SemRels/updater-python](https://github.com/SemRels/updater-python) |
+| gradle | Updater | [SemRels/updater-gradle](https://github.com/SemRels/updater-gradle) |
+| maven | Updater | [SemRels/updater-maven](https://github.com/SemRels/updater-maven) |
+| nuget | Updater | [SemRels/updater-nuget](https://github.com/SemRels/updater-nuget) |
+| gobinary | Updater | [SemRels/updater-go](https://github.com/SemRels/updater-go) |
+| homebrew | Updater | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
+| terraform | Updater | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
+| slack | Hook | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
+| matrix | Hook | [SemRels/hook-matrix](https://github.com/SemRels/hook-matrix) |
+| email | Hook | [SemRels/hook-email](https://github.com/SemRels/hook-email) |
+| jira | Hook | [SemRels/hook-jira](https://github.com/SemRels/hook-jira) |
+
 ## Configuration
 
-Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [docs/config-reference.md](docs/config-reference.md) for all options.
+Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust it for your project. Plugin entries now refer to standalone binaries, for example:
+
+```yaml
+plugins:
+  - uses: github
+  - uses: npm
+  - uses: docker
+    args:
+      image: myorg/myapp
+```
+
+See [docs/config-reference.md](docs/config-reference.md) for all options.
 
 ## Architecture
 
-- **Core Engine**: Conventional Commits analysis, SemVer calculation, changelog generation, git tag creation
-- **Plugin System**: 13 in-process built-in plugins (`pkg/builtins`); external gRPC plugins planned (see [docs/architecture.md](docs/architecture.md))
-- **Plugin Registry**: `https://semrels.github.io/semrel-registry` — community plugin discovery (in development)
+- **Core engine**: Conventional Commits analysis, SemVer calculation, changelog generation, git tag creation
+- **Plugin system**: `pkg/plugininstance.Orchestrator` launches standalone plugin binaries in subprocesses
+- **Plugin discovery**: `~/.semrel/plugins/semrel-plugin-<name>` first, then `$PATH`
+
+See [docs/architecture.md](docs/architecture.md) for the full design.
 
 ## Documentation
 
 - [Architecture Overview](docs/architecture.md) — pipeline design and component overview
 - [Configuration Reference](docs/config-reference.md) — all `.semrel.yaml` options
-- [Plugin Development Guide](docs/plugin-development.md) — build custom plugins
+- [Plugin Development Guide](docs/plugin-development.md) — build standalone plugins
 - [CNCF Due Diligence](docs/cncf-due-diligence.md) — project overview for CNCF Sandbox application
 - [ADRs](docs/adr/) — architectural decision records
 - [ROADMAP](ROADMAP.md) — public project roadmap
