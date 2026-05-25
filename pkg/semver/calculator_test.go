@@ -210,3 +210,86 @@ func TestNextVersionForBranch_NonMaintenanceDelegates(t *testing.T) {
 		t.Errorf("expected 2.0.0 on normal branch, got %v", got)
 	}
 }
+
+func TestNextPrereleaseVersion_FirstRelease(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	// feat → next stable would be 1.3.0, first beta = 1.3.0-beta.1
+	got := c.NextPrereleaseVersion(cur, true, false, false, "beta")
+	if got == nil || got.String() != "1.3.0-beta.1" {
+		t.Errorf("expected 1.3.0-beta.1, got %v", got)
+	}
+
+	// fix → next stable would be 1.2.4, first rc = 1.2.4-rc.1
+	got = c.NextPrereleaseVersion(cur, false, true, false, "rc")
+	if got == nil || got.String() != "1.2.4-rc.1" {
+		t.Errorf("expected 1.2.4-rc.1, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_Increment(t *testing.T) {
+	c := NewCalculator()
+	// Already at 1.3.0-beta.2 — same base, increment counter
+	cur := &Version{Major: 1, Minor: 3, Patch: 0, Prerelease: "beta.2"}
+
+	got := c.NextPrereleaseVersion(cur, true, false, false, "beta")
+	if got == nil || got.String() != "1.3.0-beta.3" {
+		t.Errorf("expected 1.3.0-beta.3, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_DifferentChannel(t *testing.T) {
+	c := NewCalculator()
+	// Currently on alpha, switching to beta for same base
+	cur := &Version{Major: 1, Minor: 3, Patch: 0, Prerelease: "alpha.5"}
+
+	got := c.NextPrereleaseVersion(cur, true, false, false, "beta")
+	// Different channel, so start fresh beta.1
+	if got == nil || got.String() != "1.3.0-beta.1" {
+		t.Errorf("expected 1.3.0-beta.1 for new channel, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_Breaking(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	got := c.NextPrereleaseVersion(cur, false, false, true, "alpha")
+	if got == nil || got.String() != "2.0.0-alpha.1" {
+		t.Errorf("expected 2.0.0-alpha.1, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_NoChannel(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	// Empty channel = stable release
+	got := c.NextPrereleaseVersion(cur, true, false, false, "")
+	if got == nil || got.String() != "1.3.0" {
+		t.Errorf("expected 1.3.0 for empty channel, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_BreakingDuringBeta(t *testing.T) {
+	c := NewCalculator()
+	// Already at 1.3.0-beta.2, breaking change comes in → 2.0.0-beta.1
+	cur := &Version{Major: 1, Minor: 3, Patch: 0, Prerelease: "beta.2"}
+
+	got := c.NextPrereleaseVersion(cur, false, false, true, "beta")
+	if got == nil || got.String() != "2.0.0-beta.1" {
+		t.Errorf("expected 2.0.0-beta.1 for breaking during beta, got %v", got)
+	}
+}
+
+func TestNextPrereleaseVersion_NoCommits(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	got := c.NextPrereleaseVersion(cur, false, false, false, "beta")
+	if got != nil {
+		t.Errorf("expected nil for no releasable commits, got %v", got)
+	}
+}
+
