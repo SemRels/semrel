@@ -125,3 +125,92 @@ func TestRenderMarkdown_EmptyDate(t *testing.T) {
 		t.Error("missing version header")
 	}
 }
+
+func TestRenderKeepAChangelog_DefaultConfig(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v1.2.0",
+		Date:    time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
+		Features: []Entry{
+			{Description: "add webhook support"},
+			{Scope: "api", Description: "new auth endpoint"},
+		},
+		Fixes: []Entry{
+			{Description: "fix null pointer"},
+		},
+		Breaking: []Entry{
+			{Description: "removed legacy auth"},
+		},
+	}
+	cfg := DefaultSectionConfig()
+	out := rn.RenderKeepAChangelog(cfg)
+
+	if !strings.Contains(out, "## [1.2.0] - 2026-05-25") {
+		t.Errorf("expected KaC header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "### Added") {
+		t.Error("expected 'Added' section")
+	}
+	if !strings.Contains(out, "### Fixed") {
+		t.Error("expected 'Fixed' section")
+	}
+	if !strings.Contains(out, "### ⚠ Breaking Changes") {
+		t.Error("expected '⚠ Breaking Changes' section")
+	}
+	// Uses dash bullets not asterisks for list items
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "* ") {
+			t.Errorf("KaC format should use '- ' not '* ' for list items, found: %q", line)
+		}
+	}
+	if !strings.Contains(out, "- add webhook support") {
+		t.Error("missing feature entry")
+	}
+}
+
+func TestRenderKeepAChangelog_CustomConfig(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v2.0.0",
+		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Features: []Entry{{Description: "new thing"}},
+	}
+	cfg := SectionConfig{
+		Breaking: "BREAKING",
+		Features: "New Features",
+		Fixes:    "Bugfixes",
+		Others:   "Misc",
+	}
+	out := rn.RenderKeepAChangelog(cfg)
+	if !strings.Contains(out, "### New Features") {
+		t.Errorf("expected custom section name, got:\n%s", out)
+	}
+	if strings.Contains(out, "### Added") {
+		t.Error("should not use default section name when custom is set")
+	}
+}
+
+func TestRenderKeepAChangelog_StripVPrefix(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v1.0.0",
+		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Fixes:   []Entry{{Description: "fix thing"}},
+	}
+	out := rn.RenderKeepAChangelog(DefaultSectionConfig())
+	if strings.Contains(out, "[v1.0.0]") {
+		t.Error("version should not have 'v' prefix in KaC format")
+	}
+	if !strings.Contains(out, "[1.0.0]") {
+		t.Error("missing bracketed version")
+	}
+}
+
+func TestRenderKeepAChangelog_OtherSection(t *testing.T) {
+	rn := &ReleaseNotes{
+		Version: "v1.0.0",
+		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Others:  []Entry{{Type: "chore", Description: "update deps"}},
+	}
+	out := rn.RenderKeepAChangelog(DefaultSectionConfig())
+	if !strings.Contains(out, "### Changed") {
+		t.Error("expected 'Changed' section for others")
+	}
+}

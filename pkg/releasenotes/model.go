@@ -92,6 +92,60 @@ func (r *ReleaseNotes) RenderMarkdown() string {
 	return sb.String()
 }
 
+// SectionConfig defines the mapping from commit categories to Keep-a-Changelog section names.
+// See: https://keepachangelog.com/en/1.0.0/
+type SectionConfig struct {
+	Breaking string // Default: "⚠ Breaking Changes"
+	Features string // Default: "Added"
+	Fixes    string // Default: "Fixed"
+	Others   string // Default: "Changed"
+}
+
+// DefaultSectionConfig returns the standard Keep-a-Changelog 1.0.0 section names.
+func DefaultSectionConfig() SectionConfig {
+	return SectionConfig{
+		Breaking: "⚠ Breaking Changes",
+		Features: "Added",
+		Fixes:    "Fixed",
+		Others:   "Changed",
+	}
+}
+
+// RenderKeepAChangelog renders the release notes using the Keep-a-Changelog 1.0.0 format.
+// Version is rendered as [1.2.0] with an ISO date: ## [1.2.0] - 2026-05-22
+// Section names follow the Keep-a-Changelog spec (configurable via cfg).
+// See: https://github.com/SemRels/semrel/issues/53
+func (r *ReleaseNotes) RenderKeepAChangelog(cfg SectionConfig) string {
+	date := r.Date
+	if date.IsZero() {
+		date = time.Now().UTC()
+	}
+
+	// Strip leading "v" prefix for the bracketed version (KaC convention)
+	ver := strings.TrimPrefix(r.Version, "v")
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## [%s] - %s\n\n", ver, date.Format("2006-01-02")))
+
+	writeSection := func(heading string, entries []Entry) {
+		if len(entries) == 0 {
+			return
+		}
+		sb.WriteString("### " + heading + "\n\n")
+		for _, e := range entries {
+			sb.WriteString("- " + formatEntry(e) + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	writeSection(cfg.Breaking, r.Breaking)
+	writeSection(cfg.Features, r.Features)
+	writeSection(cfg.Fixes, r.Fixes)
+	writeSection(cfg.Others, r.Others)
+
+	return sb.String()
+}
+
 // RenderText renders a compact plain-text summary (useful for notifications).
 func (r *ReleaseNotes) RenderText() string {
 	date := r.Date
@@ -123,3 +177,4 @@ func formatEntry(e Entry) string {
 	}
 	return e.Description
 }
+
