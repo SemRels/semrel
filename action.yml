@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+
+name: 'semrel'
+description: 'Automated semantic releases powered by Conventional Commits'
+author: 'The semrel Authors'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
+
+inputs:
+  dry-run:
+    description: 'Simulate the release without making any changes'
+    required: false
+    default: 'false'
+  config:
+    description: 'Path to the semrel configuration file (relative to working-directory)'
+    required: false
+    default: '.semrel.yaml'
+  working-directory:
+    description: 'Working directory — repository root to release'
+    required: false
+    default: '.'
+  semrel-version:
+    description: 'semrel version to build (git ref, tag, or SHA). Defaults to the action version.'
+    required: false
+    default: ''
+  go-version-file:
+    description: 'Path to a go.mod or go.work file used to select the Go toolchain'
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: 'The new version that was (or would be) released, e.g. v1.2.3'
+    value: ${{ steps.run-semrel.outputs.version }}
+  released:
+    description: 'Whether a release was made: "true" or "false"'
+    value: ${{ steps.run-semrel.outputs.released }}
+  changelog:
+    description: 'The changelog entry generated for this release'
+    value: ${{ steps.run-semrel.outputs.changelog }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go toolchain
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ inputs.go-version-file != '' && inputs.go-version-file || format('{0}/go.mod', github.action_path) }}
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build semrel binary
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        REF="${{ inputs.semrel-version }}"
+        if [ -n "$REF" ]; then
+          git fetch --depth=1 origin "$REF" 2>/dev/null || true
+          git checkout "$REF" -- . 2>/dev/null || true
+        fi
+        go build \
+          -ldflags="-X github.com/GoSemantics/semrel/internal/version.Version=$(git -C '${{ github.action_path }}' describe --tags --always 2>/dev/null || echo dev)" \
+          -o "${RUNNER_TEMP}/semrel" \
+          ./cmd/go-semrel
+
+    - name: Run semrel release
+      id: run-semrel
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SEMREL_DRY_RUN: ${{ inputs.dry-run }}
+        SEMREL_CONFIG: ${{ inputs.config }}
+      run: |
+        ARGS=""
+        if [ "${SEMREL_DRY_RUN}" = "true" ]; then
+          ARGS="--dry-run"
+        fi
+        if [ -n "${SEMREL_CONFIG}" ]; then
+          ARGS="${ARGS} --config ${SEMREL_CONFIG}"
+        fi
+
+        # Capture output and set action outputs
+        set +e
+        OUTPUT=$("${RUNNER_TEMP}/semrel" ${ARGS} release 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        # Parse version from output line "Next version    : v1.2.3"
+        VERSION=$(echo "$OUTPUT" | grep -oP 'Next version\s+:\s+\K\S+' || true)
+        if [ -n "$VERSION" ]; then
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "released=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=" >> "$GITHUB_OUTPUT"
+          echo "released=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        # Capture changelog block (lines after "Next version")
+        CHANGELOG=$(echo "$OUTPUT" | awk '/^##/{found=1} found{print}' || true)
+        {
+          echo 'changelog<<EOF'
+          echo "$CHANGELOG"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+
+        exit $EXIT_CODE
