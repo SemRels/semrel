@@ -106,7 +106,141 @@ func (r *ReleaseNotes) RenderArtifactHub() string {
 	return sb.String()
 }
 
-// TemplateData is the context passed to custom Go text/template changelog templates.
+// ociQuote wraps a value in double-quotes if it contains characters that are
+// unsafe in an OCI label value (leading/trailing whitespace, newlines, etc.).
+func ociQuote(s string) string {
+	if strings.ContainsAny(s, "\n\r\t") || strings.HasPrefix(s, " ") || strings.HasSuffix(s, " ") {
+		return fmt.Sprintf("%q", s)
+	}
+	return s
+}
+
+// ociCommitType maps conventional commit types to OCI annotation change types.
+var ociCommitType = map[string]string{
+	"feat":     "added",
+	"fix":      "fixed",
+	"perf":     "changed",
+	"revert":   "removed",
+	"docs":     "changed",
+	"chore":    "changed",
+	"refactor": "changed",
+	"style":    "changed",
+	"test":     "changed",
+	"build":    "changed",
+	"ci":       "changed",
+}
+
+// RenderOCI renders the release notes as a set of OCI image annotation labels
+// following the opencontainers image-spec label schema.
+//
+// The primary output is a newline-separated list of key=value pairs
+// suitable for use with `docker build --label` or in Dockerfile LABEL instructions:
+//
+//	org.opencontainers.image.version=v1.2.3
+//	org.opencontainers.image.created=2026-05-25T00:00:00Z
+//	org.opencontainers.image.revision=
+//	org.opencontainers.image.description=<changelog summary>
+//
+// See: https://github.com/opencontainers/image-spec/blob/main/annotations.md
+// See: https://github.com/SemRels/semrel/issues/55
+func (r *ReleaseNotes) RenderOCI(revision string) string {
+	var sb strings.Builder
+
+	created := r.Date
+	if created.IsZero() {
+		created = time.Now().UTC()
+	}
+
+	// Build a short description: list of change kinds
+	var changes []string
+	for _, e := range r.Breaking {
+		desc := e.Description
+		if e.Scope != "" {
+			desc = e.Scope + ": " + desc
+		}
+		changes = append(changes, "BREAKING: "+desc)
+	}
+	for _, e := range r.Features {
+		changes = append(changes, "feat: "+e.Description)
+	}
+	for _, e := range r.Fixes {
+		changes = append(changes, "fix: "+e.Description)
+	}
+	description := strings.Join(changes, "; ")
+	if len(description) > 256 {
+		description = description[:253] + "..."
+	}
+
+	// Standard OCI annotations
+	sb.WriteString(fmt.Sprintf("org.opencontainers.image.version=%s\n", ociQuote(r.Version)))
+	sb.WriteString(fmt.Sprintf("org.opencontainers.image.created=%s\n",
+		created.UTC().Format("2006-01-02T15:04:05Z")))
+	if revision != "" {
+		sb.WriteString(fmt.Sprintf("org.opencontainers.image.revision=%s\n", ociQuote(revision)))
+	}
+	if description != "" {
+		sb.WriteString(fmt.Sprintf("org.opencontainers.image.description=%s\n", ociQuote(description)))
+	}
+
+	// Extended change-log annotations (one per entry)
+	allEntries := make([]struct {
+		kind string
+		desc string
+	}, 0, len(r.Breaking)+len(r.Features)+len(r.Fixes)+len(r.Others))
+
+	for _, e := range r.Breaking {
+		desc := e.Description
+		if e.Scope != "" {
+			desc = e.Scope + ": " + desc
+		}
+		allEntries = append(allEntries, struct {
+			kind string
+			desc string
+		}{"security", desc})
+	}
+	for _, e := range r.Features {
+		desc := e.Description
+		if e.Scope != "" {
+			desc = e.Scope + ": " + desc
+		}
+		allEntries = append(allEntries, struct {
+			kind string
+			desc string
+		}{"added", desc})
+	}
+	for _, e := range r.Fixes {
+		desc := e.Description
+		if e.Scope != "" {
+			desc = e.Scope + ": " + desc
+		}
+		allEntries = append(allEntries, struct {
+			kind string
+			desc string
+		}{"fixed", desc})
+	}
+	for _, e := range r.Others {
+		kind := "changed"
+		if k, ok := ociCommitType[e.Type]; ok {
+			kind = k
+		}
+		desc := e.Description
+		if e.Scope != "" {
+			desc = e.Scope + ": " + desc
+		}
+		allEntries = append(allEntries, struct {
+			kind string
+			desc string
+		}{kind, desc})
+	}
+
+	for i, entry := range allEntries {
+		sb.WriteString(fmt.Sprintf("org.opencontainers.image.changelog.%d.kind=%s\n", i, entry.kind))
+		sb.WriteString(fmt.Sprintf("org.opencontainers.image.changelog.%d.description=%s\n", i, ociQuote(entry.desc)))
+	}
+
+	return sb.String()
+}
+
 // See: https://github.com/SemRels/semrel/issues/60
 type TemplateData struct {
 	Version  string
