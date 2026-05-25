@@ -154,5 +154,5 @@ func (c *RegistryClient) metadataURL() string {
 }
 
 func (c *RegistryClient) userAgent() string {
-	return "go-semrel/" + buildversion.Version
+	return "semrel/" + buildversion.Version
 }

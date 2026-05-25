@@ -63,7 +63,7 @@ runs:
         go build \
           -ldflags="-X github.com/GoSemantics/semrel/internal/version.Version=$(git -C '${{ github.action_path }}' describe --tags --always 2>/dev/null || echo dev)" \
           -o "${RUNNER_TEMP}/semrel" \
-          ./cmd/go-semrel
+          ./cmd/semrel
 
     - name: Run semrel release
       id: run-semrel
