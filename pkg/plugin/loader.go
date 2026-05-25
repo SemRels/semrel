@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package plugin provides the plugin interface and loader.
-// See: https://github.com/GoSemantics/semrel/issues/8
+// See: https://github.com/SemRels/semrel/issues/8
 package plugin
 
 import (
@@ -16,7 +16,7 @@ import (
 
 // Plugin is the interface for semrel plugins.
 // Plugins are loaded as gRPC services.
-// Issue: https://github.com/GoSemantics/semrel/issues/8
+// Issue: https://github.com/SemRels/semrel/issues/8
 type Plugin interface {
 	Name() string
 	Version() string

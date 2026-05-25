@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package commits provides conventional commit parsing.
-// See: https://github.com/GoSemantics/semrel/issues/3
+// See: https://github.com/SemRels/semrel/issues/3
 package commits
 
 import (
@@ -21,7 +21,7 @@ type Commit struct {
 }
 
 // Parser parses conventional commits.
-// Issue: https://github.com/GoSemantics/semrel/issues/3
+// Issue: https://github.com/SemRels/semrel/issues/3
 type Parser struct{}
 
 // NewParser creates a new conventional commit parser.

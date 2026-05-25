@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package changelog provides changelog generation.
-// See: https://github.com/GoSemantics/semrel/issues/11
+// See: https://github.com/SemRels/semrel/issues/11
 package changelog
 
 import (
@@ -23,7 +23,7 @@ func NewGenerator() *Generator {
 
 // Generate generates a Markdown changelog entry for the given version and commits.
 // Commits are grouped by type: Breaking Changes, Features, Bug Fixes, then Others.
-// Issue: https://github.com/GoSemantics/semrel/issues/11
+// Issue: https://github.com/SemRels/semrel/issues/11
 func (g *Generator) Generate(version string, cs []*commits.Commit) string {
 	var breaking, features, fixes, others []string
 

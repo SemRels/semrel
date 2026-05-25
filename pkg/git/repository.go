@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
 // Package git provides Git repository operations.
-// See: https://github.com/GoSemantics/semrel/issues/5
+// See: https://github.com/SemRels/semrel/issues/5
 package git
 
 import (
@@ -19,7 +19,7 @@ type Repository struct {
 }
 
 // OpenRepository opens a Git repository at the given path.
-// Issue: https://github.com/GoSemantics/semrel/issues/5
+// Issue: https://github.com/SemRels/semrel/issues/5
 func OpenRepository(path string) (*Repository, error) {
 	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
 	out, err := cmd.Output()

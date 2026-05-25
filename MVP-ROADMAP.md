@@ -12,7 +12,7 @@ This document tracks the minimal viable product (MVP) for `semrel v0.1.0`. These
 ## Phase 1: Core Engine (HIGHEST PRIORITY)
 
 ### 1. Conventional Commits Parser
-**Issue:** [#3 Conventional Commits parser](https://github.com/GoSemantics/semrel/issues/3)
+**Issue:** [#3 Conventional Commits parser](https://github.com/SemRels/semrel/issues/3)
 
 Parse commit messages following the [Conventional Commits](https://www.conventionalcommits.org/) specification.
 
@@ -28,7 +28,7 @@ Parse commit messages following the [Conventional Commits](https://www.conventio
 ---
 
 ### 2. SemVer Version Calculator
-**Issue:** [#2 Core engine: SemVer parser and version bumping logic](https://github.com/GoSemantics/semrel/issues/2)
+**Issue:** [#2 Core engine: SemVer parser and version bumping logic](https://github.com/SemRels/semrel/issues/2)
 
 Determine the next semantic version based on analyzed commits.
 
@@ -44,7 +44,7 @@ Determine the next semantic version based on analyzed commits.
 ---
 
 ### 3. Git Integration
-**Issue:** [#5 Git integration: read tags, create annotated tags, push](https://github.com/GoSemantics/semrel/issues/5)
+**Issue:** [#5 Git integration: read tags, create annotated tags, push](https://github.com/SemRels/semrel/issues/5)
 
 Interact with Git repositories to analyze history and manage releases.
 
@@ -64,7 +64,7 @@ Interact with Git repositories to analyze history and manage releases.
 ## Phase 2: Configuration & Changelog (HIGH PRIORITY)
 
 ### 4. Config File Parser
-**Issue:** [#4 Release rules: YAML config file and branch-based rules](https://github.com/GoSemantics/semrel/issues/4)
+**Issue:** [#4 Release rules: YAML config file and branch-based rules](https://github.com/SemRels/semrel/issues/4)
 
 Read and validate `.semrel.yaml` configuration.
 
@@ -97,7 +97,7 @@ release:
 ---
 
 ### 5. Changelog Generator
-**Issue:** [#11 Built-in plugin: changelog generator](https://github.com/GoSemantics/semrel/issues/11)
+**Issue:** [#11 Built-in plugin: changelog generator](https://github.com/SemRels/semrel/issues/11)
 
 Generate changelog entries from commits.
 
@@ -115,7 +115,7 @@ Generate changelog entries from commits.
 ## Phase 3: Release Orchestration (MEDIUM PRIORITY)
 
 ### 6. Dry-Run Mode
-**Issue:** [#6 Dry-run mode implementation](https://github.com/GoSemantics/semrel/issues/6)
+**Issue:** [#6 Dry-run mode implementation](https://github.com/SemRels/semrel/issues/6)
 
 Implement the `semrel release --dry-run` command.
 
@@ -145,7 +145,7 @@ Changelog:
 ---
 
 ### 7. Plugin Interface & Loader
-**Issue:** [#8 Plugin interface: define Go interface and lifecycle hooks](https://github.com/GoSemantics/semrel/issues/8)
+**Issue:** [#8 Plugin interface: define Go interface and lifecycle hooks](https://github.com/SemRels/semrel/issues/8)
 
 Define plugin system interface.
 
@@ -169,7 +169,7 @@ type Plugin interface {
 ## Phase 4: Integration Tests
 
 ### 8. End-to-End Tests
-**Issue:** [#21 End-to-end integration tests](https://github.com/GoSemantics/semrel/issues/21)
+**Issue:** [#21 End-to-end integration tests](https://github.com/SemRels/semrel/issues/21)
 
 Test the full pipeline with real git repos.
 
@@ -206,4 +206,4 @@ Test the full pipeline with real git repos.
 
 - [ROADMAP.md](ROADMAP.md) — full project roadmap
 - [ADR-001: gRPC Plugin Transport](docs/adr/ADR-001-grpc-plugin-transport.md)
-- [semrel-plugins: Plugin SDK](https://github.com/GoSemantics/semrel-plugins)
+- [semrel-plugins: Plugin SDK](https://github.com/SemRels/semrel-plugins)
