@@ -116,3 +116,13 @@ func TestPrependChangelog_PermissionError(t *testing.T) {
 	}
 }
 
+func TestNewRootCommand_DryRunDefault(t *testing.T) {
+	cmd := NewRootCommand()
+	f := cmd.PersistentFlags().Lookup("dry-run")
+	if f == nil {
+		t.Fatal("expected --dry-run flag")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("expected default dry-run=false, got %q", f.DefValue)
+	}
+}
