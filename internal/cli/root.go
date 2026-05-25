@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/GoSemantics/semrel/internal/colors"
 	"github.com/GoSemantics/semrel/pkg/changelog"
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
@@ -47,9 +48,9 @@ func printSummary(s ReleaseSummary, format string) error {
 	if !s.Released {
 		return nil
 	}
-	fmt.Printf("Current version : %s\n", s.CurrentVersion)
-	fmt.Printf("Next version    : %s\n", s.NextVersion)
-	fmt.Printf("Bump type       : %s\n", s.Bump)
+	fmt.Printf("Current version : %s\n", colors.Cyan(s.CurrentVersion))
+	fmt.Printf("Next version    : %s\n", colors.Bold(colors.Green(s.NextVersion)))
+	fmt.Printf("Bump type       : %s\n", colors.Yellow(s.Bump))
 	fmt.Printf("Commits         : %d (breaking=%v feat=%v fix=%v)\n",
 		s.Commits, s.Breaking, s.Features, s.Fixes)
 	fmt.Printf("\n%s", s.Changelog)
@@ -64,21 +65,31 @@ func NewRootCommand() *cobra.Command {
 	var dryRun bool
 	var configFile string
 	var outputFormat string
+	var noColor bool
 
 	root := &cobra.Command{
 		Use:   "semrel",
 		Short: "A Go-based semantic release system with plugin architecture",
 		Long: `semrel automates software releases by analysing Conventional Commits,
 determining the next SemVer version, generating changelogs and invoking
-configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Helm, ...).`,
+configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Helm, ...).
+
+Configuration: .semrel.yaml  (override with --config)
+Documentation: https://github.com/SemRels/semrel`,
 		Version:      version,
 		SilenceUsage: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if noColor {
+				colors.Disable()
+			}
+		},
 	}
 
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Simulate the release without making any changes")
 	root.PersistentFlags().StringVar(&configFile, "config", ".semrel.yaml", "Path to configuration file")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
 		"Output format: text or json")
+	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable coloured terminal output")
 
 	root.AddCommand(newReleaseCommand(&dryRun, &configFile, &outputFormat))
 	root.AddCommand(newLintCommand(&configFile, &outputFormat))
@@ -277,14 +288,14 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("creating tag: %w", err)
 	}
 	if outputFormat != "json" {
-		fmt.Printf("✓ Created tag %s\n", nextTag)
+		fmt.Println(colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag))))
 	}
 
 	// 11. Write CHANGELOG.md (prepend)
 	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: could not update CHANGELOG.md: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 	} else if outputFormat != "json" {
-		fmt.Println("✓ Updated CHANGELOG.md")
+		fmt.Println(colors.Success("Updated CHANGELOG.md"))
 	}
 
 	if outputFormat == "json" {
@@ -343,9 +354,9 @@ func runLint(ctx context.Context, configFile string, outputFormat string) error 
 			enc.SetIndent("", "  ")
 			_ = enc.Encode(LintSummary{Valid: false, Total: len(rawMessages), Invalid: invalid})
 		} else {
-			fmt.Fprintf(os.Stderr, "Found %d non-conventional commit(s):\n", len(invalid))
+			fmt.Fprintf(os.Stderr, "%s\n", colors.Error(fmt.Sprintf("Found %d non-conventional commit(s):", len(invalid))))
 			for _, m := range invalid {
-				fmt.Fprintf(os.Stderr, "  - %s\n", m)
+				fmt.Fprintf(os.Stderr, "  %s %s\n", colors.Red("•"), m)
 			}
 		}
 		return fmt.Errorf("lint failed: %d non-conventional commit(s)", len(invalid))
@@ -356,7 +367,7 @@ func runLint(ctx context.Context, configFile string, outputFormat string) error 
 		enc.SetIndent("", "  ")
 		return enc.Encode(LintSummary{Valid: true, Total: len(rawMessages)})
 	}
-	fmt.Printf("✓ All %d commit(s) follow Conventional Commits.\n", len(rawMessages))
+	fmt.Println(colors.Success(fmt.Sprintf("All %d commit(s) follow Conventional Commits.", len(rawMessages))))
 	return nil
 }
 
