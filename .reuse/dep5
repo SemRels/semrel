@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: go-semrel
-Upstream-Contact: The go-semrel Authors <https://github.com/GoSemantics/go-semrel>
-Source: https://github.com/GoSemantics/go-semrel
+Upstream-Name: semrel
+Upstream-Contact: The semrel Authors <https://github.com/SemRels/semrel>
+Source: https://github.com/SemRels/semrel
 
 # ----------------------------------------------------------------------------
 # Documentation and community health files
@@ -9,7 +9,7 @@ Source: https://github.com/GoSemantics/go-semrel
 Files: *.md
  docs/**/*.md
  .github/**/*.md
-Copyright: 2026 The go-semrel Authors
+Copyright: 2026 The semrel Authors
 License: Apache-2.0
 
 # ----------------------------------------------------------------------------
@@ -23,7 +23,7 @@ Files: Makefile
  buf.yaml
  buf.gen.yaml
  .semrel.yaml.example
-Copyright: 2026 The go-semrel Authors
+Copyright: 2026 The semrel Authors
 License: Apache-2.0
 
 # ----------------------------------------------------------------------------
@@ -35,7 +35,8 @@ Files: .github/workflows/*.yaml
  .github/PULL_REQUEST_TEMPLATE.md
  .github/CODEOWNERS
  .github/renovate.json
-Copyright: 2026 The go-semrel Authors
+ .github/dependabot.yml
+Copyright: 2026 The semrel Authors
 License: Apache-2.0
 
 # ----------------------------------------------------------------------------
@@ -44,5 +45,5 @@ License: Apache-2.0
 Files: LICENSE
  LICENSES/Apache-2.0.txt
  NOTICE
-Copyright: 2026 The go-semrel Authors
+Copyright: 2026 The semrel Authors
 License: Apache-2.0

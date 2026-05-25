@@ -1,16 +1,16 @@
 name: Bug Report
-description: Report a bug in go-semrel
+description: Report a bug in semrel
 labels: ["type: bug", "needs triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting a bug! For **security vulnerabilities** please use [GitHub Security Advisories](https://github.com/GoSemantics/go-semrel/security/advisories/new) instead.
+        Thank you for reporting a bug! For **security vulnerabilities** please use [GitHub Security Advisories](https://github.com/SemRels/semrel/security/advisories/new) instead.
   - type: input
     id: version
     attributes:
-      label: go-semrel version
-      placeholder: "e.g. v0.1.0 or `go-semrel --version`"
+      label: semrel version
+      placeholder: "e.g. v0.1.0 or `semrel --version`"
     validations:
       required: true
   - type: textarea

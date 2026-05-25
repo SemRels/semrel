@@ -12,7 +12,7 @@ Once stable releases are published this table will list supported version ranges
 
 **Please do not open a public GitHub Issue for security vulnerabilities.**
 
-Report security issues privately via **[GitHub Security Advisories](https://github.com/GoSemantics/semrel/security/advisories/new)**.
+Report security issues privately via **[GitHub Security Advisories](https://github.com/SemRels/semrel/security/advisories/new)**.
 
 You can also reach the maintainers at the addresses listed in [MAINTAINERS.md](MAINTAINERS.md).
 
