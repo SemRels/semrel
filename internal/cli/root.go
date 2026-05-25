@@ -336,7 +336,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 12. Run configured plugins
 	if len(cfg.Plugins) > 0 {
-		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun))
+		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
 			return err
 		}
@@ -360,7 +360,7 @@ func pluginSpecsFromConfig(plugins []config.PluginConfig) []plugininstance.Plugi
 	return specs
 }
 
-func makePluginRunner(dryRun bool) plugininstance.Runner {
+func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 	return func(ctx context.Context, spec plugininstance.PluginSpec) error {
 		binPath, err := resolvePluginBinary(spec)
 		if err != nil {
@@ -377,6 +377,24 @@ func makePluginRunner(dryRun bool) plugininstance.Runner {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		env := os.Environ()
+		// Release context — available to all plugin binaries as SEMREL_* env vars.
+		// Variable names match the documented plugin contract in docs/plugin-development.md.
+		dryRunStr := "false"
+		if dryRun {
+			dryRunStr = "true"
+		}
+		env = append(env,
+			"SEMREL_CURRENT_VERSION="+rel.CurrentVersion,
+			"SEMREL_VERSION="+rel.NextVersion,
+			"SEMREL_TAG_NAME="+rel.NextVersion,
+			"SEMREL_NEXT_VERSION="+rel.NextVersion,
+			"SEMREL_BUMP="+rel.Bump,
+			"SEMREL_TAG_PREFIX="+rel.TagPrefix,
+			"SEMREL_CHANGELOG="+rel.Changelog,
+			"SEMREL_BRANCH="+rel.Branch,
+			"SEMREL_DRY_RUN="+dryRunStr,
+		)
+		// Plugin-specific config from .semrel.yaml args.
 		for k, v := range spec.Config {
 			env = append(env, fmt.Sprintf("SEMREL_PLUGIN_%s=%v", pluginEnvKey(k), v))
 		}

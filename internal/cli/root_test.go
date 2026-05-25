@@ -336,7 +336,7 @@ func TestResolvePluginBinaryPrefersLocalInstall(t *testing.T) {
 }
 
 func TestMakePluginRunnerMissingPluginIsNonFatal(t *testing.T) {
-	runner := makePluginRunner(false)
+	runner := makePluginRunner(false, ReleaseSummary{})
 	if err := runner(context.Background(), plugininstance.PluginSpec{Uses: "definitely-not-installed"}); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
