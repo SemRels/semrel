@@ -10,15 +10,18 @@
 
 A Go-based semantic versioning and release system with a plugin architecture that automates the full release lifecycle. Designed for monorepos and multi-language projects.
 
-## Features (planned)
+## Features
 
 - 🔍 **Conventional Commits** parser with configurable bump rules
-- 📦 **Plugin architecture** — git, changelog, GitHub/GitLab Releases, npm, Docker, Helm, Go binaries, Python, Java, Rust, .NET, and more
-- 📝 **Multi-format Changelog Engine** — CHANGELOG.md, ArtifactHub annotations, OCI labels, NuGet, PyPI, Slack/Teams/Discord excerpts
-- 🏗️ **Monorepo support** — independent or synchronized versioning per package
-- 🔐 **Supply-chain security** — signed releases, SBOM, SLSA provenance, Cosign
+- 📦 **Plugin architecture** — built-in plugins for GitHub Releases, NuGet, PyPI/Maven, Homebrew, Terraform/OpenTofu, OCI/ORAS, Gitea, Discord, Teams, Webhook
+- 📝 **Multi-format Changelog** — Markdown (Keep a Changelog), NuGet, PyPI RST, Maven, per-package monorepo changelogs
+- 🏗️ **Monorepo support** — independent/lockstep versioning, package discovery, dependency graph, per-package changelogs
+- 🔐 **Supply-chain security** — Cosign signing, CycloneDX/SPDX SBOM, SLSA Level 1 provenance
 - ⚙️ **GitHub Actions** native integration
-- 🔌 **gRPC Plugin Transport** — out-of-process plugins with hashicorp/go-plugin
+- 🔌 **Plugin SDK** — build external plugins with the official Go SDK
+- 🔗 **Issue tracking** — Jira and GitHub issue reference extraction from commit messages
+- 📊 **Release analytics** — append-only NDJSON release history tracking
+- ✅ **commitlint** — validate commit messages from CLI, git range, or stdin
 
 ## Quick Start
 
@@ -54,8 +57,21 @@ Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [d
 - [Architecture Overview](docs/architecture.md) — pipeline design and component overview
 - [Configuration Reference](docs/config-reference.md) — all `.semrel.yaml` options
 - [Plugin Development Guide](docs/plugin-development.md) — build custom plugins
+- [CNCF Due Diligence](docs/cncf-due-diligence.md) — project overview for CNCF Sandbox application
 - [ADRs](docs/adr/) — architectural decision records
 - [ROADMAP](ROADMAP.md) — public project roadmap
+
+## Supply Chain Security
+
+semrel takes supply-chain security seriously:
+
+- **Signed releases**: Artifacts signed with [Sigstore Cosign](https://github.com/sigstore/cosign) (keyless OIDC)
+- **SBOM**: CycloneDX 1.4 and SPDX 2.3 Bills of Materials published per release
+- **SLSA provenance**: Level 1 build provenance documenting artifact digests
+- **DCO**: Developer Certificate of Origin required on all commits
+- **REUSE/SPDX**: License compliance enforced in CI on every PR
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and artifact verification instructions.
 
 ## Contributing
 
