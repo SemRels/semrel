@@ -258,3 +258,16 @@ func TestCommitlintSummary_Fields(t *testing.T) {
 		t.Errorf("expected 3 results, got %d", len(s.Results))
 	}
 }
+
+func TestNewReleaseCommand_EditFlag(t *testing.T) {
+	cmd := NewRootCommand()
+	for _, sub := range cmd.Commands() {
+		if sub.Use == "release" {
+			if f := sub.Flags().Lookup("edit"); f == nil {
+				t.Error("expected --edit flag on release command")
+			}
+			return
+		}
+	}
+	t.Error("release command not found")
+}
