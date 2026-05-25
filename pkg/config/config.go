@@ -8,6 +8,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,9 +23,53 @@ type Config struct {
 }
 
 // BranchConfig configures release behavior per branch.
+// For maintenance branches, set Maintenance: true or use a pattern like "1.x" / "1.2.x".
+// See: https://github.com/SemRels/semrel/issues/95
 type BranchConfig struct {
-	Name       string `yaml:"name"`
-	Prerelease string `yaml:"prerelease,omitempty"`
+	Name        string `yaml:"name"`
+	Prerelease  string `yaml:"prerelease,omitempty"`
+	// Maintenance marks this branch as a maintenance branch.
+	// On maintenance branches only patch bumps are allowed.
+	// Can also be inferred automatically from the branch name pattern (N.x, N.M.x).
+	Maintenance bool   `yaml:"maintenance,omitempty"`
+}
+
+// maintenancePattern matches branch names like "1.x", "1.2.x", "2.x".
+var maintenancePattern = regexp.MustCompile(`^\d+(\.\d+)?\.x$`)
+
+// IsMaintenance reports whether the given branch name is a maintenance branch.
+// It checks the Maintenance flag first, then auto-detects the N.x / N.M.x pattern.
+func IsMaintenance(branchName string, cfg BranchConfig) bool {
+	if cfg.Maintenance {
+		return true
+	}
+	return maintenancePattern.MatchString(branchName)
+}
+
+// MatchesBranchPattern reports whether branchName matches the given pattern.
+// Supports exact matches and simple glob-style wildcards (*).
+func MatchesBranchPattern(branchName, pattern string) bool {
+	if pattern == branchName {
+		return true
+	}
+	// Convert glob to regexp: escape dots, replace * with .*
+	regexStr := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*") + "$"
+	re, err := regexp.Compile(regexStr)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(branchName)
+}
+
+// FindBranchConfig returns the BranchConfig that matches the given branch name,
+// or nil if no branch in the config matches.
+func (c *Config) FindBranchConfig(branchName string) *BranchConfig {
+	for i := range c.Branches {
+		if MatchesBranchPattern(branchName, c.Branches[i].Name) {
+			return &c.Branches[i]
+		}
+	}
+	return nil
 }
 
 // ReleaseRule maps commit type to version bump level.

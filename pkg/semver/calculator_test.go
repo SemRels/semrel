@@ -165,3 +165,48 @@ func TestBumpFromRules(t *testing.T) {
 	}
 }
 
+func TestNextVersionForBranch_MaintenancePatchOnly(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	// Breaking on maintenance branch → still only patch bump
+	got := c.NextVersionForBranch(cur, false, false, true, true)
+	if got == nil || got.String() != "1.2.4" {
+		t.Errorf("expected 1.2.4, got %v", got)
+	}
+
+	// feat on maintenance branch → patch only
+	got = c.NextVersionForBranch(cur, true, false, false, true)
+	if got == nil || got.String() != "1.2.4" {
+		t.Errorf("expected 1.2.4 for feat on maintenance, got %v", got)
+	}
+
+	// fix on maintenance branch → patch
+	got = c.NextVersionForBranch(cur, false, true, false, true)
+	if got == nil || got.String() != "1.2.4" {
+		t.Errorf("expected 1.2.4 for fix on maintenance, got %v", got)
+	}
+
+	// no releasable commits on maintenance → nil
+	got = c.NextVersionForBranch(cur, false, false, false, true)
+	if got != nil {
+		t.Errorf("expected nil for no commits on maintenance, got %v", got)
+	}
+}
+
+func TestNextVersionForBranch_NonMaintenanceDelegates(t *testing.T) {
+	c := NewCalculator()
+	cur := &Version{Major: 1, Minor: 2, Patch: 3}
+
+	// feat on normal branch → minor bump
+	got := c.NextVersionForBranch(cur, true, false, false, false)
+	if got == nil || got.String() != "1.3.0" {
+		t.Errorf("expected 1.3.0 on normal branch, got %v", got)
+	}
+
+	// breaking on normal branch → major bump
+	got = c.NextVersionForBranch(cur, false, false, true, false)
+	if got == nil || got.String() != "2.0.0" {
+		t.Errorf("expected 2.0.0 on normal branch, got %v", got)
+	}
+}
