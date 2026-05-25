@@ -15,6 +15,7 @@ import (
 	"github.com/GoSemantics/semrel/pkg/changelog"
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
+	"github.com/GoSemantics/semrel/pkg/editor"
 	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/lock"
 	"github.com/GoSemantics/semrel/pkg/semver"
@@ -102,19 +103,22 @@ Documentation: https://github.com/SemRels/semrel`,
 
 func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *cobra.Command {
 	var forcePatch bool
+	var editNotes bool
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, *outputFormat)
+			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, *outputFormat)
 		},
 	}
 	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
 		"Force a patch release even when no releasable commits are found")
+	cmd.Flags().BoolVar(&editNotes, "edit", false,
+		"Open the generated release notes in $EDITOR before finalising the release")
 	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, outputFormat string) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, outputFormat string) error {
 	if dryRun {
 		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -264,6 +268,17 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// 8. Generate changelog
 	gen := changelog.NewGenerator()
 	changelogEntry := gen.Generate(nextTag, parsed)
+
+	// 8a. Optionally open the changelog in an editor for manual review
+	// See: https://github.com/SemRels/semrel/issues/48
+	if editNotes {
+		ed := editor.New()
+		edited, err := ed.Edit(changelogEntry)
+		if err != nil {
+			return fmt.Errorf("editing release notes: %w", err)
+		}
+		changelogEntry = edited
+	}
 
 	summary := ReleaseSummary{
 		Released:       true,
