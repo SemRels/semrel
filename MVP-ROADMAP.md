@@ -156,11 +156,12 @@ Define plugin system interface.
 
 **Plugin Interface (Go):**
 ```go
-type Plugin interface {
-    Name() string
+// Executor is the current in-process plugin interface (pkg/plugin/plugin.go)
+type Executor interface {
+    Name()    string
     Version() string
-    PreRelease(context.Context, *ReleaseContext) error
-    PostRelease(context.Context, *ReleaseContext) error
+    Validate() error
+    Execute(ctx context.Context, rel ReleaseContext) (*Result, error)
 }
 ```
 
@@ -194,11 +195,10 @@ Test the full pipeline with real git repos.
 
 ## Future Phases (Post-MVP)
 
-- Plugin system with gRPC (Phase 3+)
-- Built-in plugins: git, GitHub Releases, npm, Docker, Helm, etc. (Issues #10-36)
+- Built-in plugins registered via `pkg/builtins.DefaultRegistry()` and wired into release pipeline: github, gitlab, gitea, npm, docker, helm, cargo, python, gradle, maven, gobinary, slack, matrix (Issues #10-36) ✅
 - Monorepo support with workspace discovery (Issues #40-43)
-- Release notifications: Slack, Teams, Discord (Issues #18-19, #37-39)
-- Advanced features: pre-release channels, interactive editor (Issues #45-48)
+- Release notifications: Slack, Matrix ✅ (built-in), Teams/Discord (future)
+- Advanced features: pre-release channels ✅, interactive editor ✅, plugin registry (in development)
 
 ---
 

@@ -13,12 +13,12 @@ A Go-based semantic versioning and release system with a plugin architecture tha
 ## Features
 
 - 🔍 **Conventional Commits** parser with configurable bump rules
-- 📦 **Plugin architecture** — built-in plugins for GitHub Releases, NuGet, PyPI/Maven, Homebrew, Terraform/OpenTofu, OCI/ORAS, Gitea, Discord, Teams, Webhook
-- 📝 **Multi-format Changelog** — Markdown (Keep a Changelog), NuGet, PyPI RST, Maven, per-package monorepo changelogs
+- 📦 **13 built-in plugins** — GitHub Releases, GitLab, Gitea, npm, Docker, Helm, Cargo, PyPI, Gradle, Maven, Go binary, Slack, Matrix
+- 📝 **Multi-format Changelog** — Markdown (Keep a Changelog), per-package monorepo changelogs
 - 🏗️ **Monorepo support** — independent/lockstep versioning, package discovery, dependency graph, per-package changelogs
 - 🔐 **Supply-chain security** — Cosign signing, CycloneDX/SPDX SBOM, SLSA Level 1 provenance
 - ⚙️ **GitHub Actions** native integration
-- 🔌 **Plugin SDK** — build external plugins with the official Go SDK
+- 🔌 **Plugin SDK** — build in-process plugins with the official Go interface; external gRPC plugins planned
 - 🔗 **Issue tracking** — Jira and GitHub issue reference extraction from commit messages
 - 📊 **Release analytics** — append-only NDJSON release history tracking
 - ✅ **commitlint** — validate commit messages from CLI, git range, or stdin
@@ -48,9 +48,9 @@ Copy `.semrel.yaml.example` to `.semrel.yaml` and adjust to your project. See [d
 
 ## Architecture
 
-- **Core Engine**: Conventional Commits analysis, SemVer calculation, changelog generation
-- **Plugin System**: gRPC-based out-of-process plugins (see [docs/architecture.md](docs/architecture.md))
-- **Plugin SDK**: [`semrel-plugins`](https://github.com/SemRels/semrel-plugins) — reference SDK for external plugins
+- **Core Engine**: Conventional Commits analysis, SemVer calculation, changelog generation, git tag creation
+- **Plugin System**: 13 in-process built-in plugins (`pkg/builtins`); external gRPC plugins planned (see [docs/architecture.md](docs/architecture.md))
+- **Plugin Registry**: `https://semrels.github.io/semrel-registry` — community plugin discovery (in development)
 
 ## Documentation
 

@@ -32,7 +32,7 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Release rules configuration (`.semrel.yaml` — branches, tag prefix, bump rules)
 - Maintenance branch backport support (`1.x`, `2.x` patterns)
 - Git tag management (read, create annotated tag, push)
-- `--dry-run`, `--force-bump`, `--no-ci` flags
+- `semrel release --dry-run`, `--force-bump-patch-version`, `--edit` flags
 - ADR docs: `docs/adr/`
 
 ## v0.1.5 — Plugin Transport (gRPC)
@@ -47,14 +47,12 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Logging contract: stdout reserved for handshake, all logs to stderr
 - Built-in plugin categories: **CI Condition**, **Provider**, **Commit Analyzer**, **Changelog Generator**, **Files Updater**, **Hooks**
 
-## v0.2.0 — Plugin System
+## v0.2.0 — Plugin System ✅ (shipped)
 **Goal:** First-party plugins covering the core release workflow.
 
-- Plugin interface (lifecycle hooks via gRPC RPCs)
-- Plugin loader and registry
-- Built-in: `provider-git`, `provider-github`, `provider-gitlab`, `condition-github-actions`, `condition-gitlab-ci`
-- Built-in: `changelog-generator-default`, `files-updater` (generic + presets)
-- Built-in: `github-releases`, `npm`, `docker`
+- Plugin `Executor` interface and in-process `Registry` (`pkg/plugin`)
+- `pkg/builtins.DefaultRegistry()` wired into release pipeline (step 12)
+- Built-in plugins: `github`, `gitlab`, `gitea`, `npm`, `docker`, `helm`, `cargo`, `python`, `gradle`, `maven`, `gobinary`, `slack`, `matrix`
 
 ## v0.2.5 — Changelog Engine
 **Goal:** Multi-format changelog rendering from a single source of truth.
@@ -64,20 +62,20 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Custom Go `text/template` files for any format
 - Per-package changelogs in monorepos
 
-## v0.3.0 — CI Integration
-**Goal:** First-class GitHub Actions support and notification plugins.
+## v0.3.0 — CI Integration ✅ (shipped)
+**Goal:** First-class GitHub Actions support and structured output.
 
-- `action.yml` and reusable workflow templates
-- Notification plugins: Gitter/Matrix, Slack
+- `action.yml` composite action
 - Structured JSON release output (`--output-format json`)
 - End-to-end integration tests
+- Reusable workflow templates (pending: needs `workflow` OAuth scope — issues #17, #76)
 
-## v0.4.0 — Ecosystem Plugins
+## v0.4.0 — Ecosystem Plugins ✅ (shipped)
 **Goal:** Support every major language ecosystem and forge.
 
-- Forges: GitLab Releases, Gitea/Forgejo, Gitea Go Package Registry
-- Languages: Go binaries (cross-compile), Python/PyPI, Java Gradle, Java Maven, Rust/Cargo, .NET/NuGet, Helm
-- Infrastructure: Homebrew Tap, Terraform/OpenTofu registry, OCI/ORAS artifacts
+- Forges: GitLab Releases, Gitea/Forgejo ✅
+- Languages: Go binaries (cross-compile), Python/PyPI, Java Gradle, Java Maven, Rust/Cargo, Helm ✅
+- Infrastructure: Homebrew Tap, Terraform/OpenTofu registry, OCI/ORAS artifacts (packages exist, not yet in DefaultRegistry)
 - Security: SBOM (CycloneDX/SPDX), Cosign signing, SLSA provenance
 - Notifications: Discord, Microsoft Teams, Generic HTTP webhook
 
