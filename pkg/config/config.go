@@ -85,6 +85,59 @@ type PluginConfig struct {
 	Args map[string]interface{} `yaml:"args,omitempty"`
 }
 
+// Validate checks the configuration for semantic errors beyond YAML parsing.
+// Returns a multi-error string describing all validation failures, or nil if valid.
+// See: https://github.com/SemRels/semrel/issues/15
+func (c *Config) Validate() error {
+	var errs []string
+
+	// Tag prefix must not contain spaces or look like a semver component
+	if strings.ContainsAny(c.TagPrefix, " \t\n") {
+		errs = append(errs, "tagPrefix must not contain whitespace")
+	}
+
+	// Branch names must not be empty
+	seenBranches := make(map[string]bool)
+	for i, b := range c.Branches {
+		if strings.TrimSpace(b.Name) == "" {
+			errs = append(errs, fmt.Sprintf("branches[%d]: name must not be empty", i))
+			continue
+		}
+		if seenBranches[b.Name] {
+			errs = append(errs, fmt.Sprintf("branches[%d]: duplicate branch name %q", i, b.Name))
+		}
+		seenBranches[b.Name] = true
+	}
+
+	// Release rules: type and bump must be valid
+	validBumps := map[string]bool{"major": true, "minor": true, "patch": true}
+	seenTypes := make(map[string]bool)
+	for i, r := range c.Rules {
+		if strings.TrimSpace(r.Type) == "" {
+			errs = append(errs, fmt.Sprintf("rules[%d]: type must not be empty", i))
+		}
+		if !validBumps[r.Bump] {
+			errs = append(errs, fmt.Sprintf("rules[%d]: bump %q is not valid (must be major, minor, or patch)", i, r.Bump))
+		}
+		if seenTypes[r.Type] {
+			errs = append(errs, fmt.Sprintf("rules[%d]: duplicate rule type %q", i, r.Type))
+		}
+		seenTypes[r.Type] = true
+	}
+
+	// Plugins: uses or path must be set
+	for i, p := range c.Plugins {
+		if strings.TrimSpace(p.Uses) == "" && strings.TrimSpace(p.Path) == "" {
+			errs = append(errs, fmt.Sprintf("plugins[%d]: either 'uses' or 'path' must be set", i))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
 // LoadConfig loads configuration from the given YAML file path.
 // Issue: https://github.com/SemRels/semrel/issues/4
 func LoadConfig(path string) (*Config, error) {
@@ -104,6 +157,10 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if len(cfg.Rules) == 0 {
 		cfg.Rules = defaultRules()
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
 	return &cfg, nil
