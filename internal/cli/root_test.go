@@ -5,12 +5,15 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/GoSemantics/semrel/pkg/config"
+	"github.com/GoSemantics/semrel/pkg/plugininstance"
 )
 
 func TestNewRootCommand(t *testing.T) {
@@ -53,11 +56,11 @@ func TestIsBranchConfigured(t *testing.T) {
 		branches []config.BranchConfig
 		want     bool
 	}{
-		{"main", nil, true},                                              // no config = all branches
-		{"main", []config.BranchConfig{{Name: "main"}}, true},           // exact match
-		{"main", []config.BranchConfig{{Name: "develop"}}, false},       // not in list
+		{"main", nil, true}, // no config = all branches
+		{"main", []config.BranchConfig{{Name: "main"}}, true},                 // exact match
+		{"main", []config.BranchConfig{{Name: "develop"}}, false},             // not in list
 		{"next", []config.BranchConfig{{Name: "main"}, {Name: "next"}}, true}, // second match
-		{"feature/x", []config.BranchConfig{{Name: "main"}}, false},    // feature branch not listed
+		{"feature/x", []config.BranchConfig{{Name: "main"}}, false},           // feature branch not listed
 	}
 	for _, tt := range tests {
 		t.Run(tt.branch, func(t *testing.T) {
@@ -270,4 +273,71 @@ func TestNewReleaseCommand_EditFlag(t *testing.T) {
 		}
 	}
 	t.Error("release command not found")
+}
+
+func TestPluginSpecsFromConfig(t *testing.T) {
+	plugins := []config.PluginConfig{{Uses: "github", Args: map[string]interface{}{"token": "x"}}}
+	specs := pluginSpecsFromConfig(plugins)
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 spec, got %d", len(specs))
+	}
+	if specs[0].Uses != "github" {
+		t.Fatalf("unexpected uses value %q", specs[0].Uses)
+	}
+	if specs[0].Config["token"] != "x" {
+		t.Fatalf("unexpected config %#v", specs[0].Config)
+	}
+}
+
+func TestPluginBinaryName(t *testing.T) {
+	got := pluginBinaryName("SemRels/github@1.2.3")
+	if got != "semrel-plugin-github" {
+		t.Fatalf("pluginBinaryName() = %q", got)
+	}
+}
+
+func TestPluginEnvKey(t *testing.T) {
+	if got := pluginEnvKey("webhook-url.value"); got != "WEBHOOK_URL_VALUE" {
+		t.Fatalf("pluginEnvKey() = %q", got)
+	}
+}
+
+func TestResolvePluginBinaryPrefersLocalInstall(t *testing.T) {
+	home := t.TempDir()
+	local := filepath.Join(home, ".semrel", "plugins")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatalf("mkdir local plugin dir: %v", err)
+	}
+
+	// Create a platform-appropriate local plugin binary.
+	var localPlugin string
+	if runtime.GOOS == "windows" {
+		localPlugin = filepath.Join(local, "semrel-plugin-demo.cmd")
+		if err := os.WriteFile(localPlugin, []byte("@echo off\r\n"), 0o644); err != nil {
+			t.Fatalf("write local plugin: %v", err)
+		}
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("PATHEXT", ".CMD;.EXE")
+	} else {
+		localPlugin = filepath.Join(local, "semrel-plugin-demo")
+		if err := os.WriteFile(localPlugin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write local plugin: %v", err)
+		}
+		t.Setenv("HOME", home)
+	}
+
+	resolved, err := resolvePluginBinary(plugininstance.PluginSpec{Uses: "demo"})
+	if err != nil {
+		t.Fatalf("resolvePluginBinary() error = %v", err)
+	}
+	if resolved != localPlugin {
+		t.Fatalf("resolvePluginBinary() = %q, want %q", resolved, localPlugin)
+	}
+}
+
+func TestMakePluginRunnerMissingPluginIsNonFatal(t *testing.T) {
+	runner := makePluginRunner(false)
+	if err := runner(context.Background(), plugininstance.PluginSpec{Uses: "definitely-not-installed"}); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
 }

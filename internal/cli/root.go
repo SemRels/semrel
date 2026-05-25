@@ -9,17 +9,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/GoSemantics/semrel/internal/colors"
-	"github.com/GoSemantics/semrel/pkg/builtins"
 	"github.com/GoSemantics/semrel/pkg/changelog"
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
 	"github.com/GoSemantics/semrel/pkg/editor"
 	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/lock"
-	"github.com/GoSemantics/semrel/pkg/plugin"
+	"github.com/GoSemantics/semrel/pkg/plugininstance"
 	"github.com/GoSemantics/semrel/pkg/semver"
 	"github.com/spf13/cobra"
 )
@@ -334,28 +335,9 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 12. Run configured plugins
 	if len(cfg.Plugins) > 0 {
-		reg := builtins.DefaultRegistry()
-		relCtx := plugin.ReleaseContext{
-			Version:      nextVer.String(),
-			TagName:      nextTag,
-			Repository:   os.Getenv("SEMREL_REPOSITORY"),
-			Changelog:    changelogEntry,
-			IsPrerelease: nextVer.Prerelease != "",
-			IsDryRun:     dryRun,
-		}
-		for _, p := range cfg.Plugins {
-			relCtx.Metadata = argsToMeta(p.Args)
-			result, err := reg.Execute(p.Uses, ctx, relCtx)
-			if err != nil {
-				return fmt.Errorf("plugin %q failed: %w", p.Uses, err)
-			}
-			if result != nil && result.Skipped {
-				if outputFormat != "json" {
-					fmt.Println(colors.Warning(fmt.Sprintf("Plugin %q skipped: %s", p.Uses, result.SkipReason)))
-				}
-			} else if outputFormat != "json" {
-				fmt.Println(colors.Success(fmt.Sprintf("Plugin %q executed successfully", p.Uses)))
-			}
+		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun))
+		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
+			return err
 		}
 	}
 
@@ -365,16 +347,98 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	return nil
 }
 
-// argsToMeta converts plugin args (map[string]interface{}) to map[string]string.
-func argsToMeta(args map[string]interface{}) map[string]string {
-	if len(args) == 0 {
-		return nil
+func pluginSpecsFromConfig(plugins []config.PluginConfig) []plugininstance.PluginSpec {
+	specs := make([]plugininstance.PluginSpec, 0, len(plugins))
+	for _, p := range plugins {
+		specs = append(specs, plugininstance.PluginSpec{
+			Uses:   p.Uses,
+			Path:   p.Path,
+			Config: p.Args,
+		})
 	}
-	meta := make(map[string]string, len(args))
-	for k, v := range args {
-		meta[k] = fmt.Sprintf("%v", v)
+	return specs
+}
+
+func makePluginRunner(dryRun bool) plugininstance.Runner {
+	return func(ctx context.Context, spec plugininstance.PluginSpec) error {
+		binPath, err := resolvePluginBinary(spec)
+		if err != nil {
+			fmt.Printf("⚠  plugin %q not installed (run: semrel plugin install %s)\n", spec.Uses, spec.Uses)
+			return nil
+		}
+
+		if dryRun {
+			fmt.Printf("[dry-run] would execute plugin: %s\n", binPath)
+			return nil
+		}
+
+		cmd := exec.CommandContext(ctx, binPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		env := os.Environ()
+		for k, v := range spec.Config {
+			env = append(env, fmt.Sprintf("SEMREL_PLUGIN_%s=%v", pluginEnvKey(k), v))
+		}
+		cmd.Env = env
+		return cmd.Run()
 	}
-	return meta
+}
+
+func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
+	if spec.Path != "" {
+		return spec.Path, nil
+	}
+
+	binaryName := pluginBinaryName(spec.Uses)
+	if binaryName == "" {
+		return "", fmt.Errorf("plugin binary name is empty")
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		local := filepath.Join(home, ".semrel", "plugins", binaryName)
+		for _, candidate := range localBinaryCandidates(local) {
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+				return candidate, nil
+			}
+		}
+	}
+
+	return exec.LookPath(binaryName)
+}
+
+func pluginBinaryName(uses string) string {
+	uses = strings.TrimSpace(uses)
+	uses = strings.TrimPrefix(uses, "semrel-plugin-")
+	if idx := strings.LastIndex(uses, "/"); idx >= 0 {
+		uses = uses[idx+1:]
+	}
+	if idx := strings.Index(uses, "@"); idx >= 0 {
+		uses = uses[:idx]
+	}
+	if uses == "" {
+		return ""
+	}
+	return "semrel-plugin-" + uses
+}
+
+func localBinaryCandidates(base string) []string {
+	candidates := []string{base}
+	for _, ext := range strings.Split(strings.ToLower(os.Getenv("PATHEXT")), ";") {
+		ext = strings.TrimSpace(ext)
+		if ext == "" {
+			continue
+		}
+		candidates = append(candidates, base+strings.ToLower(ext))
+		candidates = append(candidates, base+ext)
+	}
+	return candidates
+}
+
+func pluginEnvKey(key string) string {
+	key = strings.ToUpper(key)
+	replacer := strings.NewReplacer("-", "_", ".", "_", " ", "_")
+	return replacer.Replace(key)
 }
 
 func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {
@@ -629,4 +693,3 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 	}
 	return nil
 }
-
