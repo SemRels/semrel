@@ -70,6 +70,14 @@ New-Item -ItemType Directory -Force -Path $PluginDir | Out-Null
 $pass = 0; $skip = 0; $fail = 0
 $builtPlugins = @()
 
+# Windows Application Compatibility shimming auto-elevates executables whose
+# filename contains keywords like "updater", "install", or "setup".
+# Go's exec.Command uses CreateProcess which honours the shim → ERROR_ELEVATION_REQUIRED.
+# Workaround: build updater plugins normally but ALSO copy them to a "vbump-*" alias
+# that doesn't contain "updater" in the name.  The .semrel.yaml will use path: to
+# reference the alias binary.
+$updaterAliasPrefix = "vbump"
+
 Get-ChildItem $PluginBase -Directory | ForEach-Object {
     $repoDir = $_.FullName
     $repoName = $_.Name
@@ -84,21 +92,29 @@ Get-ChildItem $PluginBase -Directory | ForEach-Object {
         Write-Warn "$repoName (using cached .exe)"
         $builtPlugins += $repoName
         $skip++
-        return
+    } else {
+        Push-Location $repoDir
+        try {
+            go build -trimpath -o $pluginBin ./cmd/plugin 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "$repoName → $pluginBin"
+                $builtPlugins += $repoName
+                $pass++
+            } else {
+                Write-Err "$repoName (build failed)"
+                $fail++
+                return
+            }
+        } finally { Pop-Location }
     }
 
-    Push-Location $repoDir
-    try {
-        go build -trimpath -o $pluginBin ./cmd/plugin 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Ok "$repoName → $pluginBin"
-            $builtPlugins += $repoName
-            $pass++
-        } else {
-            Write-Err "$repoName (build failed)"
-            $fail++
-        }
-    } finally { Pop-Location }
+    # Create Windows-shim-safe alias for updater plugins
+    if ($repoName -like "updater-*") {
+        $aliasName = $repoName -replace "^updater-", "$updaterAliasPrefix-"
+        $aliasBin  = Join-Path $PluginDir "semrel-plugin-$aliasName.exe"
+        Copy-Item $pluginBin $aliasBin -Force
+        Write-Ok "  alias: semrel-plugin-$aliasName.exe (shim-safe name)"
+    }
 }
 
 Write-Host "`n  Plugins built: $pass  cached: $skip  failed: $fail" -ForegroundColor White
@@ -122,6 +138,17 @@ try {
 
     # Seed with a v1.0.0 tag so semrel has a baseline
     "# Test repo" | Out-File README.md
+
+    # Add version files for updater plugins
+    [System.IO.File]::WriteAllText((Join-Path $TestRepo "version.go"),
+        "package version`n`nconst Version = `"1.0.0`"`n")
+    [System.IO.File]::WriteAllText((Join-Path $TestRepo "package.json"),
+        "{\n  `"name`": `"test-app`",\n  `"version`": `"1.0.0`"\n}\n")
+    [System.IO.File]::WriteAllText((Join-Path $TestRepo "pyproject.toml"),
+        "[tool.poetry]`nname = `"test-app`"`nversion = `"1.0.0`"`n")
+    [System.IO.File]::WriteAllText((Join-Path $TestRepo "Dockerfile"),
+        "FROM alpine:3.18`nLABEL version=`"1.0.0`"`n")
+
     git add . | Out-Null
     git -c commit.gpgsign=false commit -m "chore: initial commit" | Out-Null
     git tag v1.0.0
@@ -148,56 +175,125 @@ try {
 # ── 4. Write .semrel.yaml ─────────────────────────────────────────────────
 Write-Step "Writing .semrel.yaml"
 
-# Pick the best available analyzer + generator
-$analyzer = if ($builtPlugins -contains "analyzer-conventional") { "analyzer-conventional" }
-            elseif ($builtPlugins -contains "analyzer-default")  { "analyzer-default" }
-            else { $null }
-
-$generator = if ($builtPlugins -contains "generator-changelog-md") { "generator-changelog-md" }
-             elseif ($builtPlugins -contains "generator-release-notes") { "generator-release-notes" }
-             else { $null }
-
-$pluginLines = @()
-if ($analyzer) {
-    $pluginLines += "  - uses: $analyzer"
+# Helper: emit a plugin entry if it was built; otherwise skip with a warning.
+function Plugin-Block([string]$name, [string]$extra = "") {
+    if ($builtPlugins -contains $name) {
+        return "  - uses: $name$extra"
+    }
+    Write-Warn "  skipping $name (not built)"
+    return $null
 }
-if ($generator) {
-    $pluginLines += "  - uses: $generator"
-}
+
+# Forward-slash paths for YAML (backslashes break YAML parsers)
+$PluginDirFwd = $PluginDir -replace '\\','/'
+
+# Build yaml lines
+$lines = [System.Collections.Generic.List[string]]::new()
+
+$lines.Add("branches:")
+$lines.Add("  - name: main")
+$lines.Add("")
+$lines.Add('tagPrefix: "v"')
+$lines.Add("")
+$lines.Add("rules:")
+$lines.Add("  - type: feat")
+$lines.Add("    bump: minor")
+$lines.Add("  - type: fix")
+$lines.Add("    bump: patch")
+$lines.Add("  - type: perf")
+$lines.Add("    bump: patch")
+$lines.Add("")
+$lines.Add("plugins:")
+
+# Condition
 if ($builtPlugins -contains "condition-generic") {
-    $pluginLines += @(
-        "  - uses: condition-generic",
-        "    env:",
-        "      SEMREL_PLUGIN_COMMAND: 'echo ok'"
-    )
+    $lines.Add("  - uses: condition-generic")
+    $lines.Add("    args:")
+    $lines.Add('      command: "echo condition-ok"')
 }
 
-$pluginsYaml = if ($pluginLines.Count -gt 0) {
-    "plugins:`n" + ($pluginLines -join "`n")
-} else {
-    "plugins: []"
+# Analyzers
+foreach ($p in @("analyzer-conventional","analyzer-default")) {
+    $b = Plugin-Block $p; if ($b) { $lines.Add($b) }
 }
 
-$semrelYaml = @"
-branches:
-  - name: main
+# Generators
+foreach ($p in @("generator-changelog-md","generator-changelog-html","generator-release-notes")) {
+    $b = Plugin-Block $p; if ($b) { $lines.Add($b) }
+}
 
-tagPrefix: "v"
+# Updaters — MUST use path: pointing to shim-safe "vbump-*" alias
+# (Windows App Compat shimming auto-elevates any EXE whose name contains "updater")
+$updaterMap = @{
+    "updater-go"     = @{ alias="vbump-go";     file="version.go"    }
+    "updater-npm"    = @{ alias="vbump-npm";     file="package.json"  }
+    "updater-python" = @{ alias="vbump-python";  file="pyproject.toml"}
+    "updater-docker" = @{ alias="vbump-docker";  file="Dockerfile"    }
+}
+foreach ($u in $updaterMap.GetEnumerator() | Sort-Object Name) {
+    if ($builtPlugins -contains $u.Key) {
+        $aliasExe = "$PluginDirFwd/semrel-plugin-$($u.Value.alias).exe"
+        $lines.Add("  - uses: $($u.Key)")
+        $lines.Add("    path: `"$aliasExe`"")
+        $lines.Add("    args:")
+        $lines.Add("      file: `"$($u.Value.file)`"")
+    }
+}
 
-rules:
-  - type: feat
-    bump: minor
-  - type: fix
-    bump: patch
-  - type: perf
-    bump: patch
+# Provider-git (no credentials needed)
+$b = Plugin-Block "provider-git"; if ($b) { $lines.Add($b) }
 
-$pluginsYaml
-"@
+# Remote providers (fake credentials — dry-run will not actually call APIs)
+if ($builtPlugins -contains "provider-github") {
+    $lines.Add("  - uses: provider-github")
+    $lines.Add("    args:")
+    $lines.Add('      token: "fake-github-token"')
+    $lines.Add('      owner: "SemRels"')
+    $lines.Add('      repo: "semrel"')
+}
+if ($builtPlugins -contains "provider-gitlab") {
+    $lines.Add("  - uses: provider-gitlab")
+    $lines.Add("    args:")
+    $lines.Add('      token: "fake-gitlab-token"')
+    $lines.Add('      base_url: "https://gitlab.com"')
+    $lines.Add('      project_id: "12345"')
+}
+if ($builtPlugins -contains "provider-gitea") {
+    $lines.Add("  - uses: provider-gitea")
+    $lines.Add("    args:")
+    $lines.Add('      base_url: "https://gitea.example.com"')
+    $lines.Add('      token: "fake-gitea-token"')
+    $lines.Add('      owner: "myorg"')
+    $lines.Add('      repo: "myrepo"')
+}
+if ($builtPlugins -contains "provider-bitbucket") {
+    $lines.Add("  - uses: provider-bitbucket")
+    $lines.Add("    args:")
+    $lines.Add('      workspace: "myworkspace"')
+    $lines.Add('      repo: "myrepo"')
+    $lines.Add('      username: "myuser"')
+    $lines.Add('      app_password: "fake-app-password"')
+}
+
+# Hooks (fake endpoints — silent in dry-run mode)
+if ($builtPlugins -contains "hook-slack") {
+    $lines.Add("  - uses: hook-slack")
+    $lines.Add("    args:")
+    $lines.Add('      webhook_url: "https://hooks.slack.com/services/FAKE/FAKE/FAKE"')
+}
+if ($builtPlugins -contains "hook-email") {
+    $lines.Add("  - uses: hook-email")
+    $lines.Add("    args:")
+    $lines.Add('      smtp_host: "smtp.example.com"')
+    $lines.Add('      smtp_user: "noreply@example.com"')
+    $lines.Add('      smtp_pass: "fake-pass"')
+    $lines.Add('      from: "noreply@example.com"')
+    $lines.Add('      to: "team@example.com"')
+}
+
+$semrelYaml = $lines -join "`n"
 [System.IO.File]::WriteAllText((Join-Path $TestRepo ".semrel.yaml"), $semrelYaml)
-
-$pluginsDesc = if ($pluginLines.Count -gt 0) { $pluginLines -join ', ' } else { 'none' }
-Write-Ok "Config written (plugins: $pluginsDesc)"
+Write-Ok "Config written ($($builtPlugins.Count) plugins enabled)"
 
 # ── 5. Write .env test file ───────────────────────────────────────────────
 Write-Step "Writing .env (test values)"
