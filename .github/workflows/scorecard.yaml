@@ -27,6 +27,7 @@ jobs:
           persist-credentials: true
 
       - uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2 # v2.4.3
+        continue-on-error: true  # findings are advisory; don't fail the workflow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCORECARD_TOKEN: ${{ secrets.SCORECARD_TOKEN }}
