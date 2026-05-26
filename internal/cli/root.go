@@ -322,6 +322,16 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			fmt.Println("\n[dry-run] Would perform:")
 			fmt.Printf("  • git tag %s\n", nextTag)
 			fmt.Println("  • prepend entry to CHANGELOG.md")
+		}
+		// Still run plugins in dry-run so they can report what they would do.
+		// Each plugin receives SEMREL_DRY_RUN=true and is expected to exit 0.
+		if len(cfg.Plugins) > 0 {
+			orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
+			if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
+				return err
+			}
+		}
+		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] No changes made.")
 		} else {
 			return printSummary(summary, outputFormat)
@@ -375,11 +385,6 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 		binPath, err := resolvePluginBinary(spec)
 		if err != nil {
 			fmt.Printf("⚠  plugin %q not installed (run: semrel plugin install %s)\n", spec.Uses, spec.Uses)
-			return nil
-		}
-
-		if dryRun {
-			fmt.Printf("[dry-run] would execute plugin: %s\n", binPath)
 			return nil
 		}
 
