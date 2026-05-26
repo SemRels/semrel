@@ -18,6 +18,7 @@ import (
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
 	"github.com/GoSemantics/semrel/pkg/editor"
+	"github.com/GoSemantics/semrel/pkg/envfile"
 	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/lock"
 	"github.com/GoSemantics/semrel/pkg/plugininstance"
@@ -72,6 +73,7 @@ func NewRootCommand() *cobra.Command {
 	var configFile string
 	var outputFormat string
 	var noColor bool
+	var envFile string
 
 	root := &cobra.Command{
 		Use:   "semrel",
@@ -81,12 +83,18 @@ determining the next SemVer version, generating changelogs and invoking
 configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Helm, ...).
 
 Configuration: .semrel.yaml  (override with --config)
+Env file:      .env          (override with --env-file, set to "" to disable)
 Documentation: https://github.com/SemRels/semrel`,
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if noColor {
 				colors.Disable()
+			}
+			if envFile != "" {
+				if err := envfile.Load(envFile); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not load env file %q: %v\n", envFile, err)
+				}
 			}
 		},
 	}
@@ -96,6 +104,8 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
 		"Output format: text or json")
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable coloured terminal output")
+	root.PersistentFlags().StringVar(&envFile, "env-file", ".env",
+		"Path to .env file to load before release (set to \"\" to disable)")
 
 	root.AddCommand(newReleaseCommand(&dryRun, &configFile, &outputFormat))
 	root.AddCommand(newLintCommand(&configFile, &outputFormat))
