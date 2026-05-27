@@ -47,7 +47,14 @@ jobs:
 
       - name: Push tag to GitHub
         if: steps.semrel.outputs.released == 'true'
-        run: git push origin --tags
+        run: |
+          TAG="${{ steps.semrel.outputs.tag }}"
+          # Check if tag already exists on remote (e.g. during bootstrap or re-runs)
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on remote — skipping push (idempotent)."
+          else
+            git push origin "refs/tags/$TAG"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
