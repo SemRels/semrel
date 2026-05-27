@@ -16,24 +16,24 @@ linters:
     - goimports
     - revive
     - gosec
-
-linters-settings:
-  goimports:
-    local-prefixes: github.com/GoSemantics/semrel
-  revive:
-    rules:
-      - name: exported
-        severity: warning
+  settings:
+    goimports:
+      local-prefixes: github.com/GoSemantics/semrel
+    revive:
+      rules:
+        - name: exported
+          severity: warning
 
 issues:
-  # golangci-lint built with go1.24 can't process go1.26-only stdlib files;
-  # suppress the typecheck error to keep CI green until the workflow is updated.
-  exclude:
-    - "file requires newer Go version"
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-    - linters:
-        - typecheck
-      text: "file requires newer Go version"
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+      - linters:
+          - typecheck
+        text: "file requires newer Go version"
+    # Suppress "file requires newer Go version" typecheck errors when the
+    # CI runner's golangci-lint is built with an older Go toolchain.
+    paths:
+      - ".*"
