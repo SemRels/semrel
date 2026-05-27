@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 
-# CI — build, test and lint on PR to main
+# CI — build, test and lint on every push to main and on PRs
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
