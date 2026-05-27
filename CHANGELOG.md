@@ -7,6 +7,23 @@
 
 ### Bug Fixes
 
+* **ci:** move CHANGELOG commit after GoReleaser to prevent tag/HEAD mismatch
+* **ci:** push CHANGELOG commit to main before tag so GoReleaser finds correct HEAD
+* **ci:** run test matrix on push to main, not only on PRs
+
+### Other Changes
+
+* **changelog:** update for v0.3.0 [skip ci]
+
+## v0.3.0 (2026-05-27)
+
+### Features
+
+* **plugins:** add phase field (condition/release), run condition plugins before tagging, add condition-github-actions to self-release
+* **release:** commit CHANGELOG.md to repo and handle tag_exists_strategy
+
+### Bug Fixes
+
 * **ci:** push CHANGELOG commit to main before tag so GoReleaser finds correct HEAD
 * **ci:** run test matrix on push to main, not only on PRs
 
