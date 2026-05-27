@@ -5,9 +5,19 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func writeConfigFile(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", name, err)
+	}
+	return path
+}
 
 func TestLoadConfig(t *testing.T) {
 	yaml := `
@@ -53,6 +63,115 @@ plugins:
 	}
 	if len(cfg.Plugins) != 2 {
 		t.Errorf("expected 2 plugins, got %d", len(cfg.Plugins))
+	}
+}
+
+func TestLoadConfig_TOML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, "config.toml", `
+tag_prefix = "v"
+
+[[branches]]
+name = "main"
+
+[[branches]]
+name = "next"
+prerelease = "next"
+
+[[rules]]
+type = "feat"
+bump = "minor"
+
+[[rules]]
+type = "fix"
+bump = "patch"
+
+[[plugins]]
+uses = "git"
+`)
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+	if len(cfg.Branches) != 2 {
+		t.Fatalf("expected 2 branches, got %d", len(cfg.Branches))
+	}
+	if cfg.TagPrefix != "v" {
+		t.Fatalf("expected tagPrefix=v, got %q", cfg.TagPrefix)
+	}
+	if len(cfg.Plugins) != 1 || cfg.Plugins[0].Uses != "git" {
+		t.Fatalf("unexpected plugins: %+v", cfg.Plugins)
+	}
+}
+
+func TestLoadConfig_JSON(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, "config.json", `{
+		"branches": [{"name": "main"}],
+		"tag_prefix": "v",
+		"rules": [{"type": "feat", "bump": "minor"}],
+		"plugins": [{"uses": "git", "args": {"enabled": true}}]
+	}`)
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+	if len(cfg.Branches) != 1 || cfg.Branches[0].Name != "main" {
+		t.Fatalf("unexpected branches: %+v", cfg.Branches)
+	}
+	if got := cfg.Plugins[0].Args["enabled"]; got != true {
+		t.Fatalf("expected enabled=true, got %#v", got)
+	}
+}
+
+func TestFindConfigFile_FindsYAMLFirst(t *testing.T) {
+	dir := t.TempDir()
+	want := writeConfigFile(t, dir, ".semrel.yaml", "branches:\n  - name: main\n")
+	writeConfigFile(t, dir, ".semrel.toml", "[[branches]]\nname = \"main\"\n")
+
+	got, err := FindConfigFile(dir)
+	if err != nil {
+		t.Fatalf("FindConfigFile(): %v", err)
+	}
+	if got != want {
+		t.Fatalf("FindConfigFile() = %q, want %q", got, want)
+	}
+}
+
+func TestFindConfigFile_FindsTOMLWhenNoYAMLExists(t *testing.T) {
+	dir := t.TempDir()
+	want := writeConfigFile(t, dir, ".semrel.toml", "[[branches]]\nname = \"main\"\n")
+
+	got, err := FindConfigFile(dir)
+	if err != nil {
+		t.Fatalf("FindConfigFile(): %v", err)
+	}
+	if got != want {
+		t.Fatalf("FindConfigFile() = %q, want %q", got, want)
+	}
+}
+
+func TestFindConfigFile_ErrorWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := FindConfigFile(dir)
+	if err == nil {
+		t.Fatal("expected error when no config file exists")
+	}
+}
+
+func TestLoadConfig_UnknownExtensionFallsBackToYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, "config.conf", "branches:\n  - name: main\n")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+	if len(cfg.Branches) != 1 || cfg.Branches[0].Name != "main" {
+		t.Fatalf("unexpected branches: %+v", cfg.Branches)
 	}
 }
 

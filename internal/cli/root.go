@@ -130,7 +130,7 @@ func NewRootCommand() *cobra.Command {
 determining the next SemVer version, generating changelogs and invoking
 configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Helm, ...).
 
-Configuration: .semrel.yaml  (override with --config)
+Configuration: auto-detected from .semrel.yaml, .semrel.yml, .semrel.toml, .semrel.json (override with --config)
 Env file:      .env          (override with --env-file, set to "" to disable)
 Documentation: https://github.com/SemRels/semrel`,
 		Version:      version,
@@ -148,7 +148,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	}
 
 	root.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Simulate the release without making any changes")
-	root.PersistentFlags().StringVar(&configFile, "config", ".semrel.yaml", "Path to configuration file")
+	root.PersistentFlags().StringVar(&configFile, "config", "", "Path to configuration file (auto-detected if not set: .semrel.yaml, .semrel.yml, .semrel.toml, .semrel.json)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text",
 		"Output format: text or json")
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable coloured terminal output")
@@ -191,6 +191,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
 		fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
+	}
+
+	configFile, err := resolveConfigFile(configFile)
+	if err != nil {
+		return err
 	}
 
 	// 1. Load config
@@ -608,6 +613,18 @@ func pluginEnvKey(key string) string {
 	return replacer.Replace(key)
 }
 
+func resolveConfigFile(configFile string) (string, error) {
+	if configFile != "" {
+		return configFile, nil
+	}
+
+	found, err := config.FindConfigFile(".")
+	if err != nil {
+		return "", fmt.Errorf("no config file found: %w", err)
+	}
+	return found, nil
+}
+
 func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
@@ -626,6 +643,12 @@ type LintSummary struct {
 }
 
 func runLint(ctx context.Context, configFile string, outputFormat string) error {
+	configFile, err := resolveConfigFile(configFile)
+	if err != nil {
+		return err
+	}
+	_ = configFile
+
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)

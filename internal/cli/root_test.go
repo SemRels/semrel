@@ -47,6 +47,8 @@ func TestNewRootCommand_Flags(t *testing.T) {
 	}
 	if f := cmd.PersistentFlags().Lookup("config"); f == nil {
 		t.Error("expected --config flag")
+	} else if f.DefValue != "" {
+		t.Errorf("expected --config default to be empty for auto-discovery, got %q", f.DefValue)
 	}
 }
 

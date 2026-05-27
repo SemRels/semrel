@@ -109,10 +109,13 @@ func TestRunPluginInstallAndLint(t *testing.T) {
 	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
 	runReleaseGit(t, repoDir, "tag", "v1.0.0")
 	commitReleaseFile(t, repoDir, "bad.txt", "bad\n", "not a conventional commit")
+	if err := os.WriteFile(filepath.Join(repoDir, ".semrel.toml"), []byte("[[branches]]\nname = \"main\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.semrel.toml) error = %v", err)
+	}
 	withWorkingDir(t, repoDir)
 
 	stdout, stderr, err = captureReleaseOutput(func() error {
-		return runLint(context.Background(), ".semrel.yaml", "json")
+		return runLint(context.Background(), "", "json")
 	})
 	if err == nil {
 		t.Fatal("expected lint failure")

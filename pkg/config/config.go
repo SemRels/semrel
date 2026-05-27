@@ -1,40 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 The semrel Authors
 
-// Package config provides .semrel.yaml configuration parsing.
+// Package config provides semrel configuration parsing.
 // See: https://github.com/SemRels/semrel/issues/4
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/GoSemantics/semrel/pkg/semver"
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the semrel configuration.
 type Config struct {
-	Branches        []BranchConfig `yaml:"branches"`
-	TagPrefix       string         `yaml:"tagPrefix"`
-	Rules           []ReleaseRule  `yaml:"rules"`
-	Plugins         []PluginConfig `yaml:"plugins,omitempty"`
-	VersionCeiling  string         `yaml:"version_ceiling,omitempty"`
-	CeilingStrategy string         `yaml:"ceiling_strategy,omitempty"`
+	Branches        []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
+	TagPrefix       string         `yaml:"tagPrefix" toml:"tag_prefix" json:"tag_prefix"`
+	Rules           []ReleaseRule  `yaml:"rules" toml:"rules" json:"rules"`
+	Plugins         []PluginConfig `yaml:"plugins,omitempty" toml:"plugins" json:"plugins,omitempty"`
+	VersionCeiling  string         `yaml:"version_ceiling,omitempty" toml:"version_ceiling" json:"version_ceiling,omitempty"`
+	CeilingStrategy string         `yaml:"ceiling_strategy,omitempty" toml:"ceiling_strategy" json:"ceiling_strategy,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
 // For maintenance branches, set Maintenance: true or use a pattern like "1.x" / "1.2.x".
 // See: https://github.com/SemRels/semrel/issues/95
 type BranchConfig struct {
-	Name       string `yaml:"name"`
-	Prerelease string `yaml:"prerelease,omitempty"`
+	Name       string `yaml:"name" toml:"name" json:"name"`
+	Prerelease string `yaml:"prerelease,omitempty" toml:"prerelease" json:"prerelease,omitempty"`
 	// Maintenance marks this branch as a maintenance branch.
 	// On maintenance branches only patch bumps are allowed.
 	// Can also be inferred automatically from the branch name pattern (N.x, N.M.x).
-	Maintenance bool `yaml:"maintenance,omitempty"`
+	Maintenance bool `yaml:"maintenance,omitempty" toml:"maintenance" json:"maintenance,omitempty"`
 }
 
 // maintenancePattern matches branch names like "1.x", "1.2.x", "2.x".
@@ -77,15 +80,15 @@ func (c *Config) FindBranchConfig(branchName string) *BranchConfig {
 
 // ReleaseRule maps commit type to version bump level.
 type ReleaseRule struct {
-	Type string `yaml:"type"`
-	Bump string `yaml:"bump"` // major, minor, patch
+	Type string `yaml:"type" toml:"type" json:"type"`
+	Bump string `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
 }
 
 // PluginConfig configures a plugin.
 type PluginConfig struct {
-	Uses string                 `yaml:"uses"`
-	Path string                 `yaml:"path,omitempty"`
-	Args map[string]interface{} `yaml:"args,omitempty"`
+	Uses string                 `yaml:"uses" toml:"uses" json:"uses"`
+	Path string                 `yaml:"path,omitempty" toml:"path" json:"path,omitempty"`
+	Args map[string]interface{} `yaml:"args,omitempty" toml:"args" json:"args,omitempty"`
 }
 
 // Validate checks the configuration for semantic errors beyond YAML parsing.
@@ -154,7 +157,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// LoadConfig loads configuration from the given YAML file path.
+// LoadConfig loads configuration from the given file path.
 // Issue: https://github.com/SemRels/semrel/issues/4
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -162,9 +165,21 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
+	ext := strings.ToLower(filepath.Ext(path))
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config %s: %w", path, err)
+	switch ext {
+	case ".toml":
+		if _, err := toml.Decode(string(data), &cfg); err != nil {
+			return nil, fmt.Errorf("parsing TOML config %s: %w", path, err)
+		}
+	case ".json":
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parsing JSON config %s: %w", path, err)
+		}
+	default:
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parsing YAML config %s: %w", path, err)
+		}
 	}
 
 	// Apply defaults
@@ -180,6 +195,19 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// FindConfigFile returns the first semrel config file found in dir.
+func FindConfigFile(dir string) (string, error) {
+	names := []string{".semrel.yaml", ".semrel.yml", ".semrel.toml", ".semrel.json"}
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf("no semrel config file found in %s (tried: %s)", dir, strings.Join(names, ", "))
 }
 
 func defaultRules() []ReleaseRule {

@@ -26,6 +26,30 @@ func TestRunReleaseLoadConfigError(t *testing.T) {
 	}
 }
 
+func TestRunReleaseAutoDetectsTOMLConfig(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	if err := os.WriteFile(filepath.Join(repoDir, ".semrel.toml"), []byte("tag_prefix = \"v\"\n\n[[branches]]\nname = \"main\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.semrel.toml) error = %v", err)
+	}
+
+	withWorkingDir(t, repoDir)
+	stdout, stderr, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, "", false, false, "json", false, "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+
+	if !strings.Contains(stdout, `"branch": "main"`) {
+		t.Fatalf("stdout = %q, want JSON summary for main branch", stdout)
+	}
+}
+
 func TestRunReleaseSkipsUnconfiguredBranchInJSON(t *testing.T) {
 	withColorsDisabled(t)
 	repoDir := initReleaseRepo(t)
