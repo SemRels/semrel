@@ -1,0 +1,19 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+dist/
+*.exe
+
+# Docs and scripts
+docs/
+scripts/
+
+# Tests
+**/*_test.go
+
+# IDE
+.vscode/
+.idea/
+*.swp
