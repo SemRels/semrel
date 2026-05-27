@@ -188,13 +188,13 @@ func (g *Generator) generateSPDX() string {
 	sb.WriteString("SPDXVersion: SPDX-2.3\n")
 	sb.WriteString("DataLicense: CC0-1.0\n")
 	sb.WriteString("SPDXID: SPDXRef-DOCUMENT\n")
-	sb.WriteString(fmt.Sprintf("DocumentName: %s-%s\n", g.meta.Name, g.meta.Version))
-	sb.WriteString(fmt.Sprintf("DocumentNamespace: https://spdx.org/spdxdocs/%s-%s\n", g.meta.Name, g.meta.Version))
+	fmt.Fprintf(&sb, "DocumentName: %s-%s\n", g.meta.Name, g.meta.Version)
+	fmt.Fprintf(&sb, "DocumentNamespace: https://spdx.org/spdxdocs/%s-%s\n", g.meta.Name, g.meta.Version)
 	sb.WriteString("Creator: Tool: semrel\n")
 	if g.meta.Supplier != "" {
-		sb.WriteString(fmt.Sprintf("Creator: Organization: %s\n", g.meta.Supplier))
+		fmt.Fprintf(&sb, "Creator: Organization: %s\n", g.meta.Supplier)
 	}
-	sb.WriteString(fmt.Sprintf("Created: %s\n\n", ts.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "Created: %s\n\n", ts.Format(time.RFC3339))
 
 	// Subject package
 	sb.WriteString("PackageName: " + g.meta.Name + "\n")
@@ -205,10 +205,10 @@ func (g *Generator) generateSPDX() string {
 	// Components
 	for i, c := range g.components {
 		ref := fmt.Sprintf("SPDXRef-Component-%d", i+1)
-		sb.WriteString(fmt.Sprintf("PackageName: %s\n", c.Name))
-		sb.WriteString(fmt.Sprintf("SPDXID: %s\n", ref))
+		fmt.Fprintf(&sb, "PackageName: %s\n", c.Name)
+		fmt.Fprintf(&sb, "SPDXID: %s\n", ref)
 		if c.Version != "" {
-			sb.WriteString(fmt.Sprintf("PackageVersion: %s\n", c.Version))
+			fmt.Fprintf(&sb, "PackageVersion: %s\n", c.Version)
 		}
 		if c.PURL != "" {
 			sb.WriteString(fmt.Sprintf("ExternalRef: PACKAGE-MANAGER purl %s\n", c.PURL))

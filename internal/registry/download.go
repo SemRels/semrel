@@ -68,7 +68,7 @@ func (c *RegistryClient) ValidateChecksum(filePath, expected string) error {
 	if err != nil {
 		return newRegistryError(ErrCodeCacheError, "open file for checksum validation", err)
 	}
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, file); err != nil {
@@ -117,7 +117,7 @@ func (c *RegistryClient) downloadOnce(ctx context.Context, downloadURL, targetPa
 	if err != nil {
 		return newRegistryError(ErrCodeNetworkError, "download plugin binary", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
 		return newRegistryError(ErrCodeNotFound, fmt.Sprintf("plugin download not found at %s", downloadURL), nil)

@@ -155,10 +155,10 @@ func Run(p Plugin) {
 
 func writeSuccess(msg string) {
 	enc := json.NewEncoder(os.Stdout)
-	enc.Encode(Response{Success: true, Message: msg}) //nolint:errcheck
+	enc.Encode(Response{Success: true, Message: msg}) //nolint:errcheck,gosec
 }
 
 func writeError(msg string) {
 	enc := json.NewEncoder(os.Stderr)
-	enc.Encode(Response{Success: false, Message: msg}) //nolint:errcheck
+	enc.Encode(Response{Success: false, Message: msg}) //nolint:errcheck,gosec
 }

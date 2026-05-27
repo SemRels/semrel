@@ -193,7 +193,7 @@ func TestCommitlintCommand_Exists(t *testing.T) {
 }
 
 func TestRunCommitlint_ValidMessages(t *testing.T) {
-	err := runCommitlint(nil, []string{
+	err := runCommitlint(context.TODO(), []string{
 		"feat: add feature",
 		"fix(auth): patch login bug",
 		"chore!: drop support",
@@ -204,7 +204,7 @@ func TestRunCommitlint_ValidMessages(t *testing.T) {
 }
 
 func TestRunCommitlint_InvalidMessage(t *testing.T) {
-	err := runCommitlint(nil, []string{"not a conventional commit"}, "", "HEAD", false, "text")
+	err := runCommitlint(context.TODO(), []string{"not a conventional commit"}, "", "HEAD", false, "text")
 	if err == nil {
 		t.Fatal("expected error for invalid message")
 	}
@@ -214,7 +214,7 @@ func TestRunCommitlint_InvalidMessage(t *testing.T) {
 }
 
 func TestRunCommitlint_MixedMessages(t *testing.T) {
-	err := runCommitlint(nil, []string{
+	err := runCommitlint(context.TODO(), []string{
 		"feat: valid",
 		"bad message without type",
 	}, "", "HEAD", false, "text")
@@ -228,14 +228,14 @@ func TestRunCommitlint_MixedMessages(t *testing.T) {
 
 func TestRunCommitlint_JSONOutput(t *testing.T) {
 	// JSON output for valid messages should not error
-	err := runCommitlint(nil, []string{"feat: valid"}, "", "HEAD", false, "json")
+	err := runCommitlint(context.TODO(), []string{"feat: valid"}, "", "HEAD", false, "json")
 	if err != nil {
 		t.Errorf("expected no error for valid JSON output, got: %v", err)
 	}
 }
 
 func TestRunCommitlint_NoArgs_Error(t *testing.T) {
-	err := runCommitlint(nil, []string{}, "", "HEAD", false, "text")
+	err := runCommitlint(context.TODO(), []string{}, "", "HEAD", false, "text")
 	if err == nil {
 		t.Fatal("expected error when no args provided")
 	}

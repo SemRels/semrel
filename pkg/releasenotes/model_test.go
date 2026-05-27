@@ -70,8 +70,8 @@ func TestIsEmpty(t *testing.T) {
 
 func TestRenderMarkdown(t *testing.T) {
 	rn := &ReleaseNotes{
-		Version: "v1.0.0",
-		Date:    time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
+		Version:  "v1.0.0",
+		Date:     time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
 		Breaking: []Entry{{Scope: "api", Description: "breaking change"}},
 		Features: []Entry{{Description: "add feature"}},
 		Fixes:    []Entry{{Scope: "db", Description: "fix query"}},
@@ -169,8 +169,8 @@ func TestRenderKeepAChangelog_DefaultConfig(t *testing.T) {
 
 func TestRenderKeepAChangelog_CustomConfig(t *testing.T) {
 	rn := &ReleaseNotes{
-		Version: "v2.0.0",
-		Date:    time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		Version:  "v2.0.0",
+		Date:     time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		Features: []Entry{{Description: "new thing"}},
 	}
 	cfg := SectionConfig{

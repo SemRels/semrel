@@ -33,7 +33,7 @@ func Load(path string) error {
 	if err != nil {
 		return fmt.Errorf("envfile: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	pairs, err := parse(f)
 	if err != nil {
@@ -55,10 +55,6 @@ func Load(path string) error {
 // Useful for inspection or testing.
 func Parse(r io.Reader) (map[string]string, error) {
 	return parse(r)
-}
-
-type reader interface {
-	Read([]byte) (int, error)
 }
 
 func parse(r io.Reader) (map[string]string, error) {

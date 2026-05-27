@@ -8,22 +8,22 @@ import "testing"
 func TestParse_ConventionalCommit(t *testing.T) {
 	p := NewParser()
 	tests := []struct {
-		name             string
-		msg              string
-		wantType         string
-		wantScope        string
-		wantDesc         string
-		wantBreaking     bool
+		name         string
+		msg          string
+		wantType     string
+		wantScope    string
+		wantDesc     string
+		wantBreaking bool
 	}{
 		{
-			name:      "feat with scope",
-			msg:       "feat(auth): add OAuth2 support",
-			wantType:  "feat", wantScope: "auth", wantDesc: "add OAuth2 support",
+			name:     "feat with scope",
+			msg:      "feat(auth): add OAuth2 support",
+			wantType: "feat", wantScope: "auth", wantDesc: "add OAuth2 support",
 		},
 		{
-			name:      "fix without scope",
-			msg:       "fix: correct off-by-one error",
-			wantType:  "fix", wantDesc: "correct off-by-one error",
+			name:     "fix without scope",
+			msg:      "fix: correct off-by-one error",
+			wantType: "fix", wantDesc: "correct off-by-one error",
 		},
 		{
 			name:         "breaking change with !",
@@ -47,29 +47,29 @@ func TestParse_ConventionalCommit(t *testing.T) {
 			wantBreaking: true,
 		},
 		{
-			name:      "non-conventional commit",
-			msg:       "Merge branch 'feature/x' into main",
-			wantType:  "", wantDesc: "Merge branch 'feature/x' into main",
+			name:     "non-conventional commit",
+			msg:      "Merge branch 'feature/x' into main",
+			wantType: "", wantDesc: "Merge branch 'feature/x' into main",
 		},
 		{
-			name:      "chore type",
-			msg:       "chore: update dependencies",
-			wantType:  "chore", wantDesc: "update dependencies",
+			name:     "chore type",
+			msg:      "chore: update dependencies",
+			wantType: "chore", wantDesc: "update dependencies",
 		},
 		{
-			name:      "docs type with scope",
-			msg:       "docs(readme): add installation guide",
-			wantType:  "docs", wantScope: "readme", wantDesc: "add installation guide",
+			name:     "docs type with scope",
+			msg:      "docs(readme): add installation guide",
+			wantType: "docs", wantScope: "readme", wantDesc: "add installation guide",
 		},
 		{
-			name:      "ci type",
-			msg:       "ci: fix GitHub Actions workflow",
-			wantType:  "ci", wantDesc: "fix GitHub Actions workflow",
+			name:     "ci type",
+			msg:      "ci: fix GitHub Actions workflow",
+			wantType: "ci", wantDesc: "fix GitHub Actions workflow",
 		},
 		{
-			name:      "refactor type",
-			msg:       "refactor(core): extract config loader",
-			wantType:  "refactor", wantScope: "core", wantDesc: "extract config loader",
+			name:     "refactor type",
+			msg:      "refactor(core): extract config loader",
+			wantType: "refactor", wantScope: "core", wantDesc: "extract config loader",
 		},
 	}
 
@@ -215,4 +215,3 @@ func TestParseMulti_EmptyMessage(t *testing.T) {
 		t.Error("expected error for empty message")
 	}
 }
-

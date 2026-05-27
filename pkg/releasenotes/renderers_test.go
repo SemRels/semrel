@@ -81,7 +81,6 @@ func TestRenderOCI_ScopedEntry(t *testing.T) {
 	}
 }
 
-
 func TestRenderArtifactHub_Basic(t *testing.T) {
 	rn := &ReleaseNotes{
 		Version: "v1.2.0",

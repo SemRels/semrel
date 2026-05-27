@@ -12,9 +12,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/spf13/cobra"
+
 	"github.com/GoSemantics/semrel/internal/registry"
 	"github.com/GoSemantics/semrel/pkg/plugin"
-	"github.com/spf13/cobra"
 )
 
 func newPluginCommand() *cobra.Command {
@@ -181,7 +182,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("installing plugin binary: %w", err)
 	}
 
-	fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", name, dest)
+	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", name, dest)
 	return nil
 }
 

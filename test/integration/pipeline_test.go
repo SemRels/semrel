@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/commits"
+	gitpkg "github.com/GoSemantics/semrel/pkg/git"
 	"github.com/GoSemantics/semrel/pkg/semver"
 )
 

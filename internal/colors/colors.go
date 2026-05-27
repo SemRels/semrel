@@ -40,7 +40,7 @@ func isTerminal() bool {
 }
 
 // Enable forces colour output on (useful for testing or --color flag).
-func Enable()  { enabled = true }
+func Enable() { enabled = true }
 
 // Disable forces colour output off (useful for --no-color flag or CI).
 func Disable() { enabled = false }

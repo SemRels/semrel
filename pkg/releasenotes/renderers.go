@@ -15,12 +15,12 @@ import (
 // artifacthubKindMap maps entry categories to ArtifactHub change kinds.
 // See: https://artifacthub.io/docs/topics/annotations/helm/
 var artifacthubKindMap = map[string]string{
-	"feat":    "added",
-	"fix":     "fixed",
-	"perf":    "changed",
-	"revert":  "removed",
-	"docs":    "changed",
-	"chore":   "changed",
+	"feat":     "added",
+	"fix":      "fixed",
+	"perf":     "changed",
+	"revert":   "removed",
+	"docs":     "changed",
+	"chore":    "changed",
 	"refactor": "changed",
 	"security": "security",
 }
@@ -41,10 +41,10 @@ func artifacthubKind(commitType string, isBreaking bool) string {
 //
 // Output format:
 //
-//	- kind: added
-//	  description: New ingress options
-//	- kind: fixed
-//	  description: Null pointer in init container
+//   - kind: added
+//     description: New ingress options
+//   - kind: fixed
+//     description: Null pointer in init container
 //
 // See: https://github.com/SemRels/semrel/issues/54
 func (r *ReleaseNotes) RenderArtifactHub() string {
@@ -241,6 +241,7 @@ func (r *ReleaseNotes) RenderOCI(revision string) string {
 	return sb.String()
 }
 
+// TemplateData holds structured release data for custom changelog templates.
 // See: https://github.com/SemRels/semrel/issues/60
 type TemplateData struct {
 	Version  string

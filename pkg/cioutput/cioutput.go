@@ -37,7 +37,7 @@ func WriteGitHubOutput(meta ReleaseMeta) error {
 	if err != nil {
 		return fmt.Errorf("opening GITHUB_OUTPUT: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	lines := []string{
 		"version=" + meta.Version,

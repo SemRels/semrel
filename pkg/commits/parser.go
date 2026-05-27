@@ -164,4 +164,3 @@ func sortByPriority(cs []*Commit) []*Commit {
 	}
 	return cs
 }
-

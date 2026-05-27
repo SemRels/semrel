@@ -56,13 +56,13 @@ func (e *Editor) Edit(content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("creating temp file: %w", err)
 	}
-	defer os.Remove(f.Name())
+	defer os.Remove(f.Name()) //nolint:errcheck
 
 	if _, err := f.WriteString(content); err != nil {
-		f.Close()
+		_ = f.Close()
 		return "", fmt.Errorf("writing to temp file: %w", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	if err := e.launch(f.Name()); err != nil {
 		return "", fmt.Errorf("launching editor: %w", err)

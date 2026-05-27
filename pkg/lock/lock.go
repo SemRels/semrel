@@ -52,7 +52,7 @@ func (l *Lock) Acquire(version string) error {
 		}
 		return fmt.Errorf("acquiring release lock: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")

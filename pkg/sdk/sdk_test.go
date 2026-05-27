@@ -66,9 +66,9 @@ type mockPlugin struct {
 	postErr error
 }
 
-func (m *mockPlugin) Name() string    { return "mock-plugin" }
-func (m *mockPlugin) Version() string { return "0.1.0" }
-func (m *mockPlugin) PreRelease(_ context.Context, _ Config) error      { return m.preErr }
+func (m *mockPlugin) Name() string                                        { return "mock-plugin" }
+func (m *mockPlugin) Version() string                                     { return "0.1.0" }
+func (m *mockPlugin) PreRelease(_ context.Context, _ Config) error        { return m.preErr }
 func (m *mockPlugin) PostRelease(_ context.Context, _ ReleaseEvent) error { return m.postErr }
 
 func TestPlugin_Interface(t *testing.T) {

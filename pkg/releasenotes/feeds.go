@@ -137,10 +137,10 @@ type atomFLink struct {
 }
 
 type atomEntry struct {
-	Title   atomText   `xml:"title"`
-	ID      string     `xml:"id"`
-	Updated string     `xml:"updated"`
-	Link    atomFLink  `xml:"link"`
+	Title   atomText    `xml:"title"`
+	ID      string      `xml:"id"`
+	Updated string      `xml:"updated"`
+	Link    atomFLink   `xml:"link"`
 	Summary atomContent `xml:"summary"`
 }
 

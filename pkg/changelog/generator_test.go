@@ -111,4 +111,3 @@ func TestGenerate_BreakingWithoutType(t *testing.T) {
 		t.Error("breaking change without type should appear in breaking section")
 	}
 }
-

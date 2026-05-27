@@ -177,4 +177,3 @@ func formatEntry(e Entry) string {
 	}
 	return e.Description
 }
-

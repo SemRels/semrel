@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/GoSemantics/semrel/internal/colors"
 	"github.com/GoSemantics/semrel/pkg/changelog"
 	"github.com/GoSemantics/semrel/pkg/cioutput"
@@ -24,7 +26,6 @@ import (
 	"github.com/GoSemantics/semrel/pkg/lock"
 	"github.com/GoSemantics/semrel/pkg/plugininstance"
 	"github.com/GoSemantics/semrel/pkg/semver"
-	"github.com/spf13/cobra"
 )
 
 // ReleaseSummary holds the structured output of a release run.
@@ -188,9 +189,9 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 
 func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string) error {
 	if dryRun {
-		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
-		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
-		fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
+		_, _ = fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
+		_, _ = fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
+		_, _ = fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
 	}
 
 	configFile, err := resolveConfigFile(configFile)
@@ -513,12 +514,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				fmt.Printf("Tag %s already exists — updating CHANGELOG.md only (tag_exists_strategy=update-changelog).\n", nextTag)
 			}
 			if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-				fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 			} else {
 				if cfg.ShouldCommitChangelog() {
 					msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
 					if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
-						fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
+						_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 					} else if outputFormat != "json" {
 						fmt.Println(colors.Success("Committed CHANGELOG.md (tag already existed)"))
 					}
@@ -532,12 +533,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 11. Write CHANGELOG.md (prepend) and optionally commit it before tagging
 	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-		fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+		_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 	} else {
 		if cfg.ShouldCommitChangelog() {
 			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
 			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
-				fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
+				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 			} else if outputFormat != "json" {
 				fmt.Println(colors.Success("Committed CHANGELOG.md"))
 			}

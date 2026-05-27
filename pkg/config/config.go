@@ -14,26 +14,27 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/GoSemantics/semrel/pkg/semver"
 	"gopkg.in/yaml.v3"
+
+	"github.com/GoSemantics/semrel/pkg/semver"
 )
 
 // Config represents the semrel configuration.
 type Config struct {
-	Branches           []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
-	TagPrefix          string         `yaml:"tagPrefix" toml:"tag_prefix" json:"tag_prefix"`
-	Rules              []ReleaseRule  `yaml:"rules" toml:"rules" json:"rules"`
-	Plugins            []PluginConfig `yaml:"plugins,omitempty" toml:"plugins" json:"plugins,omitempty"`
-	VersionCeiling     string         `yaml:"version_ceiling,omitempty" toml:"version_ceiling" json:"version_ceiling,omitempty"`
-	CeilingStrategy    string         `yaml:"ceiling_strategy,omitempty" toml:"ceiling_strategy" json:"ceiling_strategy,omitempty"`
+	Branches        []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
+	TagPrefix       string         `yaml:"tagPrefix" toml:"tag_prefix" json:"tag_prefix"`
+	Rules           []ReleaseRule  `yaml:"rules" toml:"rules" json:"rules"`
+	Plugins         []PluginConfig `yaml:"plugins,omitempty" toml:"plugins" json:"plugins,omitempty"`
+	VersionCeiling  string         `yaml:"version_ceiling,omitempty" toml:"version_ceiling" json:"version_ceiling,omitempty"`
+	CeilingStrategy string         `yaml:"ceiling_strategy,omitempty" toml:"ceiling_strategy" json:"ceiling_strategy,omitempty"`
 	// CommitChangelog controls whether semrel commits CHANGELOG.md back to the repo
 	// before creating the release tag. Default: true.
-	CommitChangelog    *bool          `yaml:"commit_changelog,omitempty" toml:"commit_changelog" json:"commit_changelog,omitempty"`
+	CommitChangelog *bool `yaml:"commit_changelog,omitempty" toml:"commit_changelog" json:"commit_changelog,omitempty"`
 	// TagExistsStrategy controls what semrel does when the computed tag already exists locally.
 	// "update-changelog" (default): updates CHANGELOG.md, commits, and exits without error.
 	// "skip": exits silently without any changes.
 	// "error": returns a non-zero exit code.
-	TagExistsStrategy  string         `yaml:"tag_exists_strategy,omitempty" toml:"tag_exists_strategy" json:"tag_exists_strategy,omitempty"`
+	TagExistsStrategy string `yaml:"tag_exists_strategy,omitempty" toml:"tag_exists_strategy" json:"tag_exists_strategy,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
@@ -94,10 +95,10 @@ type ReleaseRule struct {
 
 // PluginConfig configures a plugin.
 type PluginConfig struct {
-	Uses  string                 `yaml:"uses" toml:"uses" json:"uses"`
-	Name  string                 `yaml:"name,omitempty" toml:"name" json:"name,omitempty"`
-	Path  string                 `yaml:"path,omitempty" toml:"path" json:"path,omitempty"`
-	Args  map[string]interface{} `yaml:"args,omitempty" toml:"args" json:"args,omitempty"`
+	Uses string                 `yaml:"uses" toml:"uses" json:"uses"`
+	Name string                 `yaml:"name,omitempty" toml:"name" json:"name,omitempty"`
+	Path string                 `yaml:"path,omitempty" toml:"path" json:"path,omitempty"`
+	Args map[string]interface{} `yaml:"args,omitempty" toml:"args" json:"args,omitempty"`
 	// Phase controls when the plugin runs:
 	// "condition" — runs before any commit is analyzed or tag created (gate check).
 	// "release"   — runs after the tag is created (default; provider, hook, updater plugins).

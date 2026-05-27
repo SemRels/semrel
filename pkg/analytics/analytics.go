@@ -73,7 +73,7 @@ func (t *Tracker) Record(r ReleaseRecord) error {
 	if err != nil {
 		return fmt.Errorf("opening analytics file: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	line, err := json.Marshal(r)
 	if err != nil {
@@ -93,7 +93,7 @@ func (t *Tracker) ReadAll() ([]ReleaseRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening analytics file: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	var records []ReleaseRecord
 	scanner := bufio.NewScanner(f)
