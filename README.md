@@ -51,27 +51,47 @@ semrel release
 
 ## Available Plugins
 
-| Plugin | Type | Repo |
-|--------|------|------|
-| github | Provider | [SemRels/provider-github](https://github.com/SemRels/provider-github) |
-| gitlab | Provider | [SemRels/provider-gitlab](https://github.com/SemRels/provider-gitlab) |
-| gitea | Provider | [SemRels/provider-gitea](https://github.com/SemRels/provider-gitea) |
-| bitbucket | Provider | [SemRels/provider-bitbucket](https://github.com/SemRels/provider-bitbucket) |
-| npm | Updater | [SemRels/updater-npm](https://github.com/SemRels/updater-npm) |
-| docker | Updater | [SemRels/updater-docker](https://github.com/SemRels/updater-docker) |
-| helm | Updater | [SemRels/updater-helm](https://github.com/SemRels/updater-helm) |
-| cargo | Updater | [SemRels/updater-cargo](https://github.com/SemRels/updater-cargo) |
-| python | Updater | [SemRels/updater-python](https://github.com/SemRels/updater-python) |
-| gradle | Updater | [SemRels/updater-gradle](https://github.com/SemRels/updater-gradle) |
-| maven | Updater | [SemRels/updater-maven](https://github.com/SemRels/updater-maven) |
-| nuget | Updater | [SemRels/updater-nuget](https://github.com/SemRels/updater-nuget) |
-| gobinary | Updater | [SemRels/updater-go](https://github.com/SemRels/updater-go) |
-| homebrew | Updater | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
-| terraform | Updater | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
-| slack | Hook | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
-| matrix | Hook | [SemRels/hook-matrix](https://github.com/SemRels/hook-matrix) |
-| email | Hook | [SemRels/hook-email](https://github.com/SemRels/hook-email) |
-| jira | Hook | [SemRels/hook-jira](https://github.com/SemRels/hook-jira) |
+Install any plugin with `semrel plugin install <name>`.
+
+| Plugin | Type | Description | Repo |
+|--------|------|-------------|------|
+| **Conditions** | | | |
+| `github-actions` | Condition | Allow releases only on GitHub Actions CI | [SemRels/condition-github-actions](https://github.com/SemRels/condition-github-actions) |
+| `gitlab-ci` | Condition | Allow releases only on GitLab CI | [SemRels/condition-gitlab-ci](https://github.com/SemRels/condition-gitlab-ci) |
+| `gitea-actions` | Condition | Allow releases only on Gitea Actions | [SemRels/condition-gitea-actions](https://github.com/SemRels/condition-gitea-actions) |
+| `generic` | Condition | Generic CI environment condition | [SemRels/condition-generic](https://github.com/SemRels/condition-generic) |
+| **Analyzers** | | | |
+| `conventional` | Analyzer | Conventional Commits commit analyzer | [SemRels/analyzer-conventional](https://github.com/SemRels/analyzer-conventional) |
+| `default` | Analyzer | Default commit analyzer | [SemRels/analyzer-default](https://github.com/SemRels/analyzer-default) |
+| **Generators** | | | |
+| `changelog-md` | Generator | Markdown changelog (Keep a Changelog format) | [SemRels/generator-changelog-md](https://github.com/SemRels/generator-changelog-md) |
+| `changelog-html` | Generator | HTML changelog generator | [SemRels/generator-changelog-html](https://github.com/SemRels/generator-changelog-html) |
+| `release-notes` | Generator | Release notes generator | [SemRels/generator-release-notes](https://github.com/SemRels/generator-release-notes) |
+| **Providers** | | | |
+| `github` | Provider | GitHub releases, assets, and tags | [SemRels/provider-github](https://github.com/SemRels/provider-github) |
+| `gitlab` | Provider | GitLab releases and tags | [SemRels/provider-gitlab](https://github.com/SemRels/provider-gitlab) |
+| `gitea` | Provider | Gitea releases and tags | [SemRels/provider-gitea](https://github.com/SemRels/provider-gitea) |
+| `bitbucket` | Provider | Bitbucket releases and tags | [SemRels/provider-bitbucket](https://github.com/SemRels/provider-bitbucket) |
+| `git` | Provider | Local git tag only (no platform integration) | [SemRels/provider-git](https://github.com/SemRels/provider-git) |
+| **Updaters** | | | |
+| `npm` | Updater | Bump `package.json` version | [SemRels/updater-npm](https://github.com/SemRels/updater-npm) |
+| `docker` | Updater | Build and push Docker images | [SemRels/updater-docker](https://github.com/SemRels/updater-docker) |
+| `helm` | Updater | Bump Helm chart version | [SemRels/updater-helm](https://github.com/SemRels/updater-helm) |
+| `cargo` | Updater | Publish Rust/Cargo crate | [SemRels/updater-cargo](https://github.com/SemRels/updater-cargo) |
+| `python` | Updater | Bump PyPI package version | [SemRels/updater-python](https://github.com/SemRels/updater-python) |
+| `gradle` | Updater | Bump Gradle version | [SemRels/updater-gradle](https://github.com/SemRels/updater-gradle) |
+| `maven` | Updater | Publish Maven artifact | [SemRels/updater-maven](https://github.com/SemRels/updater-maven) |
+| `nuget` | Updater | Bump NuGet package version | [SemRels/updater-nuget](https://github.com/SemRels/updater-nuget) |
+| `gobinary` | Updater | Update Go version variable in source | [SemRels/updater-go](https://github.com/SemRels/updater-go) |
+| `homebrew` | Updater | Update Homebrew formula | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
+| `terraform` | Updater | Bump Terraform module version | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
+| **Hooks** | | | |
+| `slack` | Hook | Send release notifications to Slack | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
+| `teams` | Hook | Send release notifications to Microsoft Teams | [SemRels/hook-teams](https://github.com/SemRels/hook-teams) |
+| `matrix` | Hook | Send release notifications to Matrix/Element | [SemRels/hook-matrix](https://github.com/SemRels/hook-matrix) |
+| `email` | Hook | Send release notification emails | [SemRels/hook-email](https://github.com/SemRels/hook-email) |
+| `jira` | Hook | Transition Jira issues on release | [SemRels/hook-jira](https://github.com/SemRels/hook-jira) |
+| `gitplugin` | Hook | Run arbitrary git operations post-release | [SemRels/hook-gitplugin](https://github.com/SemRels/hook-gitplugin) |
 
 ## Configuration
 
