@@ -25,3 +25,13 @@ plugins:
   # GitHub Actions CI environment before any git work is done.
   - uses: condition-github-actions
     phase: condition
+
+  # updater-go rewrites internal/version/version.go with the new version.
+  # Runs in pre-tag phase so the tagged commit already contains the correct version,
+  # which means `go install github.com/GoSemantics/semrel/cmd/semrel@vX.Y.Z` returns
+  # the right version even without ldflags.
+  - uses: gobinary
+    phase: pre-tag
+    args:
+      file: internal/version/version.go
+      var_name: Version

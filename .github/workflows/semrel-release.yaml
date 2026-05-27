@@ -62,6 +62,8 @@ jobs:
           mkdir -p "$PLUGIN_DIR"
           go install github.com/SemRels/condition-github-actions/cmd/plugin@main
           mv "$(go env GOPATH)/bin/plugin" "$PLUGIN_DIR/semrel-plugin-condition-github-actions"
+          go install github.com/SemRels/updater-go/cmd/plugin@main
+          mv "$(go env GOPATH)/bin/plugin" "$PLUGIN_DIR/semrel-plugin-gobinary"
           echo "Installed plugins:"
           ls -la "$PLUGIN_DIR"
 

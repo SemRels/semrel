@@ -547,7 +547,29 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 	}
 
-	// 12. Create git tag (on the CHANGELOG commit when commit_changelog=true)
+	// 11a. Run pre-tag plugins (e.g. updater-go) — these run AFTER version
+	//      calculation but BEFORE the git tag is created, so the tagged commit can include
+	//      any version-file changes committed by the plugins.
+	if preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag"); len(preTagSpecs) > 0 {
+		if !dryRun {
+			orch := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
+			if err := orch.Run(ctx, preTagSpecs); err != nil {
+				return err
+			}
+			// Auto-commit any tracked files modified by pre-tag plugins (e.g. version.go).
+			// The tag will then point to this commit so `go install @vX.Y.Z` embeds the version.
+			msg := fmt.Sprintf("chore(release): set version to %s [skip ci]", summary.NextVersion)
+			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit pre-tag changes: %v", err)))
+			} else if committed && outputFormat != "json" {
+				fmt.Println(colors.Success(fmt.Sprintf("Committed pre-tag version files (%s)", summary.NextVersion)))
+			}
+		} else if outputFormat != "json" {
+			fmt.Println(colors.Warning("[dry-run] skipping pre-tag plugins"))
+		}
+	}
+
+	// 12. Create git tag (on the CHANGELOG/version-bump commit)
 	if err := repo.CreateTag(ctx, nextTag, "Release "+nextTag); err != nil {
 		return fmt.Errorf("creating tag: %w", err)
 	}
@@ -555,7 +577,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		fmt.Println(colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag))))
 	}
 
-	// 13. Run configured plugins
+	// 13. Run configured release-phase plugins
 	if len(cfg.Plugins) > 0 {
 		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
