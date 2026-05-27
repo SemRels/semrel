@@ -936,7 +936,9 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 	if outputFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(summary)
+		if err := enc.Encode(summary); err != nil {
+			return fmt.Errorf("encoding JSON output: %w", err)
+		}
 	} else {
 		for _, r := range results {
 			if r.Valid {

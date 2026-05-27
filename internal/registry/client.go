@@ -114,7 +114,7 @@ func (c *RegistryClient) FetchMetadata(ctx context.Context) (*PluginRegistry, er
 		}
 		return nil, newRegistryError(ErrCodeNetworkError, "fetch registry metadata", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body close errors are unactionable
 
 	switch resp.StatusCode {
 	case http.StatusOK:

@@ -86,15 +86,15 @@ func runPluginList(ctx context.Context, noHeader bool) error {
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if !noHeader {
-		fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION\tVERSIONS")
-		fmt.Fprintln(w, "----\t--------\t-----------\t--------")
+		_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION\tVERSIONS")
+		_, _ = fmt.Fprintln(w, "----\t--------\t-----------\t--------")
 	}
 	for _, p := range reg.Plugins {
 		latest := "-"
 		if len(p.Versions) > 0 {
 			latest = p.Versions[len(p.Versions)-1].Version
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 50), latest)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 50), latest)
 	}
 	return w.Flush()
 }
@@ -107,8 +107,8 @@ func runPluginSearch(ctx context.Context, query string) error {
 
 	q := strings.ToLower(query)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION")
-	fmt.Fprintln(w, "----\t--------\t-----------")
+	_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION")
+	_, _ = fmt.Fprintln(w, "----\t--------\t-----------")
 
 	found := 0
 	for _, p := range reg.Plugins {
@@ -116,7 +116,7 @@ func runPluginSearch(ctx context.Context, query string) error {
 			strings.Contains(strings.ToLower(p.Description), q) ||
 			strings.Contains(strings.ToLower(p.Category), q) ||
 			containsTag(p.Tags, q) {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 60))
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 60))
 			found++
 		}
 	}
@@ -152,7 +152,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("plugin %q@%s has no binary releases yet; check back later", name, versionEntry.Version)
 	}
 
-	fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", name, versionEntry.Version)
+	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", name, versionEntry.Version)
 
 	binaryPath, err := loader.ResolvePluginBinary(ctx, name, versionEntry.Version)
 	if err != nil {
