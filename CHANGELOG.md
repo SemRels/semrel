@@ -1,3 +1,13 @@
+## v0.3.1 (2026-05-27)
+
+### Bug Fixes
+
+* **ci:** migrate golangci-lint config from v1 to v2 schema
+
+### Other Changes
+
+* **changelog:** update for v0.3.0 [skip ci]
+
 ## v0.3.0 (2026-05-27)
 
 ### Features
