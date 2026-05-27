@@ -2,7 +2,12 @@
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
 # semrel-release — uses semrel to version semrel itself (dogfooding).
-# Flow: push to main → semrel creates tag → release.yaml (GoReleaser) → docker.yml
+# Flow: push to main → semrel creates tag → GoReleaser publishes release → docker.yml triggers
+#
+# NOTE: The GoReleaser step is inlined here (not in release.yaml) because GITHUB_TOKEN
+# tag pushes do not trigger other workflows (GitHub Actions security restriction).
+# GoReleaser creates the GitHub Release via API, which DOES trigger docker.yml via
+# the `release: published` event.
 name: Semrel Release
 
 on:
@@ -11,7 +16,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # needed to push tags
+  contents: write  # needed to push tags and create releases
+  packages: write  # needed for GoReleaser
+  id-token: write  # needed for GoReleaser cosign
 
 jobs:
   release:
@@ -55,6 +62,15 @@ jobs:
           else
             git push origin "refs/tags/$TAG"
           fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser
+        if: steps.semrel.outputs.released == 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
