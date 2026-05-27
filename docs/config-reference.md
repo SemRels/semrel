@@ -7,14 +7,24 @@ This document describes all supported options in `.semrel.yaml`.
 
 ## File Location
 
-semrel looks for `.semrel.yaml` in the current working directory by default.
-Use the `--config` flag to specify a different path:
+semrel automatically discovers config files in the current working directory in this priority order:
+
+1. `.semrel.yaml`
+2. `.semrel.yml`
+3. `.semrel.toml`
+4. `.semrel.json`
+
+Use `--config` to specify a different path explicitly:
 
 ```bash
-semrel release --config path/to/.semrel.yaml
+semrel release --config path/to/my-config.toml
 ```
 
 ## Full Example
+
+All three formats are equivalent. Choose whichever fits your project's conventions.
+
+### YAML (`.semrel.yaml`)
 
 ```yaml
 tagPrefix: "v"
@@ -47,6 +57,87 @@ plugins:
       image: myorg/myapp
 ```
 
+### TOML (`.semrel.toml`)
+
+```toml
+tagPrefix = "v"
+
+[[branches]]
+name = "main"
+
+[[branches]]
+name = "next"
+prerelease = "next"
+
+[[branches]]
+name = "1.x"
+maintenance = true
+
+[[branches]]
+name = "release/*"
+
+[[rules]]
+type = "feat"
+bump = "minor"
+
+[[rules]]
+type = "fix"
+bump = "patch"
+
+[[rules]]
+type = "perf"
+bump = "patch"
+
+[[rules]]
+type = "revert"
+bump = "patch"
+
+[[rules]]
+type = "docs"
+bump = "patch"
+
+[[plugins]]
+uses = "github"
+
+[[plugins]]
+uses = "npm"
+
+[[plugins]]
+uses = "docker"
+
+[plugins.args]
+image = "myorg/myapp"
+```
+
+### JSON (`.semrel.json`)
+
+```json
+{
+  "tagPrefix": "v",
+  "branches": [
+    { "name": "main" },
+    { "name": "next", "prerelease": "next" },
+    { "name": "1.x", "maintenance": true },
+    { "name": "release/*" }
+  ],
+  "rules": [
+    { "type": "feat", "bump": "minor" },
+    { "type": "fix",  "bump": "patch" },
+    { "type": "perf", "bump": "patch" },
+    { "type": "revert", "bump": "patch" },
+    { "type": "docs", "bump": "patch" }
+  ],
+  "plugins": [
+    { "uses": "github" },
+    { "uses": "npm" },
+    {
+      "uses": "docker",
+      "args": { "image": "myorg/myapp" }
+    }
+  ]
+}
+```
+
 ## Options
 
 ### `tagPrefix`
@@ -59,6 +150,14 @@ plugins:
 tagPrefix: "v"         # creates tags like v1.2.3
 tagPrefix: ""          # creates tags like 1.2.3
 tagPrefix: "release-"  # creates tags like release-1.2.3
+```
+
+```toml
+tagPrefix = "v"
+```
+
+```json
+{ "tagPrefix": "v" }
 ```
 
 ### `branches`
