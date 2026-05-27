@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+#
+# semrel-release — uses semrel to version semrel itself (dogfooding).
+# Flow: push to main → semrel creates tag → release.yaml (GoReleaser) → docker.yml
+name: Semrel Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to push tags
+
+jobs:
+  release:
+    name: Run semrel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build semrel from source
+        run: |
+          go build -ldflags="-s -w" -o ./semrel-bin ./cmd/semrel
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "semrel-bot"
+          git config user.email "semrel-bot@users.noreply.github.com"
+
+      - name: Run semrel release
+        id: semrel
+        run: ./semrel-bin release --github-output
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push tag to GitHub
+        if: steps.semrel.outputs.released == 'true'
+        run: git push origin --tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.semrel.outputs.released }}" = "true" ]; then
+            echo "### Released ${{ steps.semrel.outputs.tag }} 🚀" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Bump:** ${{ steps.semrel.outputs.bump }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Previous:** ${{ steps.semrel.outputs.previous_version }}" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ steps.semrel.outputs.ceiling_applied }}" = "true" ]; then
+              echo "> ⚠️ version ceiling applied — bump was clamped" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "### No release — no releasable commits found." >> $GITHUB_STEP_SUMMARY
+          fi

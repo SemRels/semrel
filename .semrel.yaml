@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+#
+# semrel uses itself to manage its own releases.
+# version_ceiling keeps us in 0.x.x until we deliberately promote to 1.0.0.
+# To release 1.0.0: remove or raise version_ceiling and commit.
+
+tagPrefix: "v"
+version_ceiling: "1.0.0"
+ceiling_strategy: clamp
+
+branches:
+  - name: main
