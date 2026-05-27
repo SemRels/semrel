@@ -65,6 +65,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Clean up build artifacts before GoReleaser
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          # semrel-bin is a temporary build artifact — remove it
+          rm -f semrel-bin
+          # CHANGELOG.md may be updated by semrel locally; GoReleaser generates its own
+          # changelog from git history so we restore to committed state
+          git checkout -- CHANGELOG.md 2>/dev/null || true
+
       - name: Run GoReleaser
         if: steps.semrel.outputs.released == 'true'
         uses: goreleaser/goreleaser-action@v6

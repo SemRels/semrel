@@ -6,6 +6,7 @@
 *.dll
 *.so
 *.dylib
+semrel-bin
 
 # Go build cache
 /vendor/
