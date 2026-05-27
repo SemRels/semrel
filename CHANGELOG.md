@@ -1,3 +1,14 @@
+## v0.3.3 (2026-05-27)
+
+### Bug Fixes
+
+* **lint:** resolve golangci-lint v2 violations across codebase
+* **lint:** fix errcheck violations flagged by golangci-lint v2
+
+### Other Changes
+
+* **changelog:** update for v0.3.1 [skip ci]
+
 ## v0.3.1 (2026-05-27)
 
 ### Bug Fixes
