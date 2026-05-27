@@ -451,8 +451,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	if dryRun {
 		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] Would perform:")
+			fmt.Printf("  • prepend entry to CHANGELOG.md\n")
+			if cfg.ShouldCommitChangelog() {
+				fmt.Println("  • git commit CHANGELOG.md")
+			}
 			fmt.Printf("  • git tag %s\n", nextTag)
-			fmt.Println("  • prepend entry to CHANGELOG.md")
 		}
 		// Still run plugins in dry-run so they can report what they would do.
 		// Each plugin receives SEMREL_DRY_RUN=true and is expected to exit 0.
@@ -474,7 +477,61 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return nil
 	}
 
-	// 10. Create git tag
+	// 10. Check if the tag already exists (idempotency / repair mode)
+	tagExists, err := repo.TagExists(ctx, nextTag)
+	if err != nil {
+		return fmt.Errorf("checking tag: %w", err)
+	}
+	if tagExists {
+		strategy := cfg.ResolvedTagExistsStrategy()
+		switch strategy {
+		case "error":
+			return fmt.Errorf("tag %s already exists — aborting (tag_exists_strategy=error)", nextTag)
+		case "skip":
+			if outputFormat != "json" {
+				fmt.Printf("Tag %s already exists — skipping release (tag_exists_strategy=skip).\n", nextTag)
+			}
+			summary.Released = false
+			return writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile)
+		default: // "update-changelog"
+			if outputFormat != "json" {
+				fmt.Printf("Tag %s already exists — updating CHANGELOG.md only (tag_exists_strategy=update-changelog).\n", nextTag)
+			}
+			if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+				fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+			} else {
+				if cfg.ShouldCommitChangelog() {
+					msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
+					if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+						fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
+					} else if outputFormat != "json" {
+						fmt.Println(colors.Success("Committed CHANGELOG.md (tag already existed)"))
+					}
+				} else if outputFormat != "json" {
+					fmt.Println(colors.Success("Updated CHANGELOG.md"))
+				}
+			}
+			return writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile)
+		}
+	}
+
+	// 11. Write CHANGELOG.md (prepend) and optionally commit it before tagging
+	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+		fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+	} else {
+		if cfg.ShouldCommitChangelog() {
+			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
+			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+				fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
+			} else if outputFormat != "json" {
+				fmt.Println(colors.Success("Committed CHANGELOG.md"))
+			}
+		} else if outputFormat != "json" {
+			fmt.Println(colors.Success("Updated CHANGELOG.md"))
+		}
+	}
+
+	// 12. Create git tag (on the CHANGELOG commit when commit_changelog=true)
 	if err := repo.CreateTag(ctx, nextTag, "Release "+nextTag); err != nil {
 		return fmt.Errorf("creating tag: %w", err)
 	}
@@ -482,14 +539,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		fmt.Println(colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag))))
 	}
 
-	// 11. Write CHANGELOG.md (prepend)
-	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-		fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
-	} else if outputFormat != "json" {
-		fmt.Println(colors.Success("Updated CHANGELOG.md"))
-	}
-
-	// 12. Run configured plugins
+	// 13. Run configured plugins
 	if len(cfg.Plugins) > 0 {
 		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {

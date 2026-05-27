@@ -106,3 +106,33 @@ func (r *Repository) CreateTag(ctx context.Context, tag, message string) error {
 	}
 	return nil
 }
+
+// TagExists reports whether the given tag exists locally.
+func (r *Repository) TagExists(ctx context.Context, tag string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "tag", "-l", tag)
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("checking tag %s: %w", tag, err)
+	}
+	return strings.TrimSpace(string(out)) == tag, nil
+}
+
+// CommitFiles stages the given file paths and creates a commit with the given message.
+// It skips empty staging areas gracefully (nothing to commit).
+func (r *Repository) CommitFiles(ctx context.Context, files []string, message string) error {
+	// Stage files
+	addArgs := append([]string{"-C", r.Path, "add", "--"}, files...)
+	if out, err := exec.CommandContext(ctx, "git", addArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("git add: %w\n%s", err, out)
+	}
+	// Check if there is actually something staged
+	diffOut, err := exec.CommandContext(ctx, "git", "-C", r.Path, "diff", "--cached", "--name-only").Output()
+	if err != nil || strings.TrimSpace(string(diffOut)) == "" {
+		return nil // nothing to commit — idempotent
+	}
+	commitArgs := []string{"-C", r.Path, "commit", "--no-verify", "-m", message}
+	if out, err := exec.CommandContext(ctx, "git", commitArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit: %w\n%s", err, out)
+	}
+	return nil
+}
