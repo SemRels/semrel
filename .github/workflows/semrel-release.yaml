@@ -69,12 +69,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push tag to GitHub
+      - name: Push changelog commit and tag to GitHub
         if: steps.semrel.outputs.released == 'true'
         run: |
           TAG="${{ steps.semrel.outputs.tag }}"
+          # Push the CHANGELOG commit first so the tag is reachable from main.
+          # semrel commits CHANGELOG.md before tagging (commit_changelog: true),
+          # so HEAD may be ahead of origin/main by one commit.
+          git push origin HEAD:main
+          # Now push the tag — skip if it already exists (idempotent re-runs)
           if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
-            echo "Tag $TAG already exists on remote — skipping push (idempotent)."
+            echo "Tag $TAG already exists on remote — skipping tag push (idempotent)."
           else
             git push origin "refs/tags/$TAG"
           fi
