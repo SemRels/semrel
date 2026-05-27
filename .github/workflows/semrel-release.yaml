@@ -3,6 +3,7 @@
 #
 # semrel-release — uses semrel to version semrel itself (dogfooding).
 # Flow: push to main → semrel creates tag → GoReleaser publishes release → Docker build+push
+#       → CHANGELOG.md committed back to main after GoReleaser
 #
 # NOTE: All steps are inlined in one workflow because GITHUB_TOKEN-triggered events
 # (tag pushes, release creation) cannot trigger other workflows (GitHub Actions security
@@ -13,6 +14,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# Serialise releases so concurrent pushes do not create conflicting CHANGELOG commits.
+# cancel-in-progress: false means later runs queue instead of being cancelled.
+concurrency:
+  group: semrel-release
+  cancel-in-progress: false
 
 permissions:
   contents: write      # push tags and create releases
@@ -69,15 +76,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push changelog commit and tag to GitHub
+      - name: Push tag to GitHub
         if: steps.semrel.outputs.released == 'true'
         run: |
           TAG="${{ steps.semrel.outputs.tag }}"
-          # Push the CHANGELOG commit first so the tag is reachable from main.
-          # semrel commits CHANGELOG.md before tagging (commit_changelog: true),
-          # so HEAD may be ahead of origin/main by one commit.
-          git push origin HEAD:main
-          # Now push the tag — skip if it already exists (idempotent re-runs)
+          # Skip if tag already exists on remote (idempotent re-runs)
           if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
             echo "Tag $TAG already exists on remote — skipping tag push (idempotent)."
           else
@@ -86,9 +89,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clean up build artifacts before GoReleaser
+      - name: Save CHANGELOG and clean up before GoReleaser
         if: steps.semrel.outputs.released == 'true'
         run: |
+          # Preserve the updated CHANGELOG.md written by semrel (commit_changelog=false).
+          cp CHANGELOG.md /tmp/CHANGELOG_updated.md
+          # Remove binary and restore CHANGELOG.md so GoReleaser sees a clean git tree.
+          # GoReleaser validates that there are no uncommitted changes before building.
           rm -f semrel-bin
           git checkout -- CHANGELOG.md 2>/dev/null || true
 
@@ -98,6 +105,26 @@ jobs:
         with:
           version: latest
           args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit and push CHANGELOG.md
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          TAG="${{ steps.semrel.outputs.tag }}"
+          if [ -f /tmp/CHANGELOG_updated.md ]; then
+            cp /tmp/CHANGELOG_updated.md CHANGELOG.md
+            git add CHANGELOG.md
+            if git diff --cached --quiet; then
+              echo "No CHANGELOG changes to commit."
+            else
+              git commit --no-verify -m "chore(changelog): update for $TAG [skip ci]"
+              # Rebase on top of latest main to handle any commits pushed since we started.
+              # Use -X ours to auto-resolve any CHANGELOG.md conflicts in our favour.
+              git pull --rebase -X ours origin main || true
+              git push origin HEAD:main
+            fi
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
