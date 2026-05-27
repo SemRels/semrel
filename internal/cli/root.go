@@ -224,6 +224,21 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}()
 	}
 
+	// 2a. Run condition-phase plugins — these gate the release before any git work.
+	// A failing condition plugin aborts the release immediately with a clear error.
+	if condSpecs := pluginSpecsForPhase(cfg.Plugins, "condition"); len(condSpecs) > 0 {
+		if outputFormat != "json" {
+			fmt.Println("Running condition checks…")
+		}
+		orch := plugininstance.NewOrchestrator(makePluginRunner(dryRun, ReleaseSummary{}))
+		if err := orch.Run(ctx, condSpecs); err != nil {
+			return fmt.Errorf("condition check failed: %w", err)
+		}
+		if outputFormat != "json" {
+			fmt.Println(colors.Success("All conditions passed."))
+		}
+	}
+
 	// 3. Get current branch
 	branch, err := repo.CurrentBranch(ctx)
 	if err != nil {
@@ -557,11 +572,25 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 }
 
 func pluginSpecsFromConfig(plugins []config.PluginConfig) []plugininstance.PluginSpec {
+	return pluginSpecsForPhase(plugins, "release")
+}
+
+// pluginSpecsForPhase returns specs for plugins matching the given phase.
+// Phase "release" also includes plugins with no phase set (the default).
+func pluginSpecsForPhase(plugins []config.PluginConfig, phase string) []plugininstance.PluginSpec {
 	specs := make([]plugininstance.PluginSpec, 0, len(plugins))
 	for _, p := range plugins {
+		effective := p.Phase
+		if effective == "" {
+			effective = "release"
+		}
+		if effective != phase {
+			continue
+		}
 		specs = append(specs, plugininstance.PluginSpec{
 			Uses:   p.Uses,
 			Path:   p.Path,
+			Name:   p.Name,
 			Config: p.Args,
 		})
 	}

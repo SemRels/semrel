@@ -1,13 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
-# semrel uses itself to manage its own releases.
+# semrel uses itself to manage its own releases — dogfooding.
 # version_ceiling keeps us in 0.x.x until we deliberately promote to 1.0.0.
 # To release 1.0.0: remove or raise version_ceiling and commit.
+#
+# Plugins are sourced from their respective repos until they have official releases.
+# The semrel-release workflow builds them from source before running semrel.
+#
+# provider-github is intentionally omitted: GoReleaser handles the GitHub release
+# and attaches binary assets, which provider-github cannot do.
 
 tagPrefix: "v"
 version_ceiling: "1.0.0"
 ceiling_strategy: clamp
+commit_changelog: true
+tag_exists_strategy: update-changelog
 
 branches:
   - name: main
+
+plugins:
+  # condition-github-actions verifies we are running inside a legitimate
+  # GitHub Actions CI environment before any git work is done.
+  - uses: condition-github-actions
+    phase: condition

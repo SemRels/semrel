@@ -94,9 +94,14 @@ type ReleaseRule struct {
 
 // PluginConfig configures a plugin.
 type PluginConfig struct {
-	Uses string                 `yaml:"uses" toml:"uses" json:"uses"`
-	Path string                 `yaml:"path,omitempty" toml:"path" json:"path,omitempty"`
-	Args map[string]interface{} `yaml:"args,omitempty" toml:"args" json:"args,omitempty"`
+	Uses  string                 `yaml:"uses" toml:"uses" json:"uses"`
+	Name  string                 `yaml:"name,omitempty" toml:"name" json:"name,omitempty"`
+	Path  string                 `yaml:"path,omitempty" toml:"path" json:"path,omitempty"`
+	Args  map[string]interface{} `yaml:"args,omitempty" toml:"args" json:"args,omitempty"`
+	// Phase controls when the plugin runs:
+	// "condition" — runs before any commit is analyzed or tag created (gate check).
+	// "release"   — runs after the tag is created (default; provider, hook, updater plugins).
+	Phase string `yaml:"phase,omitempty" toml:"phase" json:"phase,omitempty"`
 }
 
 // Validate checks the configuration for semantic errors beyond YAML parsing.
@@ -143,6 +148,12 @@ func (c *Config) Validate() error {
 	for i, p := range c.Plugins {
 		if strings.TrimSpace(p.Uses) == "" && strings.TrimSpace(p.Path) == "" {
 			errs = append(errs, fmt.Sprintf("plugins[%d]: either 'uses' or 'path' must be set", i))
+		}
+		if p.Phase != "" {
+			validPhases := map[string]bool{"condition": true, "release": true}
+			if !validPhases[p.Phase] {
+				errs = append(errs, fmt.Sprintf("plugins[%d]: phase %q is not valid (must be condition or release)", i, p.Phase))
+			}
 		}
 	}
 

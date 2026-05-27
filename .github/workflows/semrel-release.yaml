@@ -44,6 +44,20 @@ jobs:
       - name: Build semrel from source
         run: go build -ldflags="-s -w" -o ./semrel-bin ./cmd/semrel
 
+      - name: Install plugins from source
+        # Plugins have no official releases yet — build them from their main branch.
+        # Once plugins publish tagged releases this step can switch to:
+        #   semrel plugin install condition-github-actions
+        # Binaries are placed in ~/.semrel/plugins/ using the discovery name
+        # that semrel expects: semrel-plugin-<uses>.
+        run: |
+          PLUGIN_DIR="$HOME/.semrel/plugins"
+          mkdir -p "$PLUGIN_DIR"
+          go install github.com/SemRels/condition-github-actions/cmd/plugin@main
+          mv "$(go env GOPATH)/bin/plugin" "$PLUGIN_DIR/semrel-plugin-condition-github-actions"
+          echo "Installed plugins:"
+          ls -la "$PLUGIN_DIR"
+
       - name: Configure git identity
         run: |
           git config user.name  "semrel-bot"
