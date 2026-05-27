@@ -2,38 +2,33 @@ version: "2"
 
 run:
   timeout: 5m
-  go: "1.24"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/GoSemantics/semrel
 
 linters:
   enable:
-    - gofmt
     - govet
     - errcheck
     - staticcheck
     - ineffassign
     - unused
     - misspell
-    - goimports
     - revive
     - gosec
   settings:
-    goimports:
-      local-prefixes: github.com/GoSemantics/semrel
     revive:
       rules:
         - name: exported
           severity: warning
-
-issues:
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - gosec
-      - linters:
-          - typecheck
-        text: "file requires newer Go version"
-    # Suppress "file requires newer Go version" typecheck errors when the
-    # CI runner's golangci-lint is built with an older Go toolchain.
-    paths:
-      - ".*"
