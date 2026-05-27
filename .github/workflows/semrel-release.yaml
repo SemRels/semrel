@@ -2,12 +2,11 @@
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
 # semrel-release — uses semrel to version semrel itself (dogfooding).
-# Flow: push to main → semrel creates tag → GoReleaser publishes release → docker.yml triggers
+# Flow: push to main → semrel creates tag → GoReleaser publishes release → Docker build+push
 #
-# NOTE: The GoReleaser step is inlined here (not in release.yaml) because GITHUB_TOKEN
-# tag pushes do not trigger other workflows (GitHub Actions security restriction).
-# GoReleaser creates the GitHub Release via API, which DOES trigger docker.yml via
-# the `release: published` event.
+# NOTE: All steps are inlined in one workflow because GITHUB_TOKEN-triggered events
+# (tag pushes, release creation) cannot trigger other workflows (GitHub Actions security
+# restriction). Docker build is a separate job that depends on the release job.
 name: Semrel Release
 
 on:
@@ -16,14 +15,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # needed to push tags and create releases
-  packages: write  # needed for GoReleaser
-  id-token: write  # needed for GoReleaser cosign
+  contents: write      # push tags and create releases
+  packages: write      # push Docker images to ghcr.io
+  id-token: write      # cosign OIDC signing
+  attestations: write  # SBOM / provenance attestation
 
 jobs:
   release:
-    name: Run semrel
+    name: Run semrel + GoReleaser
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.semrel.outputs.released }}
+      tag: ${{ steps.semrel.outputs.tag }}
+      version_short: ${{ steps.semrel.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -38,8 +42,7 @@ jobs:
           cache: true
 
       - name: Build semrel from source
-        run: |
-          go build -ldflags="-s -w" -o ./semrel-bin ./cmd/semrel
+        run: go build -ldflags="-s -w" -o ./semrel-bin ./cmd/semrel
 
       - name: Configure git identity
         run: |
@@ -56,7 +59,6 @@ jobs:
         if: steps.semrel.outputs.released == 'true'
         run: |
           TAG="${{ steps.semrel.outputs.tag }}"
-          # Check if tag already exists on remote (e.g. during bootstrap or re-runs)
           if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
             echo "Tag $TAG already exists on remote — skipping push (idempotent)."
           else
@@ -68,10 +70,7 @@ jobs:
       - name: Clean up build artifacts before GoReleaser
         if: steps.semrel.outputs.released == 'true'
         run: |
-          # semrel-bin is a temporary build artifact — remove it
           rm -f semrel-bin
-          # CHANGELOG.md may be updated by semrel locally; GoReleaser generates its own
-          # changelog from git history so we restore to committed state
           git checkout -- CHANGELOG.md 2>/dev/null || true
 
       - name: Run GoReleaser
@@ -87,7 +86,6 @@ jobs:
         run: |
           if [ "${{ steps.semrel.outputs.released }}" = "true" ]; then
             echo "### Released ${{ steps.semrel.outputs.tag }} 🚀" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Bump:** ${{ steps.semrel.outputs.bump }}" >> $GITHUB_STEP_SUMMARY
             echo "**Previous:** ${{ steps.semrel.outputs.previous_version }}" >> $GITHUB_STEP_SUMMARY
             if [ "${{ steps.semrel.outputs.ceiling_applied }}" = "true" ]; then
@@ -96,3 +94,111 @@ jobs:
           else
             echo "### No release — no releasable commits found." >> $GITHUB_STEP_SUMMARY
           fi
+
+  docker:
+    name: Build and push Docker image
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Set version metadata
+        id: version
+        run: |
+          echo "version=${{ needs.release.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "version_short=${{ needs.release.outputs.version_short }}" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "vcs_ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (distroless)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/semrels/semrel
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ needs.release.outputs.tag }}
+            type=raw,value=latest
+
+      - name: Build and push distroless image
+        id: build-distroless
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
+            VCS_REF=${{ steps.version.outputs.vcs_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Sign distroless image with cosign
+        run: cosign sign --yes ghcr.io/semrels/semrel@${{ steps.build-distroless.outputs.digest }}
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+      - name: Build and push alpine image
+        id: build-alpine
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: alpine
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}-alpine
+            ghcr.io/semrels/semrel:latest-alpine
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
+            VCS_REF=${{ steps.version.outputs.vcs_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Sign alpine image with cosign
+        run: cosign sign --yes ghcr.io/semrels/semrel@${{ steps.build-alpine.outputs.digest }}
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}-alpine
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Docker summary
+        run: |
+          echo "### Docker image published 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Variants:** distroless, alpine" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** linux/amd64, linux/arm64" >> $GITHUB_STEP_SUMMARY
