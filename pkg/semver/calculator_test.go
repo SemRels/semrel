@@ -3,17 +3,20 @@
 
 package semver
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseVersion(t *testing.T) {
 	tests := []struct {
-		input      string
-		wantMajor  int
-		wantMinor  int
-		wantPatch  int
-		wantPre    string
-		wantMeta   string
-		wantErr    bool
+		input     string
+		wantMajor int
+		wantMinor int
+		wantPatch int
+		wantPre   string
+		wantMeta  string
+		wantErr   bool
 	}{
 		{input: "1.2.3", wantMajor: 1, wantMinor: 2, wantPatch: 3},
 		{input: "v1.2.3", wantMajor: 1, wantMinor: 2, wantPatch: 3},
@@ -302,5 +305,107 @@ func TestForcePatch(t *testing.T) {
 				t.Errorf("got %v, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyCeiling_PatchBelowCeiling(t *testing.T) {
+	current := &Version{Major: 1, Minor: 2, Patch: 3}
+	next := &Version{Major: 1, Minor: 2, Patch: 4}
+	ceiling := &Version{Major: 1, Minor: 3, Patch: 0}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "clamp")
+	if err != nil {
+		t.Fatalf("ApplyCeiling() error = %v", err)
+	}
+	if skipped {
+		t.Fatal("expected skipped=false")
+	}
+	if got == nil || got.String() != "1.2.4" {
+		t.Fatalf("got %v, want 1.2.4", got)
+	}
+}
+
+func TestApplyCeiling_MinorClampedToPatch(t *testing.T) {
+	current := &Version{Major: 1, Minor: 2, Patch: 3}
+	next := &Version{Major: 1, Minor: 3, Patch: 0}
+	ceiling := &Version{Major: 1, Minor: 3, Patch: 0}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "clamp")
+	if err != nil {
+		t.Fatalf("ApplyCeiling() error = %v", err)
+	}
+	if skipped {
+		t.Fatal("expected skipped=false")
+	}
+	if got == nil || got.String() != "1.2.4" {
+		t.Fatalf("got %v, want 1.2.4", got)
+	}
+}
+
+func TestApplyCeiling_MajorClampedToMinorThenPatch(t *testing.T) {
+	current := &Version{Major: 1, Minor: 9, Patch: 9}
+	next := &Version{Major: 2, Minor: 0, Patch: 0}
+	ceiling := &Version{Major: 1, Minor: 10, Patch: 0}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "clamp")
+	if err != nil {
+		t.Fatalf("ApplyCeiling() error = %v", err)
+	}
+	if skipped {
+		t.Fatal("expected skipped=false")
+	}
+	if got == nil || got.String() != "1.9.10" {
+		t.Fatalf("got %v, want 1.9.10", got)
+	}
+}
+
+func TestApplyCeiling_SkipStrategy(t *testing.T) {
+	current := &Version{Major: 1, Minor: 2, Patch: 3}
+	next := &Version{Major: 1, Minor: 3, Patch: 0}
+	ceiling := &Version{Major: 1, Minor: 3, Patch: 0}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "skip")
+	if err != nil {
+		t.Fatalf("ApplyCeiling() error = %v", err)
+	}
+	if !skipped {
+		t.Fatal("expected skipped=true")
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil", got)
+	}
+}
+
+func TestApplyCeiling_ErrorStrategy(t *testing.T) {
+	current := &Version{Major: 1, Minor: 2, Patch: 3}
+	next := &Version{Major: 1, Minor: 3, Patch: 0}
+	ceiling := &Version{Major: 1, Minor: 3, Patch: 0}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "error")
+	if err == nil || !strings.Contains(err.Error(), "version ceiling reached") {
+		t.Fatalf("expected ceiling error, got %v", err)
+	}
+	if skipped {
+		t.Fatal("expected skipped=false")
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil", got)
+	}
+}
+
+func TestApplyCeiling_AlreadyAtCeilingSkips(t *testing.T) {
+	current := &Version{Major: 1, Minor: 2, Patch: 3}
+	next := &Version{Major: 1, Minor: 2, Patch: 4}
+	ceiling := &Version{Major: 1, Minor: 2, Patch: 4}
+
+	got, skipped, err := ApplyCeiling(current, next, ceiling, "clamp")
+	if err != nil {
+		t.Fatalf("ApplyCeiling() error = %v", err)
+	}
+	if !skipped {
+		t.Fatal("expected skipped=true")
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil", got)
 	}
 }

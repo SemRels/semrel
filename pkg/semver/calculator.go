@@ -32,6 +32,27 @@ func (v *Version) String() string {
 	return s
 }
 
+// Compare compares v to other according to semver precedence.
+// It returns -1 if v < other, 0 if v == other, and 1 if v > other.
+func (v *Version) Compare(other *Version) int {
+	switch {
+	case v.Major != other.Major:
+		return compareInts(v.Major, other.Major)
+	case v.Minor != other.Minor:
+		return compareInts(v.Minor, other.Minor)
+	case v.Patch != other.Patch:
+		return compareInts(v.Patch, other.Patch)
+	case v.Prerelease == other.Prerelease:
+		return 0
+	case v.Prerelease == "":
+		return 1
+	case other.Prerelease == "":
+		return -1
+	default:
+		return comparePrerelease(v.Prerelease, other.Prerelease)
+	}
+}
+
 // ParseVersion parses a version string, optionally prefixed with "v".
 // Returns a 0.0.0 version if the string is empty or cannot be parsed.
 func ParseVersion(s string) (*Version, error) {
@@ -210,6 +231,84 @@ func prereleaseCounter(prerelease, channel string) int {
 		return 0
 	}
 	return n
+}
+
+// ApplyCeiling applies a version ceiling to next.
+// strategy: "clamp" (default), "skip", "error"
+// Returns (clampedVersion, skipped, error).
+func ApplyCeiling(current, next, ceiling *Version, strategy string) (*Version, bool, error) {
+	if next == nil || ceiling == nil {
+		return next, false, nil
+	}
+	if strategy == "" {
+		strategy = "clamp"
+	}
+	if next.Compare(ceiling) < 0 {
+		return next, false, nil
+	}
+
+	switch strategy {
+	case "clamp":
+		for _, candidate := range clampedCandidates(current, next) {
+			if candidate.Compare(ceiling) < 0 {
+				return candidate, false, nil
+			}
+		}
+		return nil, true, nil
+	case "skip":
+		return nil, true, nil
+	case "error":
+		return nil, false, fmt.Errorf("version ceiling reached: %s >= %s", next, ceiling)
+	default:
+		return nil, false, fmt.Errorf("invalid ceiling strategy %q", strategy)
+	}
+}
+
+func clampedCandidates(current, next *Version) []*Version {
+	var candidates []*Version
+	if next.Major > current.Major {
+		candidates = append(candidates, &Version{Major: current.Major, Minor: current.Minor + 1, Patch: 0})
+	}
+	if next.Major > current.Major || next.Minor > current.Minor {
+		candidates = append(candidates, &Version{Major: current.Major, Minor: current.Minor, Patch: current.Patch + 1})
+	}
+	return candidates
+}
+
+func compareInts(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func comparePrerelease(left, right string) int {
+	leftParts := strings.Split(left, ".")
+	rightParts := strings.Split(right, ".")
+	for i := 0; i < len(leftParts) && i < len(rightParts); i++ {
+		if leftParts[i] == rightParts[i] {
+			continue
+		}
+		leftNum, leftErr := strconv.Atoi(leftParts[i])
+		rightNum, rightErr := strconv.Atoi(rightParts[i])
+		switch {
+		case leftErr == nil && rightErr == nil:
+			return compareInts(leftNum, rightNum)
+		case leftErr == nil:
+			return -1
+		case rightErr == nil:
+			return 1
+		case leftParts[i] < rightParts[i]:
+			return -1
+		default:
+			return 1
+		}
+	}
+	return compareInts(len(leftParts), len(rightParts))
 }
 
 // ForcePatch always bumps the patch component, regardless of commits.

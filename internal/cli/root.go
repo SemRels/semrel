@@ -15,6 +15,7 @@ import (
 
 	"github.com/GoSemantics/semrel/internal/colors"
 	"github.com/GoSemantics/semrel/pkg/changelog"
+	"github.com/GoSemantics/semrel/pkg/cioutput"
 	"github.com/GoSemantics/semrel/pkg/commits"
 	"github.com/GoSemantics/semrel/pkg/config"
 	"github.com/GoSemantics/semrel/pkg/editor"
@@ -42,6 +43,8 @@ type ReleaseSummary struct {
 	Changelog      string `json:"changelog,omitempty"`
 	Branch         string `json:"branch"`
 	TagPrefix      string `json:"tag_prefix"`
+	CeilingApplied bool   `json:"ceiling_applied,omitempty"`
+	VersionCeiling string `json:"version_ceiling,omitempty"`
 }
 
 // printSummary writes the summary to stdout in the selected format.
@@ -62,6 +65,51 @@ func printSummary(s ReleaseSummary, format string) error {
 		s.Commits, s.Breaking, s.Features, s.Fixes)
 	fmt.Printf("\n%s", s.Changelog)
 	return nil
+}
+
+func writeCIOutputs(summary ReleaseSummary, githubOutput bool, gitlabDotenv string, outputFile string) error {
+	meta := cioutput.ReleaseMeta{
+		Released:        summary.Released,
+		DryRun:          summary.DryRun,
+		Bump:            summary.Bump,
+		PreviousVersion: strings.TrimPrefix(summary.CurrentVersion, summary.TagPrefix),
+		Changelog:       summary.Changelog,
+		Branch:          summary.Branch,
+		CeilingApplied:  summary.CeilingApplied,
+	}
+	if summary.Released {
+		meta.Version = strings.TrimPrefix(summary.NextVersion, summary.TagPrefix)
+		meta.Tag = summary.NextVersion
+	}
+	if githubOutput {
+		if err := cioutput.WriteGitHubOutput(meta); err != nil {
+			return err
+		}
+	}
+	if gitlabDotenv != "" {
+		if err := cioutput.WriteGitLabDotenv(meta, gitlabDotenv); err != nil {
+			return err
+		}
+	}
+	if outputFile != "" {
+		if err := cioutput.WriteOutputFile(meta, outputFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func releaseBumpLabel(current, next *semver.Version) string {
+	switch {
+	case next == nil || current == nil:
+		return ""
+	case next.Major != current.Major:
+		return "major"
+	case next.Minor != current.Minor:
+		return "minor"
+	default:
+		return "patch"
+	}
 }
 
 // version is set via ldflags at build time.
@@ -118,21 +166,27 @@ Documentation: https://github.com/SemRels/semrel`,
 func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *cobra.Command {
 	var forcePatch bool
 	var editNotes bool
+	var githubOutput bool
+	var gitlabDotenv string
+	var outputFile string
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, *outputFormat)
+			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, *outputFormat, githubOutput, gitlabDotenv, outputFile)
 		},
 	}
 	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
 		"Force a patch release even when no releasable commits are found")
 	cmd.Flags().BoolVar(&editNotes, "edit", false,
 		"Open the generated release notes in $EDITOR before finalising the release")
+	cmd.Flags().BoolVar(&githubOutput, "github-output", false, "Write release metadata to $GITHUB_OUTPUT (GitHub Actions)")
+	cmd.Flags().StringVar(&gitlabDotenv, "gitlab-dotenv", "", "Write release metadata as dotenv artifact (GitLab CI)")
+	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write release metadata to file (.json or .env)")
 	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, outputFormat string) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string) error {
 	if dryRun {
 		fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -173,9 +227,13 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// Check if the current branch is configured for release
 	if !isBranchConfigured(branch, cfg.Branches) {
+		summary := ReleaseSummary{Released: false, DryRun: dryRun, Branch: branch, TagPrefix: cfg.TagPrefix}
+		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+			return err
+		}
 		msg := fmt.Sprintf("Branch %q is not configured for release — skipping.", branch)
 		if outputFormat == "json" {
-			return printSummary(ReleaseSummary{Released: false, Branch: branch, TagPrefix: cfg.TagPrefix}, outputFormat)
+			return printSummary(summary, outputFormat)
 		}
 		fmt.Println(msg)
 		return nil
@@ -199,14 +257,18 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	currentTag := cfg.TagPrefix + currentVersion.String()
 
 	if len(rawMessages) == 0 && !forcePatch {
+		summary := ReleaseSummary{
+			Released:       false,
+			DryRun:         dryRun,
+			CurrentVersion: currentTag,
+			Branch:         branch,
+			TagPrefix:      cfg.TagPrefix,
+		}
+		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+			return err
+		}
 		if outputFormat == "json" {
-			return printSummary(ReleaseSummary{
-				Released:       false,
-				DryRun:         dryRun,
-				CurrentVersion: currentTag,
-				Branch:         branch,
-				TagPrefix:      cfg.TagPrefix,
-			}, outputFormat)
+			return printSummary(summary, outputFormat)
 		}
 		fmt.Println("No commits since last release — nothing to release.")
 		return nil
@@ -243,15 +305,19 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	bump := semver.BumpFromRules(commitTypes, ruleMap, hasBreaking)
 	if bump == "" && !forcePatch {
+		summary := ReleaseSummary{
+			Released:       false,
+			DryRun:         dryRun,
+			CurrentVersion: currentTag,
+			Commits:        len(parsed),
+			Branch:         branch,
+			TagPrefix:      cfg.TagPrefix,
+		}
+		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+			return err
+		}
 		if outputFormat == "json" {
-			return printSummary(ReleaseSummary{
-				Released:       false,
-				DryRun:         dryRun,
-				CurrentVersion: currentTag,
-				Commits:        len(parsed),
-				Branch:         branch,
-				TagPrefix:      cfg.TagPrefix,
-			}, outputFormat)
+			return printSummary(summary, outputFormat)
 		}
 		fmt.Println("No releasable commits found — nothing to release.")
 		return nil
@@ -272,12 +338,70 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				fmt.Println("[force-bump-patch-version] No releasable commits — forcing patch bump.")
 			}
 		} else {
+			summary := ReleaseSummary{
+				Released:       false,
+				DryRun:         dryRun,
+				CurrentVersion: currentTag,
+				Commits:        len(parsed),
+				Branch:         branch,
+				TagPrefix:      cfg.TagPrefix,
+			}
+			if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+				return err
+			}
+			if outputFormat == "json" {
+				return printSummary(summary, outputFormat)
+			}
 			fmt.Println("No releasable commits found — nothing to release.")
 			return nil
 		}
 	}
 
 	nextTag := cfg.TagPrefix + nextVer.String()
+	ceilingApplied := false
+
+	// 7b. Apply version ceiling if configured
+	if cfg.VersionCeiling != "" {
+		ceiling, err := semver.ParseVersion(cfg.VersionCeiling)
+		if err != nil {
+			return fmt.Errorf("invalid version_ceiling: %w", err)
+		}
+		strategy := cfg.CeilingStrategy
+		if strategy == "" {
+			strategy = "clamp"
+		}
+		clamped, skipped, err := semver.ApplyCeiling(currentVersion, nextVer, ceiling, strategy)
+		if err != nil {
+			return err
+		}
+		if skipped {
+			summary := ReleaseSummary{
+				Released:       false,
+				DryRun:         dryRun,
+				CurrentVersion: currentTag,
+				Commits:        len(parsed),
+				Branch:         branch,
+				TagPrefix:      cfg.TagPrefix,
+				VersionCeiling: cfg.VersionCeiling,
+			}
+			if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+				return err
+			}
+			msg := fmt.Sprintf("Version ceiling %s reached — skipping release (calculated: %s).", cfg.VersionCeiling, nextTag)
+			if outputFormat == "json" {
+				return printSummary(summary, outputFormat)
+			}
+			fmt.Println(msg)
+			return nil
+		}
+		if clamped != nil && clamped.String() != nextVer.String() {
+			fmt.Fprintf(os.Stderr, "warning: version ceiling %s applied — bump clamped from %s to %s\n", cfg.VersionCeiling, nextVer.String(), clamped.String())
+			ceilingApplied = true
+			nextVer = clamped
+			nextTag = cfg.TagPrefix + nextVer.String()
+			bump = releaseBumpLabel(currentVersion, nextVer)
+		}
+	}
 
 	// 8. Generate changelog
 	gen := changelog.NewGenerator()
@@ -308,6 +432,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		Changelog:      changelogEntry,
 		Branch:         branch,
 		TagPrefix:      cfg.TagPrefix,
+		CeilingApplied: ceilingApplied,
+		VersionCeiling: cfg.VersionCeiling,
 	}
 
 	// 9. Output results
@@ -333,7 +459,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] No changes made.")
-		} else {
+		}
+		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+			return err
+		}
+		if outputFormat == "json" {
 			return printSummary(summary, outputFormat)
 		}
 		return nil
@@ -362,6 +492,9 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 	}
 
+	if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
+		return err
+	}
 	if outputFormat == "json" {
 		return printSummary(summary, outputFormat)
 	}

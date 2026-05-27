@@ -5,6 +5,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -283,5 +284,37 @@ branches:
 	}
 	if !IsMaintenance("1.x", *bc) {
 		t.Error("1.x should be a maintenance branch")
+	}
+}
+
+func TestValidate_VersionCeilingAccepted(t *testing.T) {
+	cfg := &Config{VersionCeiling: "1.2.3"}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid version_ceiling, got %v", err)
+	}
+}
+
+func TestValidate_InvalidVersionCeilingRejected(t *testing.T) {
+	cfg := &Config{VersionCeiling: "not-a-version"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "version_ceiling") {
+		t.Fatalf("expected version_ceiling validation error, got %v", err)
+	}
+}
+
+func TestValidate_InvalidCeilingStrategyRejected(t *testing.T) {
+	cfg := &Config{CeilingStrategy: "explode"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "ceiling_strategy") {
+		t.Fatalf("expected ceiling_strategy validation error, got %v", err)
+	}
+}
+
+func TestValidate_ValidCeilingStrategiesAccepted(t *testing.T) {
+	for _, strategy := range []string{"clamp", "skip", "error"} {
+		t.Run(strategy, func(t *testing.T) {
+			cfg := &Config{CeilingStrategy: strategy}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected valid ceiling_strategy %q, got %v", strategy, err)
+			}
+		})
 	}
 }

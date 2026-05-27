@@ -11,27 +11,30 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/GoSemantics/semrel/pkg/semver"
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the semrel configuration.
 type Config struct {
-	Branches  []BranchConfig `yaml:"branches"`
-	TagPrefix string         `yaml:"tagPrefix"`
-	Rules     []ReleaseRule  `yaml:"rules"`
-	Plugins   []PluginConfig `yaml:"plugins,omitempty"`
+	Branches        []BranchConfig `yaml:"branches"`
+	TagPrefix       string         `yaml:"tagPrefix"`
+	Rules           []ReleaseRule  `yaml:"rules"`
+	Plugins         []PluginConfig `yaml:"plugins,omitempty"`
+	VersionCeiling  string         `yaml:"version_ceiling,omitempty"`
+	CeilingStrategy string         `yaml:"ceiling_strategy,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
 // For maintenance branches, set Maintenance: true or use a pattern like "1.x" / "1.2.x".
 // See: https://github.com/SemRels/semrel/issues/95
 type BranchConfig struct {
-	Name        string `yaml:"name"`
-	Prerelease  string `yaml:"prerelease,omitempty"`
+	Name       string `yaml:"name"`
+	Prerelease string `yaml:"prerelease,omitempty"`
 	// Maintenance marks this branch as a maintenance branch.
 	// On maintenance branches only patch bumps are allowed.
 	// Can also be inferred automatically from the branch name pattern (N.x, N.M.x).
-	Maintenance bool   `yaml:"maintenance,omitempty"`
+	Maintenance bool `yaml:"maintenance,omitempty"`
 }
 
 // maintenancePattern matches branch names like "1.x", "1.2.x", "2.x".
@@ -129,6 +132,19 @@ func (c *Config) Validate() error {
 	for i, p := range c.Plugins {
 		if strings.TrimSpace(p.Uses) == "" && strings.TrimSpace(p.Path) == "" {
 			errs = append(errs, fmt.Sprintf("plugins[%d]: either 'uses' or 'path' must be set", i))
+		}
+	}
+
+	if c.VersionCeiling != "" {
+		if _, err := semver.ParseVersion(c.VersionCeiling); err != nil {
+			errs = append(errs, fmt.Sprintf("version_ceiling must be a valid semver: %v", err))
+		}
+	}
+
+	if c.CeilingStrategy != "" {
+		validStrategies := map[string]bool{"clamp": true, "skip": true, "error": true}
+		if !validStrategies[c.CeilingStrategy] {
+			errs = append(errs, fmt.Sprintf("ceiling_strategy %q is not valid (must be clamp, skip, or error)", c.CeilingStrategy))
 		}
 	}
 
