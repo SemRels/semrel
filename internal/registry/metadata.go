@@ -27,7 +27,11 @@ type PluginVersion struct {
 	Version       string            `json:"version"`
 	ReleaseDate   string            `json:"releaseDate"`
 	Changelog     string            `json:"changelog,omitempty"`
+	// DownloadURL is the fallback URL used when no platform-specific URL is available.
 	DownloadURL   string            `json:"downloadUrl"`
+	// DownloadURLs maps platform keys ("linux_amd64", "windows_amd64", etc.) to direct binary URLs.
+	// When present, the correct URL is selected automatically based on the running OS/arch.
+	DownloadURLs  map[string]string `json:"downloadUrls,omitempty"`
 	Checksums     map[string]string `json:"checksums"`
 	Compatibility *Compatibility    `json:"compatibility,omitempty"`
 	Prerelease    bool              `json:"prerelease,omitempty"`
@@ -77,6 +81,15 @@ func (v *PluginVersion) ChecksumForPlatform(goos, goarch string) (string, error)
 		return "", newRegistryError(ErrCodeNotFound, fmt.Sprintf("checksum for %s/%s not found", goos, goarch), nil)
 	}
 	return checksum, nil
+}
+
+// DownloadURLForPlatform returns the best download URL for the given OS/arch.
+// Prefers a platform-specific URL from DownloadURLs; falls back to DownloadURL.
+func (v *PluginVersion) DownloadURLForPlatform(goos, goarch string) string {
+	if url, ok := v.DownloadURLs[platformKey(goos, goarch)]; ok && url != "" {
+		return url
+	}
+	return v.DownloadURL
 }
 
 func platformKey(goos, goarch string) string {

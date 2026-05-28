@@ -55,8 +55,9 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 		return "", newRegistryError(ErrCodeCacheError, "create local plugin directory", err)
 	}
 
-	targetPath := filepath.Join(localDir, downloadFileName(pluginVersion.DownloadURL, plugin, goos))
-	if err := c.downloadWithRetry(ctx, pluginVersion.DownloadURL, targetPath, checksum); err != nil {
+	downloadURL := pluginVersion.DownloadURLForPlatform(goos, goarch)
+	targetPath := filepath.Join(localDir, downloadFileName(downloadURL, plugin, goos))
+	if err := c.downloadWithRetry(ctx, downloadURL, targetPath, checksum); err != nil {
 		return "", err
 	}
 	return targetPath, nil
