@@ -24,11 +24,11 @@ type PluginMeta struct {
 
 // PluginVersion describes one downloadable plugin release.
 type PluginVersion struct {
-	Version       string            `json:"version"`
-	ReleaseDate   string            `json:"releaseDate"`
-	Changelog     string            `json:"changelog,omitempty"`
+	Version     string `json:"version"`
+	ReleaseDate string `json:"releaseDate"`
+	Changelog   string `json:"changelog,omitempty"`
 	// DownloadURL is the fallback URL used when no platform-specific URL is available.
-	DownloadURL   string            `json:"downloadUrl"`
+	DownloadURL string `json:"downloadUrl"`
 	// DownloadURLs maps platform keys ("linux_amd64", "windows_amd64", etc.) to direct binary URLs.
 	// When present, the correct URL is selected automatically based on the running OS/arch.
 	DownloadURLs  map[string]string `json:"downloadUrls,omitempty"`
