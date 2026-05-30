@@ -101,6 +101,15 @@ jobs:
           rm -f semrel-bin
           git checkout -- CHANGELOG.md 2>/dev/null || true
 
+      - name: Sync working tree to released tag
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          # semrel may have made a pre-tag commit (e.g. updater-go writes version.go
+          # and commits it before tagging). GoReleaser requires the tag to point to the
+          # current HEAD, so we fetch and reset to the exact tagged commit.
+          git fetch --tags --force origin
+          git reset --hard "${{ steps.semrel.outputs.tag }}"
+
       - name: Run GoReleaser
         if: steps.semrel.outputs.released == 'true'
         uses: goreleaser/goreleaser-action@v6
