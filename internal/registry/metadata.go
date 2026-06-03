@@ -3,7 +3,10 @@
 
 package registry
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // PluginRegistry is the root document returned by the plugin registry.
 type PluginRegistry struct {
@@ -12,6 +15,9 @@ type PluginRegistry struct {
 
 // PluginMeta contains discovery metadata for a single plugin.
 type PluginMeta struct {
+	// Namespace groups plugins by origin, e.g. "@semrel" for the official org.
+	// Omitted for community plugins that do not carry a namespace.
+	Namespace   string          `json:"namespace,omitempty"`
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Author      string          `json:"author"`
@@ -44,13 +50,39 @@ type Compatibility struct {
 }
 
 // FindPlugin returns the registry entry for the named plugin.
+//
+// The name argument may be:
+//   - a bare name: "analyzer-default"
+//   - a namespaced ref: "@semrel/analyzer-default"
+//
+// When a bare name is used, the first matching entry is returned regardless of
+// namespace, which preserves backward compatibility with older plugins.json files
+// that have no namespace field.
 func (r *PluginRegistry) FindPlugin(name string) (*PluginMeta, error) {
+	inputNS, bareName := splitPluginRef(name)
 	for i := range r.Plugins {
-		if r.Plugins[i].Name == name {
-			return &r.Plugins[i], nil
+		p := &r.Plugins[i]
+		if !strings.EqualFold(p.Name, bareName) {
+			continue
 		}
+		// When a namespace was requested, require it to match.
+		if inputNS != "" && !strings.EqualFold(p.Namespace, inputNS) {
+			continue
+		}
+		return p, nil
 	}
 	return nil, newRegistryError(ErrCodeNotFound, fmt.Sprintf("plugin %q not found", name), nil)
+}
+
+// splitPluginRef splits "@namespace/name" into (namespace, name).
+// For bare names without a leading "@", it returns ("", name).
+func splitPluginRef(ref string) (namespace, name string) {
+	if strings.HasPrefix(ref, "@") {
+		if slash := strings.Index(ref, "/"); slash > 0 {
+			return ref[:slash], ref[slash+1:]
+		}
+	}
+	return "", ref
 }
 
 // FindVersion returns the requested plugin version. If version is empty, the latest stable version is preferred.
