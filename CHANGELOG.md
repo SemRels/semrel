@@ -1,3 +1,9 @@
+## v0.4.1 (2026-06-03)
+
+### Bug Fixes
+
+* **registry:** support @namespace/name refs in FindPlugin
+
 ## v0.4.0 (2026-06-03)
 
 ### Features
