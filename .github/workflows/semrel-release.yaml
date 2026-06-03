@@ -78,16 +78,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push tag to GitHub
+      - name: Push pre-tag commit and tag to GitHub
         if: steps.semrel.outputs.released == 'true'
         run: |
           TAG="${{ steps.semrel.outputs.tag }}"
-          # Skip if tag already exists on remote (idempotent re-runs)
-          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
-            echo "Tag $TAG already exists on remote — skipping tag push (idempotent)."
-          else
-            git push origin "refs/tags/$TAG"
+          # Rebase the pre-tag commit onto latest origin/main so the tag points to
+          # a commit that is in the main branch. Without this, the CHANGELOG rebase
+          # (done later) would create a new SHA for the pre-tag commit, leaving the
+          # tag pointing at an orphaned commit not reachable from main.
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+            git rebase origin/main
+            # Re-tag the rebased commit (rebase creates a new SHA)
+            git tag -f "$TAG" HEAD
           fi
+          # Push the pre-tag commit to main first (tag must point to a main commit)
+          git push origin HEAD:main
+          # Push the tag (force in case we re-tagged after rebase)
+          git push --force origin "refs/tags/$TAG"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -104,10 +112,9 @@ jobs:
       - name: Sync working tree to released tag
         if: steps.semrel.outputs.released == 'true'
         run: |
-          # semrel may have made a pre-tag commit (e.g. updater-go writes version.go
-          # and commits it before tagging). GoReleaser requires the tag to point to the
-          # current HEAD, so we fetch and reset to the exact tagged commit.
-          git fetch --tags --force origin
+          # GoReleaser requires the tag to point to the current HEAD.
+          # The pre-tag commit was already pushed to origin/main in the previous step,
+          # so we just reset to the released tag (which is on a main commit).
           git reset --hard "${{ steps.semrel.outputs.tag }}"
 
       - name: Run GoReleaser
@@ -130,8 +137,9 @@ jobs:
               echo "No CHANGELOG changes to commit."
             else
               git commit --no-verify -m "chore(changelog): update for $TAG [skip ci]"
-              # Rebase on top of latest main to handle any commits pushed since we started.
-              # Use -X ours to auto-resolve any CHANGELOG.md conflicts in our favour.
+              # Rebase on top of latest main to handle any commits pushed since we
+              # pushed the pre-tag commit above. The pre-tag commit is already on
+              # origin/main so this rebase only replays the CHANGELOG commit itself.
               git pull --rebase -X ours origin main || true
               git push origin HEAD:main
             fi
