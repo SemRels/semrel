@@ -50,6 +50,8 @@ When a plugin is invoked, semrel:
 | `SEMREL_TAG_PREFIX` | Tag prefix configured in `.semrel.yaml` |
 | `SEMREL_CHANGELOG` | Generated release changelog |
 | `SEMREL_DRY_RUN` | `true` or `false` |
+| `SEMREL_COMMITS` | JSON array of raw commit messages since last release (e.g. `["feat: foo","fix: bar"]`) |
+| `SEMREL_REPOSITORY_URL` | Repository base URL (e.g. `https://github.com/org/repo`) — used for PR/commit linkification |
 
 ### Plugin config from `args:`
 

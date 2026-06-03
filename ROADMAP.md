@@ -14,7 +14,7 @@ A Go-native, plugin-based semantic release system that covers the full release l
 
 ---
 
-## v0.0.1 — Project Foundation _(current)_
+## v0.0.1 — Project Foundation ✅ (shipped)
 **Goal:** Establish governance, legal and supply-chain security foundations.
 
 - Apache 2.0 license, SPDX headers, REUSE compliance
@@ -23,7 +23,7 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - OpenSSF Best Practices badge, OpenSSF Scorecard, Renovate
 - ADR directory (`docs/adr/`)
 
-## v0.1.0 — Foundation
+## v0.1.0 — Foundation ✅ (shipped)
 **Goal:** Working CLI with core release engine and basic git integration.
 
 - Go module scaffold, Makefile, golangci-lint
@@ -53,7 +53,7 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Core binary ships with no bundled plugin implementations
 - Repeated plugin instances supported with different configs
 
-## v0.2.5 — Changelog Engine
+## v0.2.5 — Changelog Engine _(in progress)_
 **Goal:** Multi-format changelog rendering from a single source of truth.
 
 - Structured `ReleaseNotes` model and `Renderer` / `FileUpdater` interfaces
