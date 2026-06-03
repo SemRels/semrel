@@ -19,9 +19,11 @@ Files: Makefile
  go.mod
  go.sum
  .gitignore
+ .dockerignore
  .golangci.yml
  buf.yaml
  buf.gen.yaml
+ .semrel.yaml
  .semrel.yaml.example
  .goreleaser.yaml
 Copyright: 2026 The semrel Authors
