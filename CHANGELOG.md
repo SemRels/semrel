@@ -1,3 +1,30 @@
+## v0.4.0 (2026-06-03)
+
+### Features
+
+* pass SEMREL_COMMITS to plugins as JSON-encoded commit messages
+* multi-arch plugin download via DownloadURLs map
+* **release:** add pre-tag phase and version file commit via updater-go
+
+### Bug Fixes
+
+* **ci:** push pre-tag commit to main before tagging to prevent orphaned tags
+* **ci:** fix SC2129 shellcheck warnings and add missing REUSE coverage
+* **fmt:** gofmt internal/registry/metadata.go
+* **ci:** sync working tree to released tag before GoReleaser
+* **config:** add pre-tag to valid plugin phases
+
+### Other Changes
+
+* update status badge to v0.4.x
+* **ci:** bump github/codeql-action (#198)
+* **ci:** bump reviewdog/action-actionlint (#199)
+* update ROADMAP milestone statuses and document SEMREL_COMMITS env var
+* complete official plugin list in README
+* update status from pre-alpha to alpha
+* **config:** add TOML and JSON examples to config reference
+* **changelog:** update for v0.3.3 [skip ci]
+
 ## v0.3.3 (2026-05-27)
 
 ### Bug Fixes
