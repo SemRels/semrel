@@ -31,21 +31,22 @@ import (
 // ReleaseSummary holds the structured output of a release run.
 // See: https://github.com/SemRels/semrel/issues/20
 type ReleaseSummary struct {
-	Released       bool   `json:"released"`
-	DryRun         bool   `json:"dry_run"`
-	CurrentVersion string `json:"current_version"`
-	NextVersion    string `json:"next_version,omitempty"`
-	Bump           string `json:"bump,omitempty"`
-	Commits        int    `json:"commits"`
-	Breaking       bool   `json:"breaking"`
-	Features       bool   `json:"features"`
-	Fixes          bool   `json:"fixes"`
-	ForcedPatch    bool   `json:"forced_patch,omitempty"`
-	Changelog      string `json:"changelog,omitempty"`
-	Branch         string `json:"branch"`
-	TagPrefix      string `json:"tag_prefix"`
-	CeilingApplied bool   `json:"ceiling_applied,omitempty"`
-	VersionCeiling string `json:"version_ceiling,omitempty"`
+	Released       bool     `json:"released"`
+	DryRun         bool     `json:"dry_run"`
+	CurrentVersion string   `json:"current_version"`
+	NextVersion    string   `json:"next_version,omitempty"`
+	Bump           string   `json:"bump,omitempty"`
+	Commits        int      `json:"commits"`
+	Breaking       bool     `json:"breaking"`
+	Features       bool     `json:"features"`
+	Fixes          bool     `json:"fixes"`
+	ForcedPatch    bool     `json:"forced_patch,omitempty"`
+	Changelog      string   `json:"changelog,omitempty"`
+	CommitMessages []string `json:"commit_messages,omitempty"`
+	Branch         string   `json:"branch"`
+	TagPrefix      string   `json:"tag_prefix"`
+	CeilingApplied bool     `json:"ceiling_applied,omitempty"`
+	VersionCeiling string   `json:"version_ceiling,omitempty"`
 }
 
 // printSummary writes the summary to stdout in the selected format.
@@ -451,6 +452,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		Fixes:          hasFix,
 		ForcedPatch:    forcedPatch,
 		Changelog:      changelogEntry,
+		CommitMessages: rawMessages,
 		Branch:         branch,
 		TagPrefix:      cfg.TagPrefix,
 		CeilingApplied: ceilingApplied,
@@ -649,6 +651,11 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 			"SEMREL_BRANCH="+rel.Branch,
 			"SEMREL_DRY_RUN="+dryRunStr,
 		)
+		if len(rel.CommitMessages) > 0 {
+			if commitsJSON, err := json.Marshal(rel.CommitMessages); err == nil {
+				env = append(env, "SEMREL_COMMITS="+string(commitsJSON))
+			}
+		}
 		// Plugin-specific config from .semrel.yaml args.
 		for k, v := range spec.Config {
 			env = append(env, fmt.Sprintf("SEMREL_PLUGIN_%s=%v", pluginEnvKey(k), v))
