@@ -954,7 +954,12 @@ func newCommitlintCommand(outputFormat *string) *cobra.Command {
 		Long: `commitlint validates commit messages against the Conventional Commits
 specification (https://www.conventionalcommits.org/).
 
+Without arguments, lints all commits since the last release tag (same scope as semrel lint).
+
 Examples:
+  # Lint commits since the last release tag (default)
+  semrel commitlint
+
   # Lint a single message passed as an argument
   semrel commitlint "feat(auth): add OAuth2 support"
 
@@ -1010,7 +1015,20 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 	case len(args) > 0:
 		messages = args
 	default:
-		return fmt.Errorf("provide commit messages as arguments, use --from/--to for a git range, or use --stdin")
+		// No arguments: lint all commits since the last release tag.
+		repo, err := gitpkg.OpenRepository(".")
+		if err != nil {
+			return fmt.Errorf("opening repository: %w", err)
+		}
+		lastTag, err := repo.LastTag(ctx)
+		if err != nil {
+			return fmt.Errorf("getting last tag: %w", err)
+		}
+		msgs, err := repo.CommitsSince(ctx, lastTag)
+		if err != nil {
+			return fmt.Errorf("getting commits: %w", err)
+		}
+		messages = msgs
 	}
 
 	if len(messages) == 0 {
