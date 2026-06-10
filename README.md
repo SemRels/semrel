@@ -1,7 +1,7 @@
 # semrel
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/GoSemantics/semrel)](https://goreportcard.com/report/github.com/GoSemantics/semrel)
+[![Go Report Card](https://goreportcard.com/badge/github.com/SemRels/semrel)](https://goreportcard.com/report/github.com/SemRels/semrel)
 [![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 
@@ -25,7 +25,7 @@ A Go-based semantic versioning and release system with a plugin architecture tha
 ## Installation
 
 ```bash
-go install github.com/GoSemantics/semrel/cmd/semrel@latest
+go install github.com/SemRels/semrel/cmd/semrel@latest
 semrel --version
 ```
 
