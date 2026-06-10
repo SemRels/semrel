@@ -1,3 +1,16 @@
+## v0.8.2 (2026-06-10)
+
+### Bug Fixes
+
+* **registry:** update DefaultBaseURL to custom domain registry.semrel.io
+* **commitlint:** default to commits since last tag when no arguments given
+* **cli:** show embedded module version and improve config help
+
+### Other Changes
+
+* **config:** reorganize .semrel.yaml structure for clarity
+* **cli:** expand help text for all commands
+
 ## v0.8.1 (2026-06-10)
 
 ### Bug Fixes
