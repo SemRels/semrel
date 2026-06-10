@@ -1,3 +1,13 @@
+## v0.8.0 (2026-06-10)
+
+### Features
+
+* add JSON Schema for .semrel.yaml and wire into config init
+
+### Other Changes
+
+* **ci:** bump actions/checkout from 4 to 6
+
 ## v0.7.1 (2026-06-10)
 
 ### Bug Fixes

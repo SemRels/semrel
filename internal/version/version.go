@@ -5,4 +5,4 @@
 package version
 
 // Version is the semrel version and can be overridden via ldflags.
-var Version = "0.7.1"
+var Version = "0.8.0"
