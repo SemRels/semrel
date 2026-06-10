@@ -170,6 +170,7 @@ Documentation: https://github.com/SemRels/semrel`,
 func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *cobra.Command {
 	var forcePatch bool
 	var editNotes bool
+	var interactive bool
 	var githubOutput bool
 	var gitlabDotenv string
 	var outputFile string
@@ -177,20 +178,22 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 		Use:   "release",
 		Short: "Run the full release pipeline",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, *outputFormat, githubOutput, gitlabDotenv, outputFile)
+			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile)
 		},
 	}
 	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
 		"Force a patch release even when no releasable commits are found")
 	cmd.Flags().BoolVar(&editNotes, "edit", false,
 		"Open the generated release notes in $EDITOR before finalising the release")
+	cmd.Flags().BoolVar(&interactive, "interactive", false,
+		"Pause before tagging and prompt for confirmation (requires a TTY; not for CI)")
 	cmd.Flags().BoolVar(&githubOutput, "github-output", false, "Write release metadata to $GITHUB_OUTPUT (GitHub Actions)")
 	cmd.Flags().StringVar(&gitlabDotenv, "gitlab-dotenv", "", "Write release metadata as dotenv artifact (GitLab CI)")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write release metadata to file (.json or .env)")
 	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, interactive bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string) error {
 	if dryRun {
 		_, _ = fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		_, _ = fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -440,6 +443,26 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			return fmt.Errorf("editing release notes: %w", err)
 		}
 		changelogEntry = edited
+	}
+
+	// 8b. Interactive confirmation prompt before tagging.
+	// See: https://github.com/SemRels/semrel/issues/193
+	if interactive {
+		if !isTerminal() {
+			return fmt.Errorf("--interactive requires a TTY; stdin is not a terminal (CI detected)")
+		}
+		confirmed, err := interactiveConfirm(os.Stdin, os.Stderr, currentTag, nextTag, bump, changelogEntry, dryRun)
+		if err != nil {
+			return err
+		}
+		// If the user edited the tag, update nextTag and nextVer.
+		if confirmed != nextTag {
+			nextTag = confirmed
+			// Re-parse the version; on error keep the original nextVer.
+			if v, parseErr := semver.ParseVersion(strings.TrimPrefix(confirmed, cfg.TagPrefix)); parseErr == nil {
+				nextVer = v
+			}
+		}
 	}
 
 	summary := ReleaseSummary{

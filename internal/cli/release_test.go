@@ -21,7 +21,7 @@ var workingDirMu sync.Mutex
 
 func TestRunReleaseLoadConfigError(t *testing.T) {
 	withColorsDisabled(t)
-	if err := runRelease(context.Background(), false, "missing.yaml", false, false, "text", false, "", ""); err == nil || !strings.Contains(err.Error(), "loading config") {
+	if err := runRelease(context.Background(), false, "missing.yaml", false, false, false, "text", false, "", ""); err == nil || !strings.Contains(err.Error(), "loading config") {
 		t.Fatalf("runRelease() error = %v", err)
 	}
 }
@@ -36,7 +36,7 @@ func TestRunReleaseAutoDetectsTOMLConfig(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), true, "", false, false, "json", false, "", "")
+		return runRelease(context.Background(), true, "", false, false, false, "json", false, "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -58,7 +58,7 @@ func TestRunReleaseSkipsUnconfiguredBranchInJSON(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, "json", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -85,7 +85,7 @@ func TestRunReleaseNoCommitsSinceLastReleaseJSON(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, "json", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -112,7 +112,7 @@ func TestRunReleaseDryRunForcePatch(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), true, ".semrel.yaml", true, false, "text", false, "", "")
+		return runRelease(context.Background(), true, ".semrel.yaml", true, false, false, "text", false, "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -143,7 +143,7 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, "text", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "text", false, "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
