@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/internal/registry"
 	"github.com/SemRels/semrel/pkg/config"
 	gitpkg "github.com/SemRels/semrel/pkg/git"
 )
@@ -51,8 +52,12 @@ It checks:
   • the current branch is a configured release branch
   • a git repository is present and at least one tag exists
 
-Exit code 0 = all checks pass (no failures). Non-zero = one or more checks failed.
-Warnings do not affect the exit code.
+It also recommends plugins you might be missing based on your project:
+  • detects GitHub / GitLab / Gitea from the git remote
+  • detects package managers from project files (package.json, Cargo.toml, go.mod, …)
+  • suggests a changelog generator if none is configured
+
+Exit code 0 = all checks pass (no failures). Warnings and suggestions do not affect the exit code.
 
 Use --online to also ping the semrel registry for plugin availability.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -86,13 +91,12 @@ func runDoctor(ctx context.Context, configFile string, outputFormat string, onli
 	// 5. Check common env vars.
 	checks = append(checks, checkEnvVars(cfg)...)
 
-	// 6. (optional) Online registry ping — currently a stub.
+	// 6. Plugin recommendations based on project files and git remote.
+	checks = append(checks, checkRecommendations(cfg)...)
+
+	// 7. (optional) Online registry ping.
 	if online {
-		checks = append(checks, DoctorCheck{
-			Name:    "registry-online",
-			Status:  "warn",
-			Message: "--online mode is not yet implemented; skipping registry check",
-		})
+		checks = append(checks, checkRegistryOnline(ctx)...)
 	}
 
 	healthy := true
@@ -376,6 +380,10 @@ func printDoctorResult(result DoctorResult) {
 			sym = "✗"
 			symColored = colors.Red(sym)
 			msgColored = colors.Red(c.Message)
+		case "info":
+			sym = "💡"
+			symColored = sym
+			msgColored = colors.Cyan(c.Message)
 		default:
 			sym = "?"
 			symColored = sym
@@ -394,4 +402,154 @@ func printDoctorResult(result DoctorResult) {
 	} else {
 		fmt.Printf("%s  one or more checks failed — fix the issues above before releasing\n", colors.Red("✗"))
 	}
+}
+
+// checkRecommendations scans the project for signals (files, git remote, CI config)
+// and suggests plugins that would improve the release pipeline.
+// Results use status "info" and never affect the healthy flag.
+func checkRecommendations(cfg *config.Config) []DoctorCheck {
+	// Build a set of already-configured plugin names (lower-case for comparison).
+	configured := map[string]bool{}
+	if cfg != nil {
+		for _, p := range cfg.Plugins {
+			configured[strings.ToLower(p.Uses)] = true
+			configured[strings.ToLower(p.Path)] = true
+		}
+	}
+
+	already := func(uses string) bool {
+		return configured[strings.ToLower(uses)]
+	}
+
+	var checks []DoctorCheck
+	suggest := func(uses, reason string) {
+		if already(uses) {
+			return
+		}
+		checks = append(checks, DoctorCheck{
+			Name:    "suggest:" + uses,
+			Status:  "info",
+			Message: reason,
+			Fix:     "semrel plugin install " + uses,
+		})
+	}
+
+	fileExists := func(patterns ...string) bool {
+		for _, p := range patterns {
+			if _, err := os.Stat(p); err == nil {
+				return true
+			}
+			if m, _ := filepath.Glob(p); len(m) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+
+	// ── Git forge detection ──────────────────────────────────────────────────
+	remote := gitRemoteURL()
+	switch {
+	case strings.Contains(remote, "github.com"):
+		suggest("provider-github", "GitHub remote detected — provider-github publishes GitHub Releases")
+		if fileExists(".github/workflows") {
+			suggest("condition-github-actions", "GitHub Actions workflows detected — condition-github-actions gates releases to CI only")
+		}
+	case strings.Contains(remote, "gitlab.com") || (remote != "" && strings.Contains(remote, "gitlab")):
+		suggest("provider-gitlab", "GitLab remote detected — provider-gitlab publishes GitLab Releases")
+		if fileExists(".gitlab-ci.yml") {
+			suggest("condition-gitlab-ci", ".gitlab-ci.yml detected — condition-gitlab-ci gates releases to CI only")
+		}
+	case strings.Contains(remote, "gitea.") || strings.Contains(remote, "/gitea"):
+		suggest("provider-gitea", "Gitea remote detected — provider-gitea publishes Gitea Releases")
+		if fileExists(".gitea/workflows") {
+			suggest("condition-gitea-actions", "Gitea Actions workflows detected — condition-gitea-actions gates releases to CI only")
+		}
+	}
+
+	// ── Changelog generator ──────────────────────────────────────────────────
+	hasGenerator := false
+	if cfg != nil {
+		for _, p := range cfg.Plugins {
+			if strings.Contains(strings.ToLower(p.Uses), "generator") ||
+				strings.Contains(strings.ToLower(p.Uses), "changelog") {
+				hasGenerator = true
+				break
+			}
+		}
+	}
+	if !hasGenerator {
+		suggest("generator-changelog-md", "no changelog generator configured — generator-changelog-md writes CHANGELOG.md on every release")
+	}
+
+	// ── Language / ecosystem updaters ────────────────────────────────────────
+	if fileExists("go.mod") {
+		suggest("updater-go", "go.mod detected — updater-go keeps the version variable in source in sync with the release tag")
+	}
+	if fileExists("package.json") {
+		suggest("updater-npm", "package.json detected — updater-npm bumps the npm version and publishes to the registry")
+	}
+	if fileExists("Cargo.toml") {
+		suggest("updater-cargo", "Cargo.toml detected — updater-cargo bumps the crate version and publishes to crates.io")
+	}
+	if fileExists("pyproject.toml", "setup.py", "setup.cfg") {
+		suggest("updater-python", "Python project detected — updater-python bumps the version and publishes to PyPI")
+	}
+	if fileExists("pom.xml") {
+		suggest("updater-maven", "pom.xml detected — updater-maven publishes the Maven artifact")
+	}
+	if fileExists("build.gradle", "build.gradle.kts") {
+		suggest("updater-gradle", "Gradle build file detected — updater-gradle bumps the project version")
+	}
+	if fileExists("*.csproj", "**/*.csproj", "*.nuspec") {
+		suggest("updater-nuget", ".csproj detected — updater-nuget publishes the NuGet package")
+	}
+	if fileExists("Chart.yaml", "charts/*/Chart.yaml") {
+		suggest("updater-helm", "Chart.yaml detected — updater-helm bumps the Helm chart version")
+	}
+	if fileExists("Dockerfile", "Dockerfile.*") {
+		suggest("updater-docker", "Dockerfile detected — updater-docker builds and pushes the Docker image on release")
+	}
+	if fileExists("*.tf", "**/*.tf") {
+		suggest("updater-terraform", "Terraform files detected — updater-terraform bumps the module version")
+	}
+	if fileExists("Formula/*.rb", "Casks/*.rb") {
+		suggest("updater-homebrew", "Homebrew formula detected — updater-homebrew updates the formula on release")
+	}
+
+	return checks
+}
+
+// checkRegistryOnline pings the semrel plugin registry to verify it is reachable.
+func checkRegistryOnline(ctx context.Context) []DoctorCheck {
+	client, err := registry.NewRegistryClientFromEnv()
+	if err != nil {
+		return []DoctorCheck{{
+			Name:    "registry-online",
+			Status:  "warn",
+			Message: fmt.Sprintf("could not create registry client: %v", err),
+		}}
+	}
+	_, err = client.FetchMetadata(ctx)
+	if err != nil {
+		return []DoctorCheck{{
+			Name:    "registry-online",
+			Status:  "warn",
+			Message: fmt.Sprintf("registry unreachable: %v", err),
+			Fix:     "check your network connection or set SEMREL_REGISTRY_URL",
+		}}
+	}
+	return []DoctorCheck{{
+		Name:    "registry-online",
+		Status:  "ok",
+		Message: "semrel plugin registry is reachable",
+	}}
+}
+
+// gitRemoteURL returns the URL of the "origin" remote, or "" if not available.
+func gitRemoteURL() string {
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
