@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	// DefaultBaseURL is the MVP registry location served through GitHub Pages.
-	DefaultBaseURL = "https://semrels.github.io/semrel-registry"
+	// DefaultBaseURL is the registry served via the custom domain.
+	DefaultBaseURL = "https://registry.semrel.io"
 
 	// EnvRegistryURL overrides the registry base URL.
 	EnvRegistryURL = "SEMREL_REGISTRY_URL"
