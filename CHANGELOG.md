@@ -1,3 +1,10 @@
+## v0.7.0 (2026-06-10)
+
+### Features
+
+* **config:** add schemaVersion field and semrel migrate command (#195) (#208)
+* **cli:** add semrel config command (#194) (#207)
+
 ## v0.6.0 (2026-06-10)
 
 ### Features
