@@ -54,7 +54,7 @@ func TestRunReleaseSkipsUnconfiguredBranchInJSON(t *testing.T) {
 	withColorsDisabled(t)
 	repoDir := initReleaseRepo(t)
 	commitReleaseFile(t, repoDir, "README.md", "hello\n", "docs: initial")
-	writeReleaseConfig(t, repoDir, "branches:\n  - name: develop\ntagPrefix: \"v\"\n")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: develop\ntagPrefix: \"v\"\n")
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
@@ -81,7 +81,7 @@ func TestRunReleaseNoCommitsSinceLastReleaseJSON(t *testing.T) {
 	repoDir := initReleaseRepo(t)
 	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
 	runReleaseGit(t, repoDir, "tag", "v1.0.0")
-	writeReleaseConfig(t, repoDir, "branches:\n  - name: main\ntagPrefix: \"v\"\n")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\n")
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
@@ -108,7 +108,7 @@ func TestRunReleaseDryRunForcePatch(t *testing.T) {
 	repoDir := initReleaseRepo(t)
 	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
 	runReleaseGit(t, repoDir, "tag", "v1.0.0")
-	writeReleaseConfig(t, repoDir, "branches:\n  - name: main\ntagPrefix: \"v\"\n")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\n")
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
@@ -139,7 +139,7 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
 	runReleaseGit(t, repoDir, "tag", "v0.1.0")
 	commitReleaseFile(t, repoDir, "feature.txt", "new feature\n", "feat: add release flow")
-	writeReleaseConfig(t, repoDir, "branches:\n  - name: main\ntagPrefix: \"v\"\nplugins:\n  - uses: definitely-not-installed\n")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\nplugins:\n  - uses: definitely-not-installed\n")
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {

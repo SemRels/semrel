@@ -164,6 +164,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.AddCommand(newDoctorCommand(&configFile, &outputFormat))
 	root.AddCommand(newChangelogCommand(&configFile, &outputFormat))
 	root.AddCommand(newConfigCommand(&configFile, &outputFormat))
+	root.AddCommand(newMigrateCommand(&configFile))
 
 	return root
 }
@@ -210,6 +211,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	cfg, err := config.LoadConfig(configFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// 1a. Warn if config schema is outdated.
+	if !config.IsUpToDate(cfg) && outputFormat != "json" {
+		fmt.Fprintf(os.Stderr, "warning: .semrel.yaml is at schema version %d; current version is %d — run `semrel migrate` to upgrade\n",
+			cfg.SchemaVersion, config.CurrentSchemaVersion)
 	}
 
 	// 2. Open repository
