@@ -24,9 +24,18 @@ func newPluginCommand() *cobra.Command {
 		Short: "Manage semrel plugins",
 		Long: `Commands to discover, install and manage semrel plugins.
 
-Plugins extend semrel with additional providers, analyzers, conditions,
-hooks and updaters. They are fetched from the plugin registry at
-https://semrels.github.io/semrel-registry.`,
+Plugins extend semrel with providers, conditions, hooks and updaters.
+They are fetched from the plugin registry at https://semrels.github.io/semrel-registry.
+
+Plugin phases (configured per plugin in .semrel.yaml):
+  condition — runs before commit analysis; failure aborts the release
+  pre-tag   — runs after changelog generation, before the git tag is created
+  release   — runs after tagging (providers, hooks, package publishers) [default]
+
+Subcommands:
+  semrel plugin list              — list all available plugins
+  semrel plugin search <query>    — search plugins by name or description
+  semrel plugin install <name>    — download and install a plugin`,
 	}
 
 	cmd.AddCommand(newPluginListCommand())

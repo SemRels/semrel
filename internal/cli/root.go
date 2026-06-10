@@ -142,7 +142,13 @@ configurable release plugins (git tags, GitHub/GitLab Releases, npm, Docker, Hel
 
 Configuration: auto-detected from .semrel.yaml, .semrel.yml, .semrel.toml, .semrel.json (override with --config)
 Env file:      .env          (override with --env-file, set to "" to disable)
-Documentation: https://github.com/SemRels/semrel`,
+Documentation: https://github.com/SemRels/semrel
+
+Quick start:
+  semrel config init        — create .semrel.yaml interactively
+  semrel doctor             — verify your setup before the first release
+  semrel release --dry-run  — preview the next release without making changes
+  semrel release            — run the full release pipeline`,
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -187,6 +193,37 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
+		Long: `Run the full semrel release pipeline.
+
+Pipeline steps:
+  1. Load and validate .semrel.yaml
+  2. Run condition-phase plugins (gates — abort the release on failure)
+  3. Check the current branch is configured for release
+  4. Find the last git tag and collect commits since then
+  5. Parse commits against Conventional Commits rules
+  6. Calculate the next SemVer version bump (major / minor / patch)
+  7. Generate changelog / release notes
+  8. Run pre-tag plugins (e.g. version file updaters)
+  9. Commit CHANGELOG.md (unless commit_changelog: false)
+ 10. Create and push the git tag
+ 11. Run release-phase plugins (providers, hooks, package publishers)
+
+Examples:
+  # Dry-run — preview the release without making any changes
+  semrel release --dry-run
+
+  # Review/edit release notes in $EDITOR before tagging
+  semrel release --edit
+
+  # Pause for confirmation before tagging (not for CI)
+  semrel release --interactive
+
+  # Emit metadata to $GITHUB_OUTPUT (GitHub Actions)
+  semrel release --github-output
+
+Exit codes:
+  0 — release created, or nothing to release on a non-release branch
+  1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile)
 		},
@@ -775,6 +812,20 @@ func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "lint",
 		Short: "Validate commit messages since the last release",
+		Long: `Validate all commit messages since the last release tag against the
+Conventional Commits specification (https://www.conventionalcommits.org/).
+
+Reads every commit reachable since the last semver tag and reports any that
+do not conform. Useful as a pre-merge CI gate to catch bad commit messages
+before they block a release.
+
+Examples:
+  semrel lint
+  semrel lint --output json
+
+Exit codes:
+  0 — all commits are valid
+  1 — one or more commits are invalid`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLint(cmd.Context(), *configFile, *outputFormat)
 		},
