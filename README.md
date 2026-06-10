@@ -6,7 +6,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 [![JSON Schema](https://img.shields.io/badge/schema-semrel.io%2Fschema%2Fv1.json-blue)](https://semrel.io/schema/v1.json)
 
-> **Status: alpha (v0.4.x)** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
+> **Status: v0.9.0** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
 
 A Go-based semantic versioning and release system with a plugin architecture that automates the full release lifecycle. Designed for monorepos and multi-language projects.
 
@@ -30,6 +30,11 @@ go install github.com/SemRels/semrel/cmd/semrel@latest
 semrel --version
 ```
 
+```bash
+# Update to the latest release
+semrel update
+```
+
 Install any plugins you want to use:
 
 ```bash
@@ -40,7 +45,13 @@ semrel plugin install npm
 ## Quick Start
 
 ```bash
-# Validate commit messages
+# Create .semrel.yaml
+semrel config init
+
+# Verify config, plugins, git state, and environment
+semrel doctor
+
+# Validate commit messages since the last tag
 semrel lint
 
 # Dry-run release (preview what would happen)
@@ -48,7 +59,29 @@ semrel release --dry-run
 
 # Run the full release pipeline
 semrel release
+
+# Update semrel itself
+semrel update
 ```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `semrel release` | Run the full release pipeline from commit analysis through tagging and release plugins. |
+| `semrel changelog` | Generate unreleased changelog entries without creating a release. |
+| `semrel lint` | Validate commits since the last tag against Conventional Commits. |
+| `semrel commitlint` | Lint commit messages from the last tag, a git range, arguments, or stdin. |
+| `semrel doctor` | Run pre-flight checks for config, plugins, git state, and environment. |
+| `semrel config init` | Create a new `.semrel.yaml` configuration file. |
+| `semrel config show` | Print the resolved configuration. |
+| `semrel config validate` | Validate the current configuration file. |
+| `semrel config set` | Update a top-level or nested configuration key. |
+| `semrel migrate` | Upgrade `.semrel.yaml` to the current schema version. |
+| `semrel plugin list` | List plugins available in the registry. |
+| `semrel plugin search` | Search plugins by name, description, or tag. |
+| `semrel plugin install` | Download and install a plugin binary. |
+| `semrel update` | Check for and install the latest semrel release. |
 
 ## IDE Support
 

@@ -292,6 +292,7 @@ plugins:
 | `uses` | string | Plugin name that resolves to `semrel-plugin-<uses>` |
 | `path` | string | Optional explicit path to a plugin binary |
 | `args` | map | Plugin-specific arguments, exposed as `SEMREL_PLUGIN_<KEY>` env vars |
+| `phase` | string | When to run: `condition`, `pre-tag`, or `release` (default: `release`) |
 
 #### Local development example
 
@@ -304,12 +305,71 @@ plugins:
 
 When `path:` is set, semrel skips normal name-based discovery and executes that binary directly.
 
+### `version_ceiling`
+
+Sets the maximum version semrel is allowed to release. If the computed next version
+would exceed this value, semrel applies `ceiling_strategy`.
+
+```yaml
+version_ceiling: "2.0.0"
+```
+
+Common use cases:
+- hold a project on `0.x` until you intentionally allow `1.0.0`
+- prevent accidental major releases beyond a policy limit
+
+### `ceiling_strategy`
+
+Controls what semrel does when the computed next version exceeds `version_ceiling`.
+Default: `clamp`.
+
+| Value | Description |
+|-------|-------------|
+| `clamp` | Release at `version_ceiling` instead of the higher computed version |
+| `skip` | Skip the release when the next version would exceed the ceiling |
+| `error` | Exit with an error and do not release |
+
+```yaml
+version_ceiling: "2.0.0"
+ceiling_strategy: clamp
+```
+
+### `commit_changelog`
+
+Controls whether semrel commits `CHANGELOG.md` before creating the git tag.
+Default: `true`.
+
+```yaml
+commit_changelog: false
+```
+
+Set this to `false` when another system or workflow is responsible for committing
+the changelog.
+
+### `tag_exists_strategy`
+
+Controls what semrel does when the computed tag already exists. Default:
+`update-changelog`.
+
+| Value | Description |
+|-------|-------------|
+| `update-changelog` | Update or write `CHANGELOG.md` without creating a new tag |
+| `skip` | Skip the release cleanly |
+| `error` | Exit with an error |
+
+```yaml
+tag_exists_strategy: update-changelog
+```
+
 ## CLI Flags
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--config` | string | `.semrel.yaml` | Path to configuration file |
+| `--config` | string | auto-detect | Path to configuration file (`.semrel.yaml`, `.semrel.yml`, `.semrel.toml`, or `.semrel.json`) |
 | `--dry-run` | bool | `false` | Simulate release without making changes |
+| `--env-file` | string | `.env` | Path to `.env` file to load before running the command |
+| `--no-color` | bool | `false` | Disable coloured terminal output |
+| `-o, --output` | string | `text` | Output format: `text` or `json` |
 | `--version` | — | — | Print version and exit |
 
 ## Subcommands
@@ -317,30 +377,52 @@ When `path:` is set, semrel skips normal name-based discovery and executes that 
 ### `semrel release`
 
 Runs the full release pipeline:
-1. Load config
-2. Detect current branch and branch config
-3. Read git tags to find the last released version
-4. Collect commits since the last tag
-5. Parse commits using Conventional Commits
-6. Calculate next version
-7. Generate changelog
-8. Create annotated git tag
-9. Prepend to `CHANGELOG.md`
-10. Execute configured plugin binaries in order
+1. Load and validate `.semrel.yaml`
+2. Run condition-phase plugins (gates)
+3. Check current branch is configured for release
+4. Find last tag, collect commits since then
+5. Parse commits against Conventional Commits rules
+6. Calculate next SemVer bump
+7. Generate changelog / release notes
+8. Run pre-tag plugins (for example version file updaters)
+9. Commit `CHANGELOG.md` (unless `commit_changelog: false`)
+10. Create and push git tag
+11. Run release-phase plugins (providers, hooks, publishers)
+
+Release-specific flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--dry-run` | bool | Preview the release without making changes |
+| `--edit` | bool | Open generated release notes in `$EDITOR` before tagging |
+| `--interactive` | bool | Pause for confirmation before tagging |
+| `--github-output` | bool | Write release metadata to `$GITHUB_OUTPUT` |
+| `--gitlab-dotenv` | string | Write release metadata as a GitLab dotenv artifact |
+| `--output-file` | string | Write release metadata to a file (`.json` or `.env`) |
+| `--force-bump-patch-version` | bool | Force a patch release even when no releasable commits are found |
 
 ```bash
 semrel release
 semrel release --dry-run
 semrel release --config .semrel.yaml
+semrel release --edit
 ```
 
-### `semrel plugin install`
+### `semrel changelog`
 
-Installs a standalone plugin binary into `~/.semrel/plugins/`.
+Generate a changelog from unreleased commits without creating a release.
+
+Flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--write` | bool | Prepend the generated entry to `CHANGELOG.md` |
+| `--since` | string | Start from a specific tag or ref instead of auto-detecting the last tag |
 
 ```bash
-semrel plugin install github
-semrel plugin install npm
+semrel changelog
+semrel changelog --write
+semrel changelog --since v1.2.0
 ```
 
 ### `semrel lint`
@@ -349,6 +431,142 @@ Validates commit messages since the last tag against Conventional Commits.
 
 ```bash
 semrel lint
+semrel lint --output json
 ```
 
-Exits with non-zero status if any commits are non-conventional.
+### `semrel commitlint`
+
+Validates commit messages against Conventional Commits. Without arguments, it
+defaults to the commits since the last tag, matching `semrel lint`.
+
+Flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--from` | string | Start ref (exclusive) for a commit range |
+| `--to` | string | End ref (inclusive) for a commit range |
+| `--stdin` | bool | Read a single commit message from stdin |
+
+```bash
+semrel commitlint
+semrel commitlint --from HEAD~5 --to HEAD
+echo "fix: typo" | semrel commitlint --stdin
+```
+
+### `semrel doctor`
+
+Runs pre-flight checks for configuration, plugins, git state, branch matching,
+and common environment variables before a release.
+
+Flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--online` | bool | Also ping the semrel registry for plugin availability |
+
+```bash
+semrel doctor
+semrel doctor --online
+```
+
+### `semrel config`
+
+Manages the semrel configuration file.
+
+#### `semrel config init`
+
+Create a new `.semrel.yaml`, either interactively or with defaults.
+
+```bash
+semrel config init
+semrel config init --no-interactive
+semrel config init --force
+```
+
+#### `semrel config show`
+
+Print the resolved configuration.
+
+```bash
+semrel config show
+semrel config show --output json
+```
+
+#### `semrel config validate`
+
+Validate the current configuration file.
+
+```bash
+semrel config validate
+```
+
+#### `semrel config set`
+
+Update a top-level or nested config key in `.semrel.yaml`.
+
+```bash
+semrel config set tagPrefix v
+semrel config set version_ceiling 2.0.0
+semrel config set commit_changelog false
+```
+
+### `semrel migrate`
+
+Upgrade `.semrel.yaml` from an older schema version to the current schema.
+
+Flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--dry-run` | bool | Show pending migrations without writing files |
+| `--no-backup` | bool | Skip writing a timestamped backup before migration |
+
+```bash
+semrel migrate
+semrel migrate --dry-run
+semrel migrate --no-backup
+```
+
+### `semrel plugin`
+
+Manage semrel plugins from the registry.
+
+#### `semrel plugin list`
+
+List all available plugins.
+
+```bash
+semrel plugin list
+```
+
+#### `semrel plugin search`
+
+Search plugins by name, description, or tag.
+
+```bash
+semrel plugin search github
+```
+
+#### `semrel plugin install`
+
+Installs a standalone plugin binary into `~/.semrel/plugins/`.
+
+```bash
+semrel plugin install github
+semrel plugin install npm
+```
+
+### `semrel update`
+
+Check for a newer semrel release and install it in place.
+
+Flags:
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--check` | bool | Only check for a newer version; do not download it |
+
+```bash
+semrel update
+semrel update --check
+```
