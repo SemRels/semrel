@@ -1,3 +1,13 @@
+## v0.5.0 (2026-06-10)
+
+### Features
+
+* **cli:** add semrel doctor command (#191) (#204)
+
+### Other Changes
+
+* add E2E integration tests and full plugin smoke test suite (#203)
+
 ## v0.4.1 (2026-06-03)
 
 ### Bug Fixes
