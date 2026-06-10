@@ -1,3 +1,13 @@
+## v0.9.1 (2026-06-10)
+
+### Bug Fixes
+
+* **update:** remove Zone.Identifier ADS after binary swap on Windows
+
+### Other Changes
+
+* update README and config reference for v0.9.0
+
 ## v0.9.0 (2026-06-10)
 
 ### Features
