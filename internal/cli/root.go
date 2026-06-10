@@ -162,6 +162,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.AddCommand(newCommitlintCommand(&outputFormat))
 	root.AddCommand(newPluginCommand())
 	root.AddCommand(newDoctorCommand(&configFile, &outputFormat))
+	root.AddCommand(newChangelogCommand(&configFile, &outputFormat))
 
 	return root
 }
