@@ -19,8 +19,16 @@ import (
 	"github.com/GoSemantics/semrel/pkg/semver"
 )
 
+// CurrentSchemaVersion is the schema version that this build of semrel understands.
+const CurrentSchemaVersion = 1
+
 // Config represents the semrel configuration.
 type Config struct {
+	// SchemaVersion is the semrel config schema version.
+	// When absent (0), semrel treats the config as schema version 1.
+	// Use `semrel migrate` to stamp and upgrade the config to the current schema.
+	SchemaVersion int `yaml:"schemaVersion,omitempty" toml:"schema_version" json:"schema_version,omitempty"`
+
 	Branches        []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
 	TagPrefix       string         `yaml:"tagPrefix" toml:"tag_prefix" json:"tag_prefix"`
 	Rules           []ReleaseRule  `yaml:"rules" toml:"rules" json:"rules"`
