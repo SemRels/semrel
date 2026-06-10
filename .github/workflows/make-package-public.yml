@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
 # One-shot workflow: sets the ghcr.io/semrels/semrel package to public.
+# Requires the PACKAGES_TOKEN org secret (PAT with write:packages scope).
 # Run once via workflow_dispatch; afterwards semrel-release.yml handles it on every build.
 name: Make container package public
 
@@ -18,8 +19,8 @@ jobs:
     steps:
       - name: Set semrel container package to public
         run: |
-          gh api -X PATCH /orgs/SemRels/packages/container/semrel \
+          gh api -X PATCH /orgs/semrels/packages/container/semrel \
             -f visibility=public
           echo "✓ ghcr.io/semrels/semrel is now public"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
