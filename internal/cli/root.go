@@ -161,6 +161,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.AddCommand(newLintCommand(&configFile, &outputFormat))
 	root.AddCommand(newCommitlintCommand(&outputFormat))
 	root.AddCommand(newPluginCommand())
+	root.AddCommand(newDoctorCommand(&configFile, &outputFormat))
 
 	return root
 }
