@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://semrel.io/schema/v1.json",
+  "title": "semrel configuration",
+  "description": "Configuration schema for semrel — semantic release automation. https://semrel.io",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["branches"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Schema version of this config file. Use `semrel migrate` to upgrade. Currently 1.",
+      "const": 1
+    },
+    "branches": {
+      "type": "array",
+      "description": "List of release branches. semrel only creates releases when run on one of these branches.",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/BranchConfig"
+      }
+    },
+    "tagPrefix": {
+      "type": "string",
+      "description": "Prefix prepended to the version number when creating git tags. Default: \"v\".",
+      "default": "v",
+      "examples": ["v", "release-", ""]
+    },
+    "rules": {
+      "type": "array",
+      "description": "Mapping of conventional commit types to semver bump levels. Overrides the built-in defaults.",
+      "items": {
+        "$ref": "#/$defs/ReleaseRule"
+      },
+      "examples": [
+        [
+          {"type": "feat", "bump": "minor"},
+          {"type": "fix",  "bump": "patch"},
+          {"type": "perf", "bump": "patch"}
+        ]
+      ]
+    },
+    "plugins": {
+      "type": "array",
+      "description": "Plugins to run during the release pipeline (providers, hooks, updaters, generators, conditions).",
+      "items": {
+        "$ref": "#/$defs/PluginConfig"
+      }
+    },
+    "version_ceiling": {
+      "type": "string",
+      "description": "Maximum version semrel will release. Semver string, e.g. \"1.0.0\". Releases above this ceiling are handled by ceiling_strategy.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "examples": ["1.0.0", "2.0.0"]
+    },
+    "ceiling_strategy": {
+      "type": "string",
+      "description": "What to do when the computed next version exceeds version_ceiling. Default: \"clamp\".",
+      "enum": ["clamp", "skip", "error"],
+      "default": "clamp"
+    },
+    "commit_changelog": {
+      "type": "boolean",
+      "description": "Whether semrel commits CHANGELOG.md back to the repo before creating the release tag. Default: true.",
+      "default": true
+    },
+    "tag_exists_strategy": {
+      "type": "string",
+      "description": "What to do when the computed tag already exists. Default: \"update-changelog\".",
+      "enum": ["update-changelog", "skip", "error"],
+      "default": "update-changelog"
+    }
+  },
+  "$defs": {
+    "BranchConfig": {
+      "type": "object",
+      "description": "Configuration for a single release branch.",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Branch name or glob pattern (e.g. \"main\", \"release/*\", \"1.x\").",
+          "minLength": 1,
+          "examples": ["main", "release/*", "1.x", "1.2.x"]
+        },
+        "prerelease": {
+          "type": "string",
+          "description": "Pre-release identifier appended to the version (e.g. \"beta\", \"alpha.1\"). Omit for stable releases.",
+          "examples": ["beta", "alpha", "rc", "next"]
+        },
+        "maintenance": {
+          "type": "boolean",
+          "description": "Mark as a maintenance branch — only patch bumps are allowed. Auto-detected for N.x / N.M.x patterns.",
+          "default": false
+        }
+      }
+    },
+    "ReleaseRule": {
+      "type": "object",
+      "description": "Maps a conventional commit type to a semver bump level.",
+      "additionalProperties": false,
+      "required": ["type", "bump"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Conventional commit type (e.g. \"feat\", \"fix\", \"perf\", \"revert\", \"refactor\").",
+          "minLength": 1,
+          "examples": ["feat", "fix", "perf", "revert", "refactor", "docs"]
+        },
+        "bump": {
+          "type": "string",
+          "description": "Semver bump level triggered by this commit type.",
+          "enum": ["major", "minor", "patch"]
+        }
+      }
+    },
+    "PluginConfig": {
+      "type": "object",
+      "description": "Configuration for a single semrel plugin.",
+      "additionalProperties": false,
+      "anyOf": [
+        {"required": ["uses"]},
+        {"required": ["path"]}
+      ],
+      "properties": {
+        "uses": {
+          "type": "string",
+          "description": "Official plugin name as published in the semrel registry (e.g. \"provider-github\").",
+          "examples": [
+            "provider-github",
+            "provider-gitlab",
+            "provider-gitea",
+            "provider-git",
+            "provider-bitbucket",
+            "analyzer-conventional",
+            "analyzer-default",
+            "generator-changelog-md",
+            "generator-changelog-html",
+            "generator-release-notes",
+            "hook-slack",
+            "hook-teams",
+            "hook-email",
+            "hook-matrix",
+            "hook-jira",
+            "hook-gitplugin",
+            "condition-github-actions",
+            "condition-gitlab-ci",
+            "condition-gitea-actions",
+            "condition-generic",
+            "updater-npm",
+            "updater-go",
+            "updater-cargo",
+            "updater-docker",
+            "updater-gradle",
+            "updater-helm",
+            "updater-homebrew",
+            "updater-maven",
+            "updater-nuget",
+            "updater-python",
+            "updater-terraform"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Local alias for this plugin instance. Useful when the same plugin is used multiple times.",
+          "examples": ["my-provider", "slack-release"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Absolute or relative path to the plugin binary. Use instead of 'uses' for local/custom plugins.",
+          "examples": ["/usr/local/bin/semrel-plugin-custom", "./bin/my-plugin"]
+        },
+        "args": {
+          "type": "object",
+          "description": "Plugin-specific arguments passed as key-value pairs. Refer to the plugin's documentation.",
+          "additionalProperties": true,
+          "examples": [
+            {"webhook_url": "https://hooks.slack.com/services/..."},
+            {"go_module": "github.com/org/repo"},
+            {"file": "package.json"}
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "description": "Pipeline phase in which this plugin runs. Default: \"release\".",
+          "enum": ["condition", "pre-tag", "release"],
+          "default": "release"
+        }
+      }
+    }
+  }
+}

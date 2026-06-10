@@ -203,9 +203,12 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 // marshalConfigYAML serialises the config to YAML with explanatory comments.
 func marshalConfigYAML(cfg *config.Config) ([]byte, error) {
 	var sb strings.Builder
-	sb.WriteString("# semrel configuration — https://github.com/SemRels/semrel\n")
+	// yaml-language-server directive enables schema validation and auto-complete
+	// in VS Code (YAML extension), JetBrains IDEs, and any LSP-aware editor.
+	sb.WriteString("# yaml-language-server: $schema=https://semrel.io/schema/v1.json\n")
+	sb.WriteString("# semrel configuration — https://semrel.io\n")
 	sb.WriteString("#\n")
-	sb.WriteString("# Full reference: https://github.com/SemRels/semrel/blob/main/docs/config.md\n\n")
+	sb.WriteString("# Full reference: https://semrel.io/guide/configuration/\n\n")
 
 	// Marshal the struct to YAML without comments first, then prepend the header.
 	raw, err := yaml.Marshal(cfg)

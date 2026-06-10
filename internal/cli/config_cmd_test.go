@@ -249,8 +249,12 @@ func TestMarshalConfigYAML_ContainsComment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "semrel configuration") {
-		t.Errorf("expected header comment, got: %s", string(data))
+	out := string(data)
+	if !strings.Contains(out, "semrel.io/schema/v1.json") {
+		t.Errorf("expected yaml-language-server schema directive, got: %s", out)
+	}
+	if !strings.Contains(out, "semrel configuration") {
+		t.Errorf("expected header comment, got: %s", out)
 	}
 }
 
