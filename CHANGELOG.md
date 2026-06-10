@@ -1,3 +1,14 @@
+## v0.7.1 (2026-06-10)
+
+### Bug Fixes
+
+* resolve lint errors and test failures in cli package
+
+### Other Changes
+
+* **ci:** bump docker/build-push-action from 6 to 7
+* fix stale go-semrel / GoSemantics references in README (#209)
+
 ## v0.7.0 (2026-06-10)
 
 ### Features
