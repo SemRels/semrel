@@ -1,3 +1,10 @@
+## v0.10.0 (2026-06-10)
+
+### Features
+
+* **doctor:** add plugin recommendations based on project context
+* **plugin:** track installs in registry and add --sort downloads to plugin list
+
 ## v0.9.1 (2026-06-10)
 
 ### Bug Fixes
