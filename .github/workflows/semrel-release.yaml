@@ -265,6 +265,17 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
 
+      - name: Make container package public
+        # GHCR packages default to private; set public so `docker pull` works without auth.
+        # GITHUB_TOKEN with packages:write can change visibility via the REST API.
+        run: |
+          gh api -X PATCH /orgs/SemRels/packages/container/semrel \
+            -f visibility=public \
+            --silent && echo "package visibility set to public ✓" \
+            || echo "note: could not set package visibility (may already be public)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Docker summary
         run: |
           {
