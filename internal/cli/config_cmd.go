@@ -18,29 +18,6 @@ import (
 	"github.com/GoSemantics/semrel/pkg/config"
 )
 
-// known offline plugin list for the config wizard.
-// Used as fallback when the registry is unavailable.
-var knownPlugins = []struct {
-	name        string
-	description string
-	phase       string
-}{
-	{"analyzer-conventional", "Conventional Commits analyzer", ""},
-	{"analyzer-default", "Default (simple) commit analyzer", ""},
-	{"generator-changelog-md", "Markdown changelog generator", ""},
-	{"provider-github", "GitHub Releases provider", "release"},
-	{"provider-gitlab", "GitLab Releases provider", "release"},
-	{"provider-gitea", "Gitea Releases provider", "release"},
-	{"provider-git", "Plain-git tag-only provider", "release"},
-	{"hook-slack", "Slack notification hook", "release"},
-	{"hook-teams", "Microsoft Teams notification hook", "release"},
-	{"hook-email", "E-mail notification hook", "release"},
-	{"hook-matrix", "Matrix notification hook", "release"},
-	{"hook-jira", "Jira release hook", "release"},
-	{"updater-go", "Go module version updater", "pre-tag"},
-	{"condition-github-actions", "GitHub Actions environment check", "condition"},
-}
-
 func newConfigCommand(configFile *string, outputFormat *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
@@ -122,9 +99,9 @@ func runConfigInit(configFile string, noInteractive bool, force bool) error {
 // defaultConfig returns a sensible starting config.
 func defaultConfig() *config.Config {
 	return &config.Config{
-		Branches: []config.BranchConfig{{Name: "main"}},
+		Branches:  []config.BranchConfig{{Name: "main"}},
 		TagPrefix: "v",
-		Plugins:  []config.PluginConfig{},
+		Plugins:   []config.PluginConfig{},
 	}
 }
 
@@ -301,7 +278,9 @@ func runConfigShow(configFile string, outputFormat string) error {
 	if err != nil {
 		return err
 	}
-	os.Stdout.Write(raw)
+	if _, err := os.Stdout.Write(raw); err != nil {
+		return err
+	}
 	return nil
 }
 

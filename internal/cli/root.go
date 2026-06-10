@@ -463,13 +463,9 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		if err != nil {
 			return err
 		}
-		// If the user edited the tag, update nextTag and nextVer.
+		// If the user edited the tag, update nextTag only (nextVer not used after this point).
 		if confirmed != nextTag {
 			nextTag = confirmed
-			// Re-parse the version; on error keep the original nextVer.
-			if v, parseErr := semver.ParseVersion(strings.TrimPrefix(confirmed, cfg.TagPrefix)); parseErr == nil {
-				nextVer = v
-			}
 		}
 	}
 
