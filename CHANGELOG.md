@@ -1,3 +1,9 @@
+## v0.10.1 (2026-06-10)
+
+### Bug Fixes
+
+* **plugin:** show namespaces in plugin list, search and install output
+
 ## v0.10.0 (2026-06-10)
 
 ### Features
