@@ -111,11 +111,11 @@ func runPluginList(ctx context.Context, noHeader bool, sortBy string) error {
 			if plugins[i].Downloads != plugins[j].Downloads {
 				return plugins[i].Downloads > plugins[j].Downloads
 			}
-			return plugins[i].Name < plugins[j].Name
+			return pluginRef(plugins[i]) < pluginRef(plugins[j])
 		})
 	default:
 		sort.Slice(plugins, func(i, j int) bool {
-			return plugins[i].Name < plugins[j].Name
+			return pluginRef(plugins[i]) < pluginRef(plugins[j])
 		})
 	}
 
@@ -125,7 +125,7 @@ func runPluginList(ctx context.Context, noHeader bool, sortBy string) error {
 		_, _ = fmt.Fprintln(w, "----\t--------\t---------\t-----------")
 	}
 	for _, p := range plugins {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", p.Name, p.Category, p.Downloads, truncate(p.Description, 50))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", pluginRef(p), p.Category, p.Downloads, truncate(p.Description, 50))
 	}
 	return w.Flush()
 }
@@ -143,11 +143,12 @@ func runPluginSearch(ctx context.Context, query string) error {
 
 	found := 0
 	for _, p := range reg.Plugins {
-		if strings.Contains(strings.ToLower(p.Name), q) ||
+		if strings.Contains(strings.ToLower(pluginRef(p)), q) ||
+			strings.Contains(strings.ToLower(p.Name), q) ||
 			strings.Contains(strings.ToLower(p.Description), q) ||
 			strings.Contains(strings.ToLower(p.Category), q) ||
 			containsTag(p.Tags, q) {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 60))
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", pluginRef(p), p.Category, truncate(p.Description, 60))
 			found++
 		}
 	}
@@ -183,7 +184,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("plugin %q@%s has no binary releases yet; check back later", name, versionEntry.Version)
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", name, versionEntry.Version)
+	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", pluginRef(*meta), versionEntry.Version)
 
 	binaryPath, err := loader.ResolvePluginBinary(ctx, name, versionEntry.Version)
 	if err != nil {
@@ -212,7 +213,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("installing plugin binary: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", name, dest)
+	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", pluginRef(*meta), dest)
 
 	go func() {
 		client, err := registry.NewRegistryClientFromEnv()
@@ -273,4 +274,17 @@ func copyFile(src, dst string, perm os.FileMode) error {
 		return err
 	}
 	return os.WriteFile(dst, data, perm)
+}
+
+// pluginRef returns the canonical display reference for a plugin:
+// "@namespace/name" when a namespace is present, otherwise just "name".
+func pluginRef(p registry.PluginMeta) string {
+	if p.Namespace != "" {
+		ns := p.Namespace
+		if !strings.HasPrefix(ns, "@") {
+			ns = "@" + ns
+		}
+		return ns + "/" + p.Name
+	}
+	return p.Name
 }
