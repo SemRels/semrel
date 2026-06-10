@@ -5,6 +5,22 @@
 
 This document describes all supported options in `.semrel.yaml`.
 
+## JSON Schema & IDE Support
+
+A [JSON Schema](https://semrel.io/schema/v1.json) is published at **`https://semrel.io/schema/v1.json`**.
+
+`semrel config init` adds the schema directive automatically. For existing files, add this comment at the top of your `.semrel.yaml`:
+
+```yaml
+# yaml-language-server: $schema=https://semrel.io/schema/v1.json
+```
+
+This enables **auto-complete, validation and hover documentation** in:
+- **VS Code** — install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+- **JetBrains IDEs** (IntelliJ, GoLand, …) — built-in YAML support
+- **Neovim / Emacs** — via `yaml-language-server`
+- Any other editor with JSON Schema / YAML LSP support
+
 ## File Location
 
 semrel automatically discovers config files in the current working directory in this priority order:

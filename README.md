@@ -4,6 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/SemRels/semrel)](https://goreportcard.com/report/github.com/SemRels/semrel)
 [![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
+[![JSON Schema](https://img.shields.io/badge/schema-semrel.io%2Fschema%2Fv1.json-blue)](https://semrel.io/schema/v1.json)
 
 > **Status: alpha (v0.4.x)** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
 
@@ -48,6 +49,38 @@ semrel release --dry-run
 # Run the full release pipeline
 semrel release
 ```
+
+## IDE Support
+
+The `.semrel.yaml` config file has a published [JSON Schema](https://semrel.io/schema/v1.json) that enables auto-complete, validation, and hover docs in VS Code, JetBrains IDEs, and any LSP-aware editor.
+
+`semrel config init` automatically adds the schema directive. For existing configs, add this line at the top:
+
+```yaml
+# yaml-language-server: $schema=https://semrel.io/schema/v1.json
+```
+
+VS Code users: install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) for full support.
+
+## Local Production Demo (semrel + real plugins)
+
+Run an end-to-end local demo that builds `semrel`, builds real plugin binaries from sibling repositories, creates a temporary git repository, and runs a release pipeline using external plugins:
+
+```bash
+make local-demo
+```
+
+Optional dry-run mode:
+
+```bash
+bash scripts/local-demo.sh --dry-run
+```
+
+Expected outcome:
+- a new demo repository is created in your workspace root
+- semrel executes external plugins via `path:` entries
+- `internal/version/version.go` is updated by `updater-go`
+- a new semantic version tag is created (unless `--dry-run` is used)
 
 ## Available Plugins
 
