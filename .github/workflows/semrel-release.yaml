@@ -209,7 +209,7 @@ jobs:
 
       - name: Build and push distroless image
         id: build-distroless
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: release
@@ -233,7 +233,7 @@ jobs:
 
       - name: Build and push alpine image
         id: build-alpine
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: alpine
