@@ -16,7 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 
-	"github.com/GoSemantics/semrel/pkg/semver"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // CurrentSchemaVersion is the schema version that this build of semrel understands.

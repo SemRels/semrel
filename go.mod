@@ -1,4 +1,4 @@
-module github.com/GoSemantics/semrel
+module github.com/SemRels/semrel
 
 go 1.25
 

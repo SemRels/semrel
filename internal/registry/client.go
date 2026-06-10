@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	buildversion "github.com/GoSemantics/semrel/internal/version"
+	buildversion "github.com/SemRels/semrel/internal/version"
 )
 
 const (

@@ -4,7 +4,7 @@
 package releasenotes
 
 import (
-	"github.com/GoSemantics/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/commits"
 )
 
 // Build constructs a ReleaseNotes from a list of parsed commits.

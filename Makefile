@@ -4,7 +4,7 @@ VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo
 LDFLAGS      := -X github.com/GoSemantics/semrel/internal/cli.version=$(VERSION)
 GOFLAGS      := -trimpath
 
-.PHONY: all build test coverage lint reuse clean tidy dry-run smoke-test
+.PHONY: all build test coverage lint reuse clean tidy dry-run smoke-test local-demo
 
 all: build
 
@@ -46,3 +46,7 @@ dry-run: build
 #   make smoke-test
 smoke-test:
 	@bash scripts/smoke-test-plugins.sh
+
+# End-to-end local demo (build semrel + real plugins + run release in temp repo)
+local-demo:
+	@bash scripts/local-demo.sh

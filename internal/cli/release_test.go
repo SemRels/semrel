@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/GoSemantics/semrel/internal/colors"
+	"github.com/SemRels/semrel/internal/colors"
 )
 
 var workingDirMu sync.Mutex

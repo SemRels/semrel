@@ -15,17 +15,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GoSemantics/semrel/internal/colors"
-	"github.com/GoSemantics/semrel/pkg/changelog"
-	"github.com/GoSemantics/semrel/pkg/cioutput"
-	"github.com/GoSemantics/semrel/pkg/commits"
-	"github.com/GoSemantics/semrel/pkg/config"
-	"github.com/GoSemantics/semrel/pkg/editor"
-	"github.com/GoSemantics/semrel/pkg/envfile"
-	gitpkg "github.com/GoSemantics/semrel/pkg/git"
-	"github.com/GoSemantics/semrel/pkg/lock"
-	"github.com/GoSemantics/semrel/pkg/plugininstance"
-	"github.com/GoSemantics/semrel/pkg/semver"
+	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/pkg/changelog"
+	"github.com/SemRels/semrel/pkg/cioutput"
+	"github.com/SemRels/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/config"
+	"github.com/SemRels/semrel/pkg/editor"
+	"github.com/SemRels/semrel/pkg/envfile"
+	gitpkg "github.com/SemRels/semrel/pkg/git"
+	"github.com/SemRels/semrel/pkg/lock"
+	"github.com/SemRels/semrel/pkg/plugininstance"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // ReleaseSummary holds the structured output of a release run.

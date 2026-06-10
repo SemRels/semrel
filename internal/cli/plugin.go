@@ -14,8 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GoSemantics/semrel/internal/registry"
-	"github.com/GoSemantics/semrel/pkg/plugin"
+	"github.com/SemRels/semrel/internal/registry"
+	"github.com/SemRels/semrel/pkg/plugin"
 )
 
 func newPluginCommand() *cobra.Command {

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/commits"
 )
 
 // CommitWithFiles wraps a commits.Commit with the list of files it changed.

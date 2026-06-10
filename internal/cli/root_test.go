@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/config"
-	"github.com/GoSemantics/semrel/pkg/plugininstance"
+	"github.com/SemRels/semrel/pkg/config"
+	"github.com/SemRels/semrel/pkg/plugininstance"
 )
 
 func TestNewRootCommand(t *testing.T) {

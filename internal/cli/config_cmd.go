@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/GoSemantics/semrel/pkg/config"
+	"github.com/SemRels/semrel/pkg/config"
 )
 
 func newConfigCommand(configFile *string, outputFormat *string) *cobra.Command {

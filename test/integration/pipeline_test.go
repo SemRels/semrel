@@ -17,9 +17,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
-	gitpkg "github.com/GoSemantics/semrel/pkg/git"
-	"github.com/GoSemantics/semrel/pkg/semver"
+	"github.com/SemRels/semrel/pkg/commits"
+	gitpkg "github.com/SemRels/semrel/pkg/git"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // requireGit skips the test if git is not available on the PATH.

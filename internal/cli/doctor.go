@@ -14,9 +14,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GoSemantics/semrel/internal/colors"
-	"github.com/GoSemantics/semrel/pkg/config"
-	gitpkg "github.com/GoSemantics/semrel/pkg/git"
+	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/pkg/config"
+	gitpkg "github.com/SemRels/semrel/pkg/git"
 )
 
 // DoctorCheck represents a single pre-flight check performed by `semrel doctor`.

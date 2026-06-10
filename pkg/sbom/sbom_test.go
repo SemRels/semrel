@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoSemantics/semrel/pkg/sbom"
+	"github.com/SemRels/semrel/pkg/sbom"
 )
 
 var fixedTime = time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)

@@ -7,7 +7,7 @@ package main
 import (
 	"os"
 
-	"github.com/GoSemantics/semrel/internal/cli"
+	"github.com/SemRels/semrel/internal/cli"
 )
 
 func main() {

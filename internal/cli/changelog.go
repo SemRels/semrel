@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GoSemantics/semrel/pkg/changelog"
-	"github.com/GoSemantics/semrel/pkg/commits"
-	"github.com/GoSemantics/semrel/pkg/config"
-	gitpkg "github.com/GoSemantics/semrel/pkg/git"
-	"github.com/GoSemantics/semrel/pkg/semver"
+	"github.com/SemRels/semrel/pkg/changelog"
+	"github.com/SemRels/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/config"
+	gitpkg "github.com/SemRels/semrel/pkg/git"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // ChangelogSummary is the structured output of `semrel changelog`.

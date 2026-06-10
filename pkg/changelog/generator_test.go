@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/commits"
 )
 
 func TestGenerate(t *testing.T) {

@@ -61,7 +61,7 @@ runs:
           git checkout "$REF" -- . 2>/dev/null || true
         fi
         go build \
-          -ldflags="-X github.com/GoSemantics/semrel/internal/version.Version=$(git -C '${{ github.action_path }}' describe --tags --always 2>/dev/null || echo dev)" \
+          -ldflags="-X github.com/SemRels/semrel/internal/version.Version=$(git -C '${{ github.action_path }}' describe --tags --always 2>/dev/null || echo dev)" \
           -o "${RUNNER_TEMP}/semrel" \
           ./cmd/semrel
 

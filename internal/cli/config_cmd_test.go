@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/GoSemantics/semrel/pkg/config"
+	"github.com/SemRels/semrel/pkg/config"
 )
 
 func TestConfigCommand_RegisteredInRoot(t *testing.T) {

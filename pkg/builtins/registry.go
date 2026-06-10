@@ -7,7 +7,7 @@
 // See: https://semrels.github.io/semrel-registry for available plugins.
 package builtins
 
-import "github.com/GoSemantics/semrel/pkg/plugin"
+import "github.com/SemRels/semrel/pkg/plugin"
 
 // DefaultRegistry returns an empty plugin registry.
 // No built-in plugin implementations are bundled in the core.

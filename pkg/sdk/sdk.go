@@ -7,7 +7,7 @@
 //
 // Quick start:
 //
-//	import "github.com/GoSemantics/semrel/pkg/sdk"
+//	import "github.com/SemRels/semrel/pkg/sdk"
 //
 //	type MyPlugin struct{}
 //

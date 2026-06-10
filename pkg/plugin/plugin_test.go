@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/plugin"
+	"github.com/SemRels/semrel/pkg/plugin"
 )
 
 // testPlugin is a minimal Plugin implementation for testing.

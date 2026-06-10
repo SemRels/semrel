@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/signing"
+	"github.com/SemRels/semrel/pkg/signing"
 )
 
 // fakeExec returns a function that records the last command invoked and

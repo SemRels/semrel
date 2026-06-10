@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/internal/registry"
+	"github.com/SemRels/semrel/internal/registry"
 )
 
 func TestRunPluginListAndSearch(t *testing.T) {

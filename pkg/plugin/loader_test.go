@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/internal/registry"
+	"github.com/SemRels/semrel/internal/registry"
 )
 
 func TestNewLoaderUsesEnvironmentRegistryClient(t *testing.T) {

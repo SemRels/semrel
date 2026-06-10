@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/config"
+	"github.com/SemRels/semrel/pkg/config"
 )
 
 // writeTestConfig writes a minimal .semrel.yaml to dir and returns the file path.

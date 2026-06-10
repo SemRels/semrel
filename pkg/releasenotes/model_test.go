@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/commits"
 )
 
 func TestBuild(t *testing.T) {

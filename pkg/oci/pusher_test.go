@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/oci"
+	"github.com/SemRels/semrel/pkg/oci"
 )
 
 func TestReference_Basic(t *testing.T) {

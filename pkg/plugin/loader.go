@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/GoSemantics/semrel/internal/registry"
+	"github.com/SemRels/semrel/internal/registry"
 )
 
 // Plugin is the interface for semrel plugins.

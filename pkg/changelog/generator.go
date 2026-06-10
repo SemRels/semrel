@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
-	"github.com/GoSemantics/semrel/pkg/releasenotes"
+	"github.com/SemRels/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/releasenotes"
 )
 
 // Generator generates changelog from commits.

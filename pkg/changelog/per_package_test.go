@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoSemantics/semrel/pkg/commits"
+	"github.com/SemRels/semrel/pkg/commits"
 )
 
 var testDate = time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)

@@ -6,7 +6,7 @@ package builtins_test
 import (
 	"testing"
 
-	"github.com/GoSemantics/semrel/pkg/builtins"
+	"github.com/SemRels/semrel/pkg/builtins"
 )
 
 func TestDefaultRegistryReturnsNonNilRegistry(t *testing.T) {
