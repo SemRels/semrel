@@ -22,13 +22,39 @@ func newConfigCommand(configFile *string, outputFormat *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage the semrel configuration",
-		Long: `config provides subcommands for creating, inspecting, and validating .semrel.yaml.
+		Long: `Manage the semrel configuration file (.semrel.yaml).
 
-Subcommands:
-  init      — interactive wizard to create .semrel.yaml from scratch
-  validate  — validate the current config file
-  show      — print the resolved config
-  set       — set a specific top-level key`,
+Config file fields:
+  branches            list of release branches (required)
+    - name            branch name or glob pattern (e.g. "main", "release/*")
+      prerelease      pre-release identifier (e.g. "beta" → v1.2.3-beta.1)
+      maintenance     only patch bumps allowed (auto-detected for N.x / N.M.x branches)
+  tagPrefix           git tag prefix (default: "v")
+  rules               commit type → bump level mappings
+    - type            commit type (e.g. "feat", "fix", "perf")
+      bump            bump level: major, minor, or patch
+  plugins             ordered list of plugin definitions
+    - uses            plugin name from the registry (e.g. "provider-github")
+      path            path to a local plugin binary (alternative to uses)
+      args            plugin-specific arguments (key/value map)
+      phase           when to run: condition, pre-tag, or release (default: release)
+  version_ceiling     maximum allowed version (e.g. "2.0.0")
+  ceiling_strategy    what to do when ceiling is hit: clamp, skip, or error
+  commit_changelog    commit CHANGELOG.md before tagging (default: true)
+  tag_exists_strategy behavior when tag already exists: update-changelog, skip, or error
+
+Example .semrel.yaml:
+  branches:
+    - name: main
+  tagPrefix: v
+  plugins:
+    - uses: provider-github
+    - uses: generator-changelog-md
+
+Quick start:
+  semrel config init      — interactive wizard to create .semrel.yaml
+  semrel config show      — print the resolved configuration
+  semrel config validate  — validate the current config file`,
 	}
 	cmd.AddCommand(newConfigInitCommand(configFile))
 	cmd.AddCommand(newConfigValidateCommand(configFile))

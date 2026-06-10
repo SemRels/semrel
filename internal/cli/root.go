@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -114,8 +115,15 @@ func releaseBumpLabel(current, next *semver.Version) string {
 	}
 }
 
-// version is set via ldflags at build time.
-var version = "dev"
+// version is set via ldflags at build time, or read from the embedded module info.
+var version = func() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return v
+		}
+	}
+	return "dev"
+}()
 
 // NewRootCommand returns the root cobra command for semrel.
 func NewRootCommand() *cobra.Command {
