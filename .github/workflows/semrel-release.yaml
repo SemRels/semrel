@@ -265,19 +265,6 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
 
-      - name: Make container package public
-        # GHCR packages default to private. GITHUB_TOKEN alone cannot change visibility
-        # (requires write:packages PAT scope). Set PACKAGES_TOKEN org secret to a PAT
-        # with write:packages to enable this step.
-        if: ${{ secrets.PACKAGES_TOKEN != '' }}
-        run: |
-          gh api -X PATCH /orgs/semrels/packages/container/semrel \
-            -f visibility=public \
-            && echo "✓ ghcr.io/semrels/semrel is now public" \
-            || echo "⚠ Could not set package visibility"
-        env:
-          GH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
-
       - name: Docker summary
         run: |
           {
