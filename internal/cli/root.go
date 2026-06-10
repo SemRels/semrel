@@ -163,6 +163,7 @@ Documentation: https://github.com/SemRels/semrel`,
 	root.AddCommand(newPluginCommand())
 	root.AddCommand(newDoctorCommand(&configFile, &outputFormat))
 	root.AddCommand(newChangelogCommand(&configFile, &outputFormat))
+	root.AddCommand(newConfigCommand(&configFile, &outputFormat))
 
 	return root
 }
