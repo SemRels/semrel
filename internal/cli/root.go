@@ -179,6 +179,7 @@ Quick start:
 	root.AddCommand(newChangelogCommand(&configFile, &outputFormat))
 	root.AddCommand(newConfigCommand(&configFile, &outputFormat))
 	root.AddCommand(newMigrateCommand(&configFile))
+	root.AddCommand(newUpdateCommand())
 
 	return root
 }
