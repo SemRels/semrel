@@ -1,3 +1,17 @@
+## v0.8.1 (2026-06-10)
+
+### Bug Fixes
+
+* rename module path from GoSemantics/semrel to SemRels/semrel
+
+### Other Changes
+
+* remove invalid secrets-in-if condition from semrel-release.yaml
+* fix GHCR visibility — use PACKAGES_TOKEN PAT (GITHUB_TOKEN lacks write:packages scope)
+* add one-shot workflow to set GHCR package visibility to public
+* make ghcr.io/semrels/semrel container package public after push
+* add JSON Schema badge, IDE setup section and schema link in config-reference
+
 ## v0.8.0 (2026-06-10)
 
 ### Features
