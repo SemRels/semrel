@@ -1,3 +1,9 @@
+## v0.9.0 (2026-06-10)
+
+### Features
+
+* **cli:** add 'semrel update' self-update command
+
 ## v0.8.2 (2026-06-10)
 
 ### Bug Fixes
