@@ -12,27 +12,29 @@
 # provider-github is intentionally omitted: GoReleaser handles the GitHub release
 # and attaches binary assets, which provider-github cannot do.
 
-tagPrefix: "v"
-version_ceiling: "1.0.0"
+
+schemaVersion: 1
+branches:
+    - name: main
+tagPrefix: v
+rules:
+    - type: feat
+      bump: minor
+    - type: fix
+      bump: patch
+    - type: perf
+      bump: patch
+    - type: revert
+      bump: patch
+plugins:
+    - uses: condition-github-actions
+      phase: condition
+    - uses: gobinary
+      args:
+        file: internal/version/version.go
+        var_name: Version
+      phase: pre-tag
+version_ceiling: 1.0.0
 ceiling_strategy: clamp
 commit_changelog: false
 tag_exists_strategy: update-changelog
-
-branches:
-  - name: main
-
-plugins:
-  # condition-github-actions verifies we are running inside a legitimate
-  # GitHub Actions CI environment before any git work is done.
-  - uses: condition-github-actions
-    phase: condition
-
-  # updater-go rewrites internal/version/version.go with the new version.
-  # Runs in pre-tag phase so the tagged commit already contains the correct version,
-  # which means `go install github.com/SemRels/semrel/cmd/semrel@vX.Y.Z` returns
-  # the right version even without ldflags.
-  - uses: gobinary
-    phase: pre-tag
-    args:
-      file: internal/version/version.go
-      var_name: Version
