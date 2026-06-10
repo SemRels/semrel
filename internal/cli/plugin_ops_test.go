@@ -30,7 +30,7 @@ func TestRunPluginListAndSearch(t *testing.T) {
 	t.Setenv(registry.EnvCacheDir, t.TempDir())
 
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runPluginList(context.Background(), false)
+		return runPluginList(context.Background(), false, "name")
 	})
 	if err != nil {
 		t.Fatalf("runPluginList() error = %v", err)
@@ -38,7 +38,7 @@ func TestRunPluginListAndSearch(t *testing.T) {
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)
 	}
-	if !strings.Contains(stdout, "NAME") || !strings.Contains(stdout, "provider-github") || !strings.Contains(stdout, "1.1.0") {
+	if !strings.Contains(stdout, "DOWNLOADS") || !strings.Contains(stdout, "provider-github") || !strings.Contains(stdout, "42") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 
@@ -142,6 +142,8 @@ func newCLIRegistryServer(t *testing.T, binary []byte, checksum string) *httptes
 			_, _ = w.Write([]byte(cliRegistryMetadataJSON(serverURL, checksum)))
 		case "/downloads/provider-github.exe":
 			_, _ = w.Write(binary)
+		case "/api/v1/plugins/provider-github/versions/1.0.0/downloads":
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -151,7 +153,7 @@ func newCLIRegistryServer(t *testing.T, binary []byte, checksum string) *httptes
 }
 
 func cliRegistryMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub release hooks","category":"hooks","tags":["github","hooks"],"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}},{"version":"1.1.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub release hooks","category":"hooks","tags":["github","hooks"],"downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}},{"version":"1.1.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
 		serverURL,
 		checksum,
 		checksum,

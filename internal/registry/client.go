@@ -146,6 +146,35 @@ func (c *RegistryClient) GetPlugin(ctx context.Context, name, version, goos, goa
 	return c.DownloadPlugin(ctx, name, version, goos, goarch)
 }
 
+// TrackDownload fires a download event to the registry API.
+// Tracking failures are intentionally silent.
+func (c *RegistryClient) TrackDownload(ctx context.Context, namespace, name, version, goos, goarch string) {
+	var path string
+	if namespace != "" {
+		path = fmt.Sprintf("/api/v1/plugins/@%s/%s/versions/%s/downloads?platform=%s_%s",
+			namespace, name, version, goos, goarch)
+	} else {
+		path = fmt.Sprintf("/api/v1/plugins/%s/versions/%s/downloads?platform=%s_%s",
+			name, version, goos, goarch)
+	}
+	trackURL := c.baseURL + path
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, trackURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", c.userAgent())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
+}
+
 func (c *RegistryClient) metadataURL() string {
 	if strings.HasSuffix(strings.ToLower(c.baseURL), metadataFileName) {
 		return c.baseURL

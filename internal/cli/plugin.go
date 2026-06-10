@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -34,6 +35,8 @@ Plugin phases (configured per plugin in .semrel.yaml):
 
 Subcommands:
   semrel plugin list              — list all available plugins
+  semrel plugin list --sort downloads
+                               — list plugins by popularity
   semrel plugin search <query>    — search plugins by name or description
   semrel plugin install <name>    — download and install a plugin`,
 	}
@@ -46,14 +49,21 @@ Subcommands:
 
 func newPluginListCommand() *cobra.Command {
 	var noHeader bool
+	var sortBy string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all available plugins in the registry",
+		Long: `List all available plugins in the registry.
+
+Sort options:
+  name       — alphabetical (default)
+  downloads  — most downloaded first`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPluginList(cmd.Context(), noHeader)
+			return runPluginList(cmd.Context(), noHeader, sortBy)
 		},
 	}
 	cmd.Flags().BoolVar(&noHeader, "no-header", false, "Suppress the table header")
+	cmd.Flags().StringVar(&sortBy, "sort", "name", "Sort by: name, downloads")
 	return cmd
 }
 
@@ -88,23 +98,34 @@ Examples:
 	return cmd
 }
 
-func runPluginList(ctx context.Context, noHeader bool) error {
+func runPluginList(ctx context.Context, noHeader bool, sortBy string) error {
 	reg, err := fetchRegistry(ctx)
 	if err != nil {
 		return err
 	}
 
+	plugins := append([]registry.PluginMeta(nil), reg.Plugins...)
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "downloads":
+		sort.Slice(plugins, func(i, j int) bool {
+			if plugins[i].Downloads != plugins[j].Downloads {
+				return plugins[i].Downloads > plugins[j].Downloads
+			}
+			return plugins[i].Name < plugins[j].Name
+		})
+	default:
+		sort.Slice(plugins, func(i, j int) bool {
+			return plugins[i].Name < plugins[j].Name
+		})
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if !noHeader {
-		_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION\tVERSIONS")
-		_, _ = fmt.Fprintln(w, "----\t--------\t-----------\t--------")
+		_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDOWNLOADS\tDESCRIPTION")
+		_, _ = fmt.Fprintln(w, "----\t--------\t---------\t-----------")
 	}
-	for _, p := range reg.Plugins {
-		latest := "-"
-		if len(p.Versions) > 0 {
-			latest = p.Versions[len(p.Versions)-1].Version
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Category, truncate(p.Description, 50), latest)
+	for _, p := range plugins {
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", p.Name, p.Category, p.Downloads, truncate(p.Description, 50))
 	}
 	return w.Flush()
 }
@@ -192,6 +213,22 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 	}
 
 	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", name, dest)
+
+	go func() {
+		client, err := registry.NewRegistryClientFromEnv()
+		if err != nil {
+			return
+		}
+		client.TrackDownload(
+			context.Background(),
+			strings.TrimPrefix(meta.Namespace, "@"),
+			meta.Name,
+			versionEntry.Version,
+			runtime.GOOS,
+			runtime.GOARCH,
+		)
+	}()
+
 	return nil
 }
 

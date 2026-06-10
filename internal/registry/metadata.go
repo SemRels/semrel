@@ -25,6 +25,7 @@ type PluginMeta struct {
 	Category    string          `json:"category"`
 	Repository  string          `json:"repository,omitempty"`
 	Tags        []string        `json:"tags,omitempty"`
+	Downloads   int64           `json:"downloads,omitempty"`
 	Versions    []PluginVersion `json:"versions"`
 }
 
