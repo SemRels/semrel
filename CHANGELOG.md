@@ -1,3 +1,10 @@
+## v0.6.0 (2026-06-10)
+
+### Features
+
+* **cli:** add --interactive flag to semrel release (#193) (#206)
+* **cli:** add semrel changelog command (#192) (#205)
+
 ## v0.5.0 (2026-06-10)
 
 ### Features
