@@ -288,6 +288,8 @@ func extractFromZip(archivePath, destDir string) (string, error) {
 
 // swapBinary atomically replaces targetPath with newBinary.
 // On Windows a running exe cannot be overwritten, so we rename it to .old first.
+// After the swap, the Zone.Identifier alternate data stream is removed so that
+// Smart App Control / Windows Defender does not block the new binary.
 func swapBinary(newBinary, targetPath string) error {
 	oldPath := targetPath + ".old"
 	_ = os.Remove(oldPath)
@@ -302,7 +304,19 @@ func swapBinary(newBinary, targetPath string) error {
 	}
 
 	_ = os.Remove(oldPath) // best-effort; may fail on Windows while process is still live
+	unblockWindowsBinary(targetPath)
 	return nil
+}
+
+// unblockWindowsBinary removes the Zone.Identifier alternate data stream on Windows
+// so that Smart App Control does not block the newly placed binary.
+// This is a no-op on non-Windows platforms.
+func unblockWindowsBinary(path string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// Remove the Zone.Identifier ADS that marks the file as downloaded from the internet.
+	_ = os.Remove(path + ":Zone.Identifier")
 }
 
 func resolveExecutablePath() (string, error) {
