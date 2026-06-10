@@ -24,12 +24,16 @@ func TestChangelogCommand_RegisteredInRoot(t *testing.T) {
 
 func TestRunChangelog_NoConfigFile(t *testing.T) {
 	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chdir("/home/mawa/dev/semrel/semrel") })
+	t.Cleanup(func() { _ = os.Chdir(orig) })
 
-	err := runChangelog(context.Background(), "", "text", false, "")
+	err = runChangelog(context.Background(), "", "text", false, "")
 	if err == nil {
 		t.Error("expected error when no config file exists")
 	}
