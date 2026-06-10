@@ -119,7 +119,7 @@ jobs:
 
       - name: Run GoReleaser
         if: steps.semrel.outputs.released == 'true'
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
           args: release --clean
