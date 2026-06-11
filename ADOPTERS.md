@@ -14,7 +14,7 @@ This file lists organisations and individuals using semrel in production or eval
 
 | Organisation | Usage | Description | Since |
 |-------------|-------|-------------|-------|
-| _(your org here)_ | evaluation | _(brief description)_ | _(year)_ |
+| [InterFace AG](https://interface-ag.de) | production | First adopter — using semrel for automated semantic releases across internal Go and TypeScript projects. | 2026 |
 
 ## Evaluating / Pilot
 
