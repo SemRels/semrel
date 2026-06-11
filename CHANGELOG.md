@@ -1,3 +1,9 @@
+## v0.10.2 (2026-06-11)
+
+### Bug Fixes
+
+* **doctor:** use registry plugin names and correct token env vars
+
 ## v0.10.1 (2026-06-10)
 
 ### Bug Fixes
