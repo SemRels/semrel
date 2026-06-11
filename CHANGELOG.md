@@ -1,3 +1,9 @@
+## v0.12.3 (2026-06-11)
+
+### Bug Fixes
+
+* **git:** resolve detached-HEAD branch via CI environment variables
+
 ## v0.12.2 (2026-06-11)
 
 ### Bug Fixes
