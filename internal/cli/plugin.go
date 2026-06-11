@@ -90,15 +90,20 @@ The plugin binary is placed in .semrel/plugins/ relative to the current working
 directory so that it is local to the project. Use --plugin-dir to override the
 installation path (e.g. ~/.semrel/plugins/ for a user-global install).
 
-Config entries using category-prefixed names (e.g. "provider-github",
-"condition-github-actions") are automatically resolved to their short registry
-names ("github", "github-actions") and install the same binary.
+When a plugin belongs to a namespace the full reference is required:
+
+  semrel plugin install @semrel/github
+  semrel plugin install @semrel/github@1.2.0
+
+Bare names (without "@namespace/") are only accepted for plugins that have no
+namespace in the registry. Config entries using category-prefixed names
+(e.g. "provider-github", "condition-github-actions") are resolved to their short
+registry names and follow the same namespace rule.
 
 Examples:
-  semrel plugin install github
-  semrel plugin install github@1.2.0
-  semrel plugin install provider-github
-  semrel plugin install condition-github-actions`,
+  semrel plugin install @semrel/github
+  semrel plugin install @semrel/github@1.2.0
+  semrel plugin install github          (only if registry entry has no namespace)`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPluginInstall(cmd.Context(), args[0], pluginDir)
@@ -183,6 +188,20 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 	meta, err := reg.FindPlugin(name)
 	if err != nil {
 		return fmt.Errorf("plugin %q not found in registry", name)
+	}
+
+	// Namespace enforcement: if the matched plugin belongs to a namespace but the
+	// user did not supply one, require the full "@namespace/name" reference.
+	// A bare name (e.g. "github") is only accepted for namespace-less plugins.
+	if !strings.HasPrefix(name, "@") && meta.Namespace != "" {
+		ns := meta.Namespace
+		if !strings.HasPrefix(ns, "@") {
+			ns = "@" + ns
+		}
+		return fmt.Errorf(
+			"plugin %q belongs to namespace %s — use the full reference:\n  semrel plugin install %s/%s",
+			meta.Name, ns, ns, meta.Name,
+		)
 	}
 
 	versionEntry, err := meta.FindVersion(ver)

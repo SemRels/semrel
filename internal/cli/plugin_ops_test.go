@@ -152,19 +152,88 @@ func newCLIRegistryServer(t *testing.T, binary []byte, checksum string) *httptes
 	return server
 }
 
+// newNamespacedRegistryServer returns a test server whose plugins.json contains
+// a plugin with namespace "@SemRels" for testing the namespace enforcement.
+func newNamespacedRegistryServer(t *testing.T, binary []byte, checksum string) *httptest.Server {
+	t.Helper()
+
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(namespacedRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/github.exe":
+			_, _ = w.Write(binary)
+		case "/api/v1/plugins/@SemRels/github/versions/1.0.0/downloads":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	return server
+}
+
 func cliRegistryMetadataJSON(serverURL, checksum string) string {
 	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub release hooks","category":"hooks","tags":["github","hooks"],"downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}},{"version":"1.1.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
 		serverURL,
-		checksum,
-		checksum,
-		checksum,
-		checksum,
-		checksum,
+		checksum, checksum, checksum, checksum, checksum,
 		serverURL,
-		checksum,
-		checksum,
-		checksum,
-		checksum,
-		checksum,
+		checksum, checksum, checksum, checksum, checksum,
 	)
+}
+
+func namespacedRegistryMetadataJSON(serverURL, checksum string) string {
+	return fmt.Sprintf(`{"plugins":[{"namespace":"SemRels","name":"github","description":"GitHub releases provider","category":"provider","downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
+		serverURL,
+		checksum, checksum, checksum, checksum, checksum,
+	)
+}
+
+func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
+	withColorsDisabled(t)
+	binary := []byte("plugin-binary")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+	server := newNamespacedRegistryServer(t, binary, checksum)
+	defer server.Close()
+
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+	installDir := t.TempDir()
+
+	// Bare name must be rejected when the plugin has a namespace.
+	_, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "github", installDir)
+	})
+	if err == nil {
+		t.Fatal("expected error when installing namespaced plugin by bare name")
+	}
+	if !strings.Contains(err.Error(), "@SemRels") || !strings.Contains(err.Error(), "namespace") {
+		t.Fatalf("error = %q — expected namespace hint", err.Error())
+	}
+
+	// Category-prefixed bare name must also be rejected.
+	_, _, err = captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "provider-github", installDir)
+	})
+	if err == nil {
+		t.Fatal("expected error when installing namespaced plugin by category-prefixed bare name")
+	}
+	if !strings.Contains(err.Error(), "@SemRels") {
+		t.Fatalf("error = %q — expected namespace hint for prefixed name", err.Error())
+	}
+
+	// Full namespaced reference must succeed.
+	stdout, stderr, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "@SemRels/github@1.0.0", installDir)
+	})
+	if err != nil {
+		t.Fatalf("runPluginInstall(@SemRels/github@1.0.0) error = %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	if !strings.Contains(stdout, "Installing") || !strings.Contains(stdout, "1.0.0") {
+		t.Fatalf("stdout = %q", stdout)
+	}
 }
