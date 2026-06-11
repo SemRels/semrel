@@ -1,3 +1,20 @@
+## v0.13.0 (2026-06-11)
+
+### Features
+
+* **schema:** add workspace config to JSON Schema v1
+* **workspace:** dry-run everywhere + skip packages with nothing to release
+* **workspace:** add semrel workspace command for monorepo orchestration
+
+### Bug Fixes
+
+* **doctor:** search for ecosystem files recursively up to 4 levels deep
+* **lint:** address all golangci-lint issues
+
+### Other Changes
+
+* add workspace config section to config-reference.md
+
 ## v0.12.6 (2026-06-11)
 
 ### Bug Fixes
