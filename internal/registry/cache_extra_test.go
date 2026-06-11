@@ -113,6 +113,13 @@ func TestMetadataLookupHelpers(t *testing.T) {
 			{Version: "1.0.0-beta.1", Prerelease: true, DownloadURL: "https://example.com/beta", Checksums: map[string]string{"linux_amd64": "beta"}},
 			{Version: "1.0.0", DownloadURL: "https://example.com/stable", Checksums: map[string]string{"linux_amd64": "stable"}},
 		},
+	}, {
+		Name:     "github-actions",
+		Versions: []PluginVersion{{Version: "0.1.0", DownloadURL: "https://example.com/ga", Checksums: map[string]string{"linux_amd64": "ga"}}},
+	}, {
+		Name:      "github",
+		Namespace: "@SemRels",
+		Versions:  []PluginVersion{{Version: "1.0.0", DownloadURL: "https://example.com/gh", Checksums: map[string]string{"linux_amd64": "gh"}}},
 	}}}
 
 	pluginMeta, err := registry.FindPlugin("demo")
@@ -132,6 +139,25 @@ func TestMetadataLookupHelpers(t *testing.T) {
 	}
 	if checksum != "stable" {
 		t.Fatalf("checksum = %q, want stable", checksum)
+	}
+
+	// FindPlugin with category-prefixed name should resolve via prefix-strip fallback.
+	for _, alias := range []string{"condition-github-actions", "github-actions"} {
+		m, err := registry.FindPlugin(alias)
+		if err != nil {
+			t.Fatalf("FindPlugin(%q) error = %v", alias, err)
+		}
+		if m.Name != "github-actions" {
+			t.Fatalf("FindPlugin(%q).Name = %q, want github-actions", alias, m.Name)
+		}
+	}
+
+	// Namespaced lookup must still match namespace.
+	if _, err := registry.FindPlugin("@SemRels/github"); err != nil {
+		t.Fatalf("FindPlugin(@SemRels/github) error = %v", err)
+	}
+	if _, err := registry.FindPlugin("@other/github"); err == nil {
+		t.Fatal("expected error for wrong namespace")
 	}
 
 	if _, err := registry.FindPlugin("missing"); err == nil {

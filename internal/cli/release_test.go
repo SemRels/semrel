@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/internal/registry"
 )
 
 var workingDirMu sync.Mutex
@@ -141,6 +142,10 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 	commitReleaseFile(t, repoDir, "feature.txt", "new feature\n", "feat: add release flow")
 	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\nplugins:\n  - uses: definitely-not-installed\n")
 
+	// Use a fast-failing registry URL so auto-install does not make real network calls.
+	t.Setenv(registry.EnvRegistryURL, "http://127.0.0.1:0")
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
 		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "text", false, "", "")
@@ -154,7 +159,9 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 	if !strings.Contains(stdout, "Created tag v0.2.0") {
 		t.Fatalf("stdout = %q", stdout)
 	}
-	if !strings.Contains(stdout, "plugin \"definitely-not-installed\" not installed") {
+	// With auto-install enabled the runner prints a "not found" message and
+	// gracefully skips the unavailable plugin.
+	if !strings.Contains(stdout, `plugin "definitely-not-installed" not found`) {
 		t.Fatalf("stdout = %q", stdout)
 	}
 

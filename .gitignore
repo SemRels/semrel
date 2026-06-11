@@ -37,5 +37,10 @@ checksums.txt
 # Local config overrides
 .semrel.local.yaml
 
+# Project-local plugin cache and installed binaries
+.semrel/plugins/
+.semrel/registry-cache/
+.semrel/*/
+
 # Generated protobuf/gRPC code (run `buf generate` to regenerate)
 /api/gen/

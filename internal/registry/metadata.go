@@ -50,29 +50,65 @@ type Compatibility struct {
 	GRPCVersion      string `json:"gRPCVersion,omitempty"`
 }
 
+// categoryPrefixes lists the category prefixes that .semrel.yaml configs may
+// include in a plugin's "uses" field (e.g. "condition-github-actions",
+// "provider-github", "updater-go"). The registry stores only the short name
+// ("github-actions", "github", "go"), so FindPlugin strips these prefixes as a
+// fallback when no exact match is found.
+var categoryPrefixes = []string{
+	"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-",
+}
+
 // FindPlugin returns the registry entry for the named plugin.
 //
 // The name argument may be:
-//   - a bare name: "analyzer-default"
-//   - a namespaced ref: "@semrel/analyzer-default"
+//   - a bare name: "github" or "condition-github-actions"
+//   - a category-prefixed name: "provider-github" (prefix is stripped on fallback)
+//   - a namespaced ref: "@semrel/github"
+//
+// Lookup order:
+//  1. Exact name match (respecting namespace when given).
+//  2. Name with each category prefix stripped, in order.
 //
 // When a bare name is used, the first matching entry is returned regardless of
 // namespace, which preserves backward compatibility with older plugins.json files
 // that have no namespace field.
 func (r *PluginRegistry) FindPlugin(name string) (*PluginMeta, error) {
 	inputNS, bareName := splitPluginRef(name)
+
+	if p := r.findByBareName(inputNS, bareName); p != nil {
+		return p, nil
+	}
+
+	// Fallback: strip a single category prefix and try again.
+	// This allows config entries like "provider-github" or "condition-github-actions"
+	// to resolve registry entries stored under their short names ("github", "github-actions").
+	for _, prefix := range categoryPrefixes {
+		if strings.HasPrefix(strings.ToLower(bareName), prefix) {
+			short := bareName[len(prefix):]
+			if p := r.findByBareName(inputNS, short); p != nil {
+				return p, nil
+			}
+		}
+	}
+
+	return nil, newRegistryError(ErrCodeNotFound, fmt.Sprintf("plugin %q not found", name), nil)
+}
+
+// findByBareName returns the first plugin whose Name matches bareName (case-insensitive).
+// When inputNS is non-empty, the plugin namespace must also match.
+func (r *PluginRegistry) findByBareName(inputNS, bareName string) *PluginMeta {
 	for i := range r.Plugins {
 		p := &r.Plugins[i]
 		if !strings.EqualFold(p.Name, bareName) {
 			continue
 		}
-		// When a namespace was requested, require it to match.
 		if inputNS != "" && !strings.EqualFold(p.Namespace, inputNS) {
 			continue
 		}
-		return p, nil
+		return p
 	}
-	return nil, newRegistryError(ErrCodeNotFound, fmt.Sprintf("plugin %q not found", name), nil)
+	return nil
 }
 
 // splitPluginRef splits "@namespace/name" into (namespace, name).

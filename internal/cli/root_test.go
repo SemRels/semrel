@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SemRels/semrel/internal/registry"
 	"github.com/SemRels/semrel/pkg/config"
 	"github.com/SemRels/semrel/pkg/plugininstance"
 )
@@ -296,9 +297,25 @@ func TestPluginSpecsFromConfig(t *testing.T) {
 }
 
 func TestPluginBinaryName(t *testing.T) {
-	got := pluginBinaryName("SemRels/github@1.2.3")
-	if got != "semrel-plugin-github" {
-		t.Fatalf("pluginBinaryName() = %q", got)
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"SemRels/github@1.2.3", "semrel-plugin-github"},
+		{"github", "semrel-plugin-github"},
+		{"provider-github", "semrel-plugin-github"},        // category prefix stripped
+		{"github-actions", "semrel-plugin-github-actions"},
+		{"condition-github-actions", "semrel-plugin-github-actions"}, // prefix stripped
+		{"condition-github-actions@0.1.0", "semrel-plugin-github-actions"},
+		{"updater-go", "semrel-plugin-go"},
+		{"go", "semrel-plugin-go"},
+		{"semrel-plugin-github", "semrel-plugin-github"}, // idempotent
+	}
+	for _, tt := range tests {
+		got := pluginBinaryName(tt.input)
+		if got != tt.want {
+			t.Errorf("pluginBinaryName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 
@@ -342,6 +359,10 @@ func TestResolvePluginBinaryPrefersLocalInstall(t *testing.T) {
 }
 
 func TestMakePluginRunnerMissingPluginIsNonFatal(t *testing.T) {
+	// Point auto-install at a local server that has no matching plugin so the test
+	// does not make real network calls and completes quickly.
+	t.Setenv(registry.EnvRegistryURL, "http://127.0.0.1:0") // connection refused → fast fail
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
 	runner := makePluginRunner(false, ReleaseSummary{})
 	if err := runner(context.Background(), plugininstance.PluginSpec{Uses: "definitely-not-installed"}); err != nil {
 		t.Fatalf("expected nil error, got %v", err)

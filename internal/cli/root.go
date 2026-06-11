@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/SemRels/semrel/pkg/envfile"
 	gitpkg "github.com/SemRels/semrel/pkg/git"
 	"github.com/SemRels/semrel/pkg/lock"
+	"github.com/SemRels/semrel/pkg/plugin"
 	"github.com/SemRels/semrel/pkg/plugininstance"
 	"github.com/SemRels/semrel/pkg/semver"
 )
@@ -700,8 +702,23 @@ func pluginSpecsForPhase(plugins []config.PluginConfig, phase string) []pluginin
 func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 	return func(ctx context.Context, spec plugininstance.PluginSpec) error {
 		binPath, err := resolvePluginBinary(spec)
-		if err != nil {
-			fmt.Printf("⚠  plugin %q not installed (run: semrel plugin install %s)\n", spec.Uses, spec.Uses)
+		if err != nil && spec.Uses != "" {
+			// Plugin not found locally — attempt auto-install from the registry.
+			// This respects any version pinned in the "uses" field (e.g. "github@1.2.0").
+			fmt.Printf("⬇  plugin %q not found — attempting auto-install...\n", spec.Uses)
+			if installErr := autoInstallPlugin(ctx, spec.Uses); installErr != nil {
+				fmt.Printf("⚠  auto-install of %q failed: %v\n   run: semrel plugin install %s\n",
+					spec.Uses, installErr, spec.Uses)
+				return nil // non-fatal: plugin is skipped
+			}
+			// Re-resolve after successful install.
+			binPath, err = resolvePluginBinary(spec)
+			if err != nil {
+				fmt.Printf("⚠  plugin %q not found even after install attempt\n", spec.Uses)
+				return nil
+			}
+		} else if err != nil {
+			fmt.Printf("⚠  plugin binary not found at path: %s\n", spec.Path)
 			return nil
 		}
 
@@ -740,6 +757,58 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 	}
 }
 
+// autoInstallPlugin downloads a plugin from the registry and installs it into
+// .semrel/plugins/ relative to the current working directory.
+//
+// uses may include a version pin (e.g. "github@1.2.0" or "provider-github@1.2.0").
+// When no version is specified, the latest stable release is used.
+func autoInstallPlugin(ctx context.Context, uses string) error {
+	name, ver := splitNameVersion(uses)
+
+	loader := plugin.NewLoader()
+	reg, err := loader.FetchMetadata(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching registry: %w", err)
+	}
+
+	meta, err := reg.FindPlugin(name)
+	if err != nil {
+		return fmt.Errorf("not found in registry: %w", err)
+	}
+
+	versionEntry, err := meta.FindVersion(ver)
+	if err != nil {
+		return fmt.Errorf("version %q not available for %q: %w", ver, meta.Name, err)
+	}
+
+	if len(versionEntry.Checksums) == 0 {
+		return fmt.Errorf("plugin %q@%s has no binary releases yet", meta.Name, versionEntry.Version)
+	}
+
+	// Download using the canonical registry name for a consistent cache key.
+	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.Name, versionEntry.Version)
+	if err != nil {
+		return fmt.Errorf("downloading: %w", err)
+	}
+
+	installDir := filepath.Join(".semrel", "plugins")
+	if err := os.MkdirAll(installDir, 0o755); err != nil {
+		return fmt.Errorf("creating plugin directory: %w", err)
+	}
+
+	binaryName := pluginBinaryName(meta.Name)
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	dest := filepath.Join(installDir, binaryName)
+	if err := copyFile(binaryPath, dest, 0o755); err != nil {
+		return fmt.Errorf("installing binary: %w", err)
+	}
+
+	fmt.Printf("✓  auto-installed %s@%s → %s\n", meta.Name, versionEntry.Version, dest)
+	return nil
+}
+
 func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 	if spec.Path != "" {
 		return spec.Path, nil
@@ -750,6 +819,15 @@ func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 		return "", fmt.Errorf("plugin binary name is empty")
 	}
 
+	// 1. Project-local .semrel/plugins/ (relative to CWD) — highest priority.
+	//    Allows projects to pin plugin binaries inside the repository checkout.
+	for _, candidate := range localBinaryCandidates(filepath.Join(".semrel", "plugins", binaryName)) {
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+
+	// 2. User-global ~/.semrel/plugins/.
 	home, err := os.UserHomeDir()
 	if err == nil {
 		local := filepath.Join(home, ".semrel", "plugins", binaryName)
@@ -760,9 +838,22 @@ func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 		}
 	}
 
+	// 3. Fall back to PATH.
 	return exec.LookPath(binaryName)
 }
 
+// pluginBinaryName derives the installed binary name from a plugin "uses" string.
+//
+// It normalises the input by:
+//  1. Stripping a leading "semrel-plugin-" prefix (idempotent).
+//  2. Stripping any "@namespace/" prefix (e.g. "@SemRels/github" → "github").
+//  3. Stripping any "@version" suffix (e.g. "github@1.2.0" → "github").
+//  4. Stripping a single category prefix if present
+//     ("provider-github" → "github", "condition-github-actions" → "github-actions").
+//     This mirrors the registry's short-name convention so that config entries
+//     using category-prefixed names resolve the same binary as short-name entries.
+//
+// The returned name is always "semrel-plugin-<short>" (e.g. "semrel-plugin-github").
 func pluginBinaryName(uses string) string {
 	uses = strings.TrimSpace(uses)
 	uses = strings.TrimPrefix(uses, "semrel-plugin-")
@@ -771,6 +862,14 @@ func pluginBinaryName(uses string) string {
 	}
 	if idx := strings.Index(uses, "@"); idx >= 0 {
 		uses = uses[:idx]
+	}
+	// Strip a single category prefix to align with the registry's short names.
+	lower := strings.ToLower(uses)
+	for _, prefix := range []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"} {
+		if strings.HasPrefix(lower, prefix) {
+			uses = uses[len(prefix):]
+			break
+		}
 	}
 	if uses == "" {
 		return ""

@@ -84,17 +84,27 @@ func newPluginInstallCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install <name[@version]>",
 		Short: "Download and install a plugin binary",
-		Long: `Download a plugin binary from the registry and install it into ~/.semrel/plugins/.
+		Long: `Download a plugin binary from the registry and install it into .semrel/plugins/.
+
+The plugin binary is placed in .semrel/plugins/ relative to the current working
+directory so that it is local to the project. Use --plugin-dir to override the
+installation path (e.g. ~/.semrel/plugins/ for a user-global install).
+
+Config entries using category-prefixed names (e.g. "provider-github",
+"condition-github-actions") are automatically resolved to their short registry
+names ("github", "github-actions") and install the same binary.
 
 Examples:
-  semrel plugin install npm
-  semrel plugin install npm@1.2.0`,
+  semrel plugin install github
+  semrel plugin install github@1.2.0
+  semrel plugin install provider-github
+  semrel plugin install condition-github-actions`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPluginInstall(cmd.Context(), args[0], pluginDir)
 		},
 	}
-	cmd.Flags().StringVar(&pluginDir, "plugin-dir", "", "Override the plugin installation directory (default: ~/.semrel/plugins/)")
+	cmd.Flags().StringVar(&pluginDir, "plugin-dir", "", "Override the plugin installation directory (default: .semrel/plugins/)")
 	return cmd
 }
 
@@ -186,24 +196,25 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 
 	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", pluginRef(*meta), versionEntry.Version)
 
-	binaryPath, err := loader.ResolvePluginBinary(ctx, name, versionEntry.Version)
+	// Use meta.Name (canonical registry name) for the download so that the cache key
+	// is stable regardless of whether the user specified a category-prefixed name.
+	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.Name, versionEntry.Version)
 	if err != nil {
 		return fmt.Errorf("installing plugin: %w", err)
 	}
 
 	installDir := overrideDir
 	if installDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolving home directory: %w", err)
-		}
-		installDir = filepath.Join(home, ".semrel", "plugins")
+		installDir = filepath.Join(".semrel", "plugins")
 	}
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return fmt.Errorf("creating plugin directory: %w", err)
 	}
 
-	binaryName := pluginBinaryName(name)
+	// Derive the binary name from the canonical registry name so that config entries
+	// using either the short name ("github") or a category-prefixed name ("provider-github")
+	// resolve to the same binary on disk ("semrel-plugin-github").
+	binaryName := pluginBinaryName(meta.Name)
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}

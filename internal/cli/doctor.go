@@ -183,7 +183,7 @@ func checkPlugins(cfg *config.Config) []DoctorCheck {
 			checks = append(checks, DoctorCheck{
 				Name:    name,
 				Status:  "fail",
-				Message: fmt.Sprintf("%s NOT FOUND — expected at ~/.semrel/plugins/ or $PATH", pluginBinaryName(spec.Uses)),
+				Message: fmt.Sprintf("%s NOT FOUND — expected at .semrel/plugins/ or $PATH", label),
 				Fix:     fix,
 			})
 			continue
@@ -492,68 +492,53 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	case strings.Contains(remote, "github.com"):
 		suggest("github", "GitHub remote detected — github publishes GitHub Releases")
 		if fileExists(".github/workflows") {
-			suggest("condition-github-actions", "GitHub Actions workflows detected — condition-github-actions gates releases to CI only")
+			suggest("github-actions", "GitHub Actions workflows detected — github-actions gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitlab.com") || (remote != "" && strings.Contains(remote, "gitlab")):
 		suggest("gitlab", "GitLab remote detected — gitlab publishes GitLab Releases")
 		if fileExists(".gitlab-ci.yml") {
-			suggest("condition-gitlab-ci", ".gitlab-ci.yml detected — condition-gitlab-ci gates releases to CI only")
+			suggest("gitlab-ci", ".gitlab-ci.yml detected — gitlab-ci gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitea.") || strings.Contains(remote, "/gitea"):
 		suggest("gitea", "Gitea remote detected — gitea publishes Gitea Releases")
 		if fileExists(".gitea/workflows") {
-			suggest("condition-gitea-actions", "Gitea Actions workflows detected — condition-gitea-actions gates releases to CI only")
+			suggest("gitea-actions", "Gitea Actions workflows detected — gitea-actions gates releases to CI only")
 		}
-	}
-
-	// ── Changelog generator ──────────────────────────────────────────────────
-	hasGenerator := false
-	if cfg != nil {
-		for _, p := range cfg.Plugins {
-			if strings.Contains(strings.ToLower(p.Uses), "generator") ||
-				strings.Contains(strings.ToLower(p.Uses), "changelog") {
-				hasGenerator = true
-				break
-			}
-		}
-	}
-	if !hasGenerator {
-		suggest("generator-changelog-md", "no changelog generator configured — generator-changelog-md writes CHANGELOG.md on every release")
 	}
 
 	// ── Language / ecosystem updaters ────────────────────────────────────────
 	if fileExists("go.mod") {
-		suggest("updater-go", "go.mod detected — updater-go keeps the version variable in source in sync with the release tag")
+		suggest("go", "go.mod detected — go keeps the version variable in source in sync with the release tag")
 	}
 	if fileExists("package.json") {
-		suggest("updater-npm", "package.json detected — updater-npm bumps the npm version and publishes to the registry")
+		suggest("npm", "package.json detected — npm bumps the npm version and publishes to the registry")
 	}
 	if fileExists("Cargo.toml") {
-		suggest("updater-cargo", "Cargo.toml detected — updater-cargo bumps the crate version and publishes to crates.io")
+		suggest("cargo", "Cargo.toml detected — cargo bumps the crate version and publishes to crates.io")
 	}
 	if fileExists("pyproject.toml", "setup.py", "setup.cfg") {
-		suggest("updater-python", "Python project detected — updater-python bumps the version and publishes to PyPI")
+		suggest("python", "Python project detected — python bumps the version and publishes to PyPI")
 	}
 	if fileExists("pom.xml") {
-		suggest("updater-maven", "pom.xml detected — updater-maven publishes the Maven artifact")
+		suggest("maven", "pom.xml detected — maven publishes the Maven artifact")
 	}
 	if fileExists("build.gradle", "build.gradle.kts") {
-		suggest("updater-gradle", "Gradle build file detected — updater-gradle bumps the project version")
+		suggest("gradle", "Gradle build file detected — gradle bumps the project version")
 	}
 	if fileExists("*.csproj", "**/*.csproj", "*.nuspec") {
-		suggest("updater-nuget", ".csproj detected — updater-nuget publishes the NuGet package")
+		suggest("nuget", ".csproj detected — nuget publishes the NuGet package")
 	}
 	if fileExists("Chart.yaml", "charts/*/Chart.yaml") {
-		suggest("updater-helm", "Chart.yaml detected — updater-helm bumps the Helm chart version")
+		suggest("helm", "Chart.yaml detected — helm bumps the Helm chart version")
 	}
 	if fileExists("Dockerfile", "Dockerfile.*") {
-		suggest("updater-docker", "Dockerfile detected — updater-docker builds and pushes the Docker image on release")
+		suggest("docker", "Dockerfile detected — docker builds and pushes the Docker image on release")
 	}
 	if fileExists("*.tf", "**/*.tf") {
-		suggest("updater-terraform", "Terraform files detected — updater-terraform bumps the module version")
+		suggest("terraform", "Terraform files detected — terraform bumps the module version")
 	}
 	if fileExists("Formula/*.rb", "Casks/*.rb") {
-		suggest("updater-homebrew", "Homebrew formula detected — updater-homebrew updates the formula on release")
+		suggest("homebrew", "Homebrew formula detected — homebrew updates the formula on release")
 	}
 
 	return checks
