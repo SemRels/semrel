@@ -1,3 +1,14 @@
+## v0.11.0 (2026-06-11)
+
+### Features
+
+* **plugin:** add .semrel.lock for reproducible plugin installs
+
+### Bug Fixes
+
+* **plugin:** enforce namespace for install command
+* **plugin:** align registry names, project-local plugin dir, auto-install
+
 ## v0.10.2 (2026-06-11)
 
 ### Bug Fixes
