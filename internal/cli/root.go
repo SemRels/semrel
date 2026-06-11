@@ -182,6 +182,7 @@ Quick start:
 	root.AddCommand(newConfigCommand(&configFile, &outputFormat))
 	root.AddCommand(newMigrateCommand(&configFile))
 	root.AddCommand(newUpdateCommand())
+	root.AddCommand(newWorkspaceCommand(&configFile, &outputFormat))
 
 	return root
 }

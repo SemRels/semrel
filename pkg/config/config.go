@@ -43,6 +43,40 @@ type Config struct {
 	// "skip": exits silently without any changes.
 	// "error": returns a non-zero exit code.
 	TagExistsStrategy string `yaml:"tag_exists_strategy,omitempty" toml:"tag_exists_strategy" json:"tag_exists_strategy,omitempty"`
+	// Workspace configures multi-package (monorepo) workspace mode.
+	// When set, `semrel workspace release` orchestrates all configured packages.
+	Workspace *WorkspaceConfig `yaml:"workspace,omitempty" toml:"workspace" json:"workspace,omitempty"`
+}
+
+// WorkspaceConfig enables multi-package workspace (monorepo) mode.
+// Packages are released via `semrel workspace release`.
+type WorkspaceConfig struct {
+	// Strategy is the versioning strategy:
+	//   "independent" (default) — each package gets its own semver version.
+	//   "lockstep" — all packages share the same version and are tagged together.
+	Strategy string `yaml:"strategy,omitempty" toml:"strategy" json:"strategy,omitempty"`
+	// Packages is an explicit list of workspace packages.
+	// Mutually exclusive with Pattern; Packages takes precedence when both are set.
+	Packages []WorkspacePackageRef `yaml:"packages,omitempty" toml:"packages" json:"packages,omitempty"`
+	// Pattern is a glob pattern relative to the repository root that discovers
+	// package directories automatically (e.g. "packages/*" or "services/**").
+	// Each matched directory is treated as an independent package.
+	Pattern string `yaml:"pattern,omitempty" toml:"pattern" json:"pattern,omitempty"`
+	// FailFast stops the workspace release on the first package failure.
+	// Default false: all packages are attempted and errors are collected.
+	FailFast bool `yaml:"fail_fast,omitempty" toml:"fail_fast" json:"fail_fast,omitempty"`
+}
+
+// WorkspacePackageRef references a single package inside a workspace.
+type WorkspacePackageRef struct {
+	// Path is the directory of the package relative to the repository root.
+	Path string `yaml:"path" toml:"path" json:"path"`
+	// TagPrefix overrides the package-level git tag prefix.
+	// Defaults to "<path>@v" for independent mode (e.g. "packages/api@v").
+	TagPrefix string `yaml:"tagPrefix,omitempty" toml:"tag_prefix" json:"tag_prefix,omitempty"`
+	// DependsOn lists other package paths this package depends on.
+	// Dependent packages are released only after all their dependencies succeed.
+	DependsOn []string `yaml:"dependsOn,omitempty" toml:"depends_on" json:"depends_on,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
@@ -183,6 +217,23 @@ func (c *Config) Validate() error {
 		validTagStrategies := map[string]bool{"update-changelog": true, "skip": true, "error": true}
 		if !validTagStrategies[c.TagExistsStrategy] {
 			errs = append(errs, fmt.Sprintf("tag_exists_strategy %q is not valid (must be update-changelog, skip, or error)", c.TagExistsStrategy))
+		}
+	}
+
+	if ws := c.Workspace; ws != nil {
+		if ws.Strategy != "" {
+			validStrategies := map[string]bool{"independent": true, "lockstep": true}
+			if !validStrategies[ws.Strategy] {
+				errs = append(errs, fmt.Sprintf("workspace.strategy %q is not valid (must be independent or lockstep)", ws.Strategy))
+			}
+		}
+		if ws.Pattern != "" && len(ws.Packages) > 0 {
+			errs = append(errs, "workspace: 'pattern' and 'packages' are mutually exclusive; use one or the other")
+		}
+		for i, pkg := range ws.Packages {
+			if strings.TrimSpace(pkg.Path) == "" {
+				errs = append(errs, fmt.Sprintf("workspace.packages[%d]: path must not be empty", i))
+			}
 		}
 	}
 
