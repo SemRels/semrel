@@ -26,7 +26,7 @@ semrel resolves plugin binaries in this order:
 
 1. `path:` from `.semrel.yaml`
 2. `.semrel/plugins/semrel-plugin-<name>`
-3. `~/.semrel/plugins/semrel-plugin-<name>`
+3. `.semrel/plugins/semrel-plugin-<name> (project-local) or ~/.semrel/plugins/semrel-plugin-<name> (global)`
 4. `semrel-plugin-<name>` in `$PATH`
 
 When a plugin is invoked, semrel:
@@ -144,7 +144,7 @@ Use the full `@namespace/name` reference when the registry entry belongs to a na
 To exercise the normal resolution order without `path:`, place the binary in one of these locations:
 
 - Project-local: `.semrel/plugins/semrel-plugin-demo`
-- User-global (Unix/macOS): `~/.semrel/plugins/semrel-plugin-demo`
+- Project-local: `.semrel/plugins/semrel-plugin-demo`
 - User-global (Windows): `~/.semrel/plugins/semrel-plugin-demo.exe` or `.cmd`
 - Any directory on `$PATH`
 

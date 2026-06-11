@@ -244,7 +244,7 @@ Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** b
 Defines the ordered list of external plugin binaries to run during a release.
 
 - `uses: github` resolves to `semrel-plugin-github`
-- semrel first checks `~/.semrel/plugins/`, then falls back to `$PATH`
+- semrel first checks `.semrel/plugins/` (project-local), then `~/.semrel/plugins/` (global), then `$PATH`
 - `path:` can be used to point at a specific binary
 - Install a plugin with `semrel plugin install github`, or place the binary manually in `~/.semrel/plugins/`
 
@@ -549,7 +549,7 @@ semrel plugin search github
 
 #### `semrel plugin install`
 
-Installs a standalone plugin binary into `~/.semrel/plugins/`.
+Installs a standalone plugin binary into `.semrel/plugins/` by default.
 
 ```bash
 semrel plugin install github
