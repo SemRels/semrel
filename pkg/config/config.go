@@ -193,9 +193,9 @@ func (c *Config) Validate() error {
 			errs = append(errs, fmt.Sprintf("plugins[%d]: either 'uses' or 'path' must be set", i))
 		}
 		if p.Phase != "" {
-			validPhases := map[string]bool{"condition": true, "pre-tag": true, "release": true}
+			validPhases := map[string]bool{"condition": true, "pre-tag": true, "release": true, "generator": true}
 			if !validPhases[p.Phase] {
-				errs = append(errs, fmt.Sprintf("plugins[%d]: phase %q is not valid (must be condition, pre-tag, or release)", i, p.Phase))
+				errs = append(errs, fmt.Sprintf("plugins[%d]: phase %q is not valid (must be condition, generator, pre-tag, or release)", i, p.Phase))
 			}
 		}
 	}

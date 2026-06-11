@@ -515,7 +515,38 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	gen := changelog.NewGenerator()
 	changelogEntry := gen.Generate(nextTag, parsed)
 
-	// 8a. Optionally open the changelog in an editor for manual review
+	// 8a. Run generator-phase plugins — these can override SEMREL_CHANGELOG
+	//     by printing a custom changelog/release-notes text to stdout.
+	//     stdout is captured (not forwarded to the terminal); stderr goes to the terminal.
+	//     This is how generator-changelog-html and generator-release-notes work:
+	//     their output becomes the SEMREL_CHANGELOG that provider and hook plugins receive.
+	if genSpecs := pluginSpecsForPhase(cfg.Plugins, "generator"); len(genSpecs) > 0 && !dryRun {
+		for _, spec := range genSpecs {
+			label := spec.Uses
+			if label == "" {
+				label = spec.Path
+			}
+			out, genErr := runGeneratorPlugin(ctx, spec, ReleaseSummary{
+				CurrentVersion: currentTag,
+				NextVersion:    nextTag,
+				Bump:           bump,
+				Branch:         branch,
+				TagPrefix:      cfg.TagPrefix,
+				Changelog:      changelogEntry,
+			})
+			if genErr != nil {
+				return fmt.Errorf("generator plugin %q: %w", label, genErr)
+			}
+			if out != "" {
+				changelogEntry = out
+				if outputFormat != "json" {
+					fmt.Printf("✓  %s provided custom changelog/release-notes\n", label)
+				}
+			}
+		}
+	}
+
+	// 8b. Optionally open the changelog in an editor for manual review
 	// See: https://github.com/SemRels/semrel/issues/48
 	if editNotes {
 		ed := editor.New()
@@ -820,9 +851,54 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 	}
 }
 
+// runGeneratorPlugin executes a generator-phase plugin and returns its stdout.
+// Unlike regular plugins, stdout is captured (not forwarded to the terminal)
+// so the text can be used as the release changelog/notes for subsequent phases.
+// stderr is forwarded so users see progress messages.
+func runGeneratorPlugin(ctx context.Context, spec plugininstance.PluginSpec, rel ReleaseSummary) (string, error) {
+	binPath, err := resolvePluginBinary(spec)
+	if err != nil && spec.Uses != "" {
+		fmt.Printf("⬇  generator plugin %q not found — attempting auto-install...\n", spec.Uses)
+		if installErr := autoInstallPlugin(ctx, spec.Uses); installErr != nil {
+			return "", fmt.Errorf("auto-install failed: %w", installErr)
+		}
+		binPath, err = resolvePluginBinary(spec)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	var buf strings.Builder
+	cmd := exec.CommandContext(ctx, binPath)
+	cmd.Stdout = &buf // capture stdout — this becomes the new SEMREL_CHANGELOG
+	cmd.Stderr = os.Stderr
+	env := os.Environ()
+	env = append(env,
+		"SEMREL_CURRENT_VERSION="+rel.CurrentVersion,
+		"SEMREL_VERSION="+rel.NextVersion,
+		"SEMREL_TAG_NAME="+rel.NextVersion,
+		"SEMREL_NEXT_VERSION="+rel.NextVersion,
+		"SEMREL_BUMP="+rel.Bump,
+		"SEMREL_TAG_PREFIX="+rel.TagPrefix,
+		"SEMREL_CHANGELOG="+rel.Changelog,
+		"SEMREL_BRANCH="+rel.Branch,
+		"SEMREL_DRY_RUN=false",
+	)
+	for k, v := range spec.Config {
+		val := fmt.Sprintf("%v", v)
+		if val != "" {
+			env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
+		}
+	}
+	cmd.Env = env
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(buf.String()), nil
+}
+
 // autoInstallPlugin downloads a plugin from the registry and installs it into
 // .semrel/plugins/ relative to the current working directory.
-//
 // Version resolution order:
 //  1. Version pin in uses (e.g. "github@1.2.0").
 //  2. Version recorded in .semrel.lock for this binary (ensures CI reproducibility).
