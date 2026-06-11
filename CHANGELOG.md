@@ -1,3 +1,15 @@
+## v0.12.2 (2026-06-11)
+
+### Bug Fixes
+
+* **doctor:** suppress suggestions for already-configured @namespace/ plugins
+* **docker:** pin Alpine, add apk upgrade, fix distroless missing git
+
+### Other Changes
+
+* fix .semrel/plugins/ path references (project-local takes priority)
+* add InterFace AG as first production adopter
+
 ## v0.12.1 (2026-06-11)
 
 ### Bug Fixes
