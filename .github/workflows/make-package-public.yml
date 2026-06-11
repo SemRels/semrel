@@ -9,13 +9,14 @@ name: Make container package public
 on:
   workflow_dispatch:
 
-permissions:
-  packages: write
+permissions: read-all
 
 jobs:
   set-public:
     name: Set GHCR package visibility to public
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Set semrel container package to public
         run: |
