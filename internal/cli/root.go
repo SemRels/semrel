@@ -564,18 +564,33 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			}
 			fmt.Printf("  • git tag %s\n", nextTag)
 		}
-		// Run plugins in dry-run so they can report what they would do.
-		// Each plugin receives SEMREL_DRY_RUN=true and should exit 0.
-		// Plugin failures are treated as warnings in dry-run: missing credentials
-		// or an unavailable service must not prevent the preview from completing.
-		if len(cfg.Plugins) > 0 {
-			orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
-			if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
-				if outputFormat != "json" {
-					fmt.Fprintf(os.Stderr, "⚠  dry-run: plugin(s) reported errors (skipped — no actual release was made):\n   %v\n", err)
+		// Release-phase plugins (providers, hooks) require live credentials that
+		// are typically absent in MR pipelines. Skip them in dry-run to keep the
+		// preview informative without failing on missing tokens.
+		// Pre-tag plugins (e.g. version-file updaters) are also skipped because
+		// they write files and their effect is already implied by the changelog entry.
+		if preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag"); len(preTagSpecs) > 0 {
+			if outputFormat != "json" {
+				fmt.Printf("  • run pre-tag plugins: ")
+				for i, s := range preTagSpecs {
+					if i > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(s.Uses)
 				}
-				// Non-fatal: the dry-run output above is still valid.
+				fmt.Println()
 			}
+		}
+		releaseSpecs := pluginSpecsFromConfig(cfg.Plugins)
+		if len(releaseSpecs) > 0 && outputFormat != "json" {
+			fmt.Printf("  • run release plugins: ")
+			for i, s := range releaseSpecs {
+				if i > 0 {
+					fmt.Print(", ")
+				}
+				fmt.Print(s.Uses)
+			}
+			fmt.Println()
 		}
 		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] No changes made.")
