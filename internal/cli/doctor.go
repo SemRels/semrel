@@ -336,10 +336,12 @@ func checkEnvVars(cfg *config.Config) []DoctorCheck {
 			needed = append(needed, envCheck{"github", []string{"SEMREL_PLUGIN_TOKEN", "GITHUB_TOKEN"}})
 		case strings.Contains(name, "provider-gitlab") || strings.Contains(name, "gitlab"):
 			// provider-gitlab requires SEMREL_PLUGIN_TOKEN.
-			needed = append(needed, envCheck{"gitlab", []string{"SEMREL_PLUGIN_TOKEN"}})
+			// In GitLab CI, CI_JOB_TOKEN and GITLAB_TOKEN are common alternatives
+			// that users typically map to SEMREL_PLUGIN_TOKEN.
+			needed = append(needed, envCheck{"gitlab", []string{"SEMREL_PLUGIN_TOKEN", "GITLAB_TOKEN", "CI_JOB_TOKEN"}})
 		case strings.Contains(name, "provider-gitea") || strings.Contains(name, "gitea"):
 			// provider-gitea requires SEMREL_PLUGIN_TOKEN.
-			needed = append(needed, envCheck{"gitea", []string{"SEMREL_PLUGIN_TOKEN"}})
+			needed = append(needed, envCheck{"gitea", []string{"SEMREL_PLUGIN_TOKEN", "GITEA_TOKEN"}})
 		}
 	}
 

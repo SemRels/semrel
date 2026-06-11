@@ -130,15 +130,20 @@ func splitPluginRef(ref string) (namespace, name string) {
 }
 
 // FindVersion returns the requested plugin version. If version is empty, the latest stable version is preferred.
+//
+// The registry stores versions in descending order (newest first). For the
+// "latest" lookup we therefore iterate from the beginning of the slice.
 func (p *PluginMeta) FindVersion(version string) (*PluginVersion, error) {
 	if version == "" {
-		for i := len(p.Versions) - 1; i >= 0; i-- {
+		// Iterate from the front (newest first in the registry's descending list).
+		for i := range p.Versions {
 			if !p.Versions[i].Prerelease {
 				return &p.Versions[i], nil
 			}
 		}
+		// All versions are pre-releases — return the newest (first entry).
 		if len(p.Versions) > 0 {
-			return &p.Versions[len(p.Versions)-1], nil
+			return &p.Versions[0], nil
 		}
 	}
 

@@ -107,11 +107,20 @@ func TestRegistryErrorFormattingAndUnwrap(t *testing.T) {
 }
 
 func TestMetadataLookupHelpers(t *testing.T) {
+	// Versions in descending order (newest first) — matches the real registry format.
 	registry := &PluginRegistry{Plugins: []PluginMeta{{
 		Name: "demo",
 		Versions: []PluginVersion{
-			{Version: "1.0.0-beta.1", Prerelease: true, DownloadURL: "https://example.com/beta", Checksums: map[string]string{"linux_amd64": "beta"}},
 			{Version: "1.0.0", DownloadURL: "https://example.com/stable", Checksums: map[string]string{"linux_amd64": "stable"}},
+			{Version: "1.0.0-beta.1", Prerelease: true, DownloadURL: "https://example.com/beta", Checksums: map[string]string{"linux_amd64": "beta"}},
+		},
+	}, {
+		// Multi-version plugin: verifies FindVersion("") returns the newest (0.3.0), not oldest (0.1.0).
+		Name: "multi",
+		Versions: []PluginVersion{
+			{Version: "0.3.0", DownloadURL: "https://example.com/multi-3", Checksums: map[string]string{"linux_amd64": "v3"}},
+			{Version: "0.2.0", DownloadURL: "https://example.com/multi-2", Checksums: map[string]string{"linux_amd64": "v2"}},
+			{Version: "0.1.0", DownloadURL: "https://example.com/multi-1", Checksums: map[string]string{"linux_amd64": "v1"}},
 		},
 	}, {
 		Name:     "github-actions",
@@ -139,6 +148,19 @@ func TestMetadataLookupHelpers(t *testing.T) {
 	}
 	if checksum != "stable" {
 		t.Fatalf("checksum = %q, want stable", checksum)
+	}
+
+	// Multi-version plugin: FindVersion("") must return the newest (0.3.0), not the oldest (0.1.0).
+	multiMeta, err := registry.FindPlugin("multi")
+	if err != nil {
+		t.Fatalf("FindPlugin(multi) error = %v", err)
+	}
+	latestMulti, err := multiMeta.FindVersion("")
+	if err != nil {
+		t.Fatalf("FindVersion(multi, empty) error = %v", err)
+	}
+	if latestMulti.Version != "0.3.0" {
+		t.Fatalf("FindVersion(multi) = %q, want 0.3.0 (newest)", latestMulti.Version)
 	}
 
 	// FindPlugin with category-prefixed name should resolve via prefix-strip fallback.
@@ -170,7 +192,8 @@ func TestMetadataLookupHelpers(t *testing.T) {
 		t.Fatal("expected missing checksum error")
 	}
 
-	preOnly := &PluginMeta{Versions: []PluginVersion{{Version: "2.0.0-rc.1", Prerelease: true}, {Version: "2.0.0-rc.2", Prerelease: true}}}
+	// Pre-release-only: descending order → first element (rc.2) is newest and returned.
+	preOnly := &PluginMeta{Versions: []PluginVersion{{Version: "2.0.0-rc.2", Prerelease: true}, {Version: "2.0.0-rc.1", Prerelease: true}}}
 	preVersion, err := preOnly.FindVersion("")
 	if err != nil {
 		t.Fatalf("FindVersion(prerelease only) error = %v", err)
