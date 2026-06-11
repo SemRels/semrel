@@ -571,9 +571,10 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	if dryRun {
 		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] Would perform:")
-			fmt.Printf("  • prepend entry to CHANGELOG.md\n")
 			if cfg.ShouldCommitChangelog() {
-				fmt.Println("  • git commit CHANGELOG.md")
+				fmt.Printf("  • write + commit CHANGELOG.md (built-in)\n")
+			} else {
+				fmt.Printf("  • skip built-in changelog write (commit_changelog: false — plugin handles it)\n")
 			}
 			fmt.Printf("  • git tag %s\n", nextTag)
 		}
@@ -637,51 +638,60 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			if outputFormat != "json" {
 				fmt.Printf("Tag %s already exists — updating CHANGELOG.md only (tag_exists_strategy=update-changelog).\n", nextTag)
 			}
-			if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
-			} else {
-				if cfg.ShouldCommitChangelog() {
+			if cfg.ShouldCommitChangelog() {
+				if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+					_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+				} else {
 					msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
 					if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
 						_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 					} else if outputFormat != "json" {
 						fmt.Println(colors.Success("Committed CHANGELOG.md (tag already existed)"))
 					}
-				} else if outputFormat != "json" {
-					fmt.Println(colors.Success("Updated CHANGELOG.md"))
 				}
 			}
 			return writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile)
 		}
 	}
 
-	// 11. Write CHANGELOG.md (prepend) and optionally commit it before tagging
-	if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
-	} else {
-		if cfg.ShouldCommitChangelog() {
+	// 11. Write CHANGELOG.md (prepend) and optionally commit it before tagging.
+	//
+	// When commit_changelog is true (default): semrel writes and commits CHANGELOG.md
+	// using its built-in generator. The tag is created on that commit.
+	//
+	// When commit_changelog is false: semrel skips both the write and the commit,
+	// delegating full changelog management to a pre-tag generator plugin
+	// (e.g. @semrel/generator-changelog-md with phase: pre-tag).
+	// The plugin's CHANGELOG.md write is then picked up by the auto-commit in step 11a.
+	if cfg.ShouldCommitChangelog() {
+		if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
+		} else {
 			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
 			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 			} else if outputFormat != "json" {
 				fmt.Println(colors.Success("Committed CHANGELOG.md"))
 			}
-		} else if outputFormat != "json" {
-			fmt.Println(colors.Success("Updated CHANGELOG.md"))
 		}
 	}
 
-	// 11a. Run pre-tag plugins (e.g. updater-go) — these run AFTER version
-	//      calculation but BEFORE the git tag is created, so the tagged commit can include
-	//      any version-file changes committed by the plugins.
+	// 11a. Run pre-tag plugins (e.g. updater-go, generator-changelog-md) — these
+	//      run AFTER version calculation but BEFORE the git tag is created, so the
+	//      tagged commit can include version-file changes and plugin-generated changelogs.
+	//
+	//      When commit_changelog is false, a pre-tag generator plugin is responsible
+	//      for writing CHANGELOG.md; the auto-commit below picks it up automatically.
 	if preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag"); len(preTagSpecs) > 0 {
 		if !dryRun {
 			orch := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 			if err := orch.Run(ctx, preTagSpecs); err != nil {
 				return err
 			}
-			// Auto-commit any tracked files modified by pre-tag plugins (e.g. version.go).
-			// The tag will then point to this commit so `go install @vX.Y.Z` embeds the version.
+			// Auto-commit any tracked files modified by pre-tag plugins (version.go,
+			// CHANGELOG.md when commit_changelog:false with a generator plugin, etc.).
+			// The tag will then point to this commit so `go install @vX.Y.Z` embeds
+			// the correct version and the changelog is part of the tagged commit.
 			msg := fmt.Sprintf("chore(release): set version to %s [skip ci]", summary.NextVersion)
 			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit pre-tag changes: %v", err)))

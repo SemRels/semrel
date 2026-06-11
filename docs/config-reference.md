@@ -336,15 +336,30 @@ ceiling_strategy: clamp
 
 ### `commit_changelog`
 
-Controls whether semrel commits `CHANGELOG.md` before creating the git tag.
+Controls whether semrel writes **and** commits `CHANGELOG.md` before creating the git tag.
 Default: `true`.
+
+| Value | Behaviour |
+|-------|-----------|
+| `true` (default) | semrel generates, writes, and commits `CHANGELOG.md` using its built-in changelog generator. |
+| `false` | semrel skips the built-in `CHANGELOG.md` write entirely. Use this when a pre-tag generator plugin (e.g. `@semrel/generator-changelog-md`) is responsible for writing the changelog. |
 
 ```yaml
 commit_changelog: false
 ```
 
-Set this to `false` when another system or workflow is responsible for committing
-the changelog.
+**Using a changelog generator plugin** — set `commit_changelog: false` so the
+plugin's `CHANGELOG.md` is the only version committed:
+
+```yaml
+commit_changelog: false
+
+plugins:
+  - uses: @semrel/generator-changelog-md
+    phase: pre-tag           # runs before the tag, auto-committed by semrel
+    args:
+      keep_releases: "10"    # required: without this the plugin only outputs to stdout
+```
 
 ### `tag_exists_strategy`
 
