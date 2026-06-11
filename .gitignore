@@ -37,10 +37,16 @@ checksums.txt
 # Local config overrides
 .semrel.local.yaml
 
-# Project-local plugin cache and installed binaries
+# Project-local plugin binaries (installed by semrel plugin install / restore)
 .semrel/plugins/
+# Registry metadata cache
 .semrel/registry-cache/
-.semrel/*/
+# Platform-versioned binary download cache (goos_goarch/name/version/)
+.semrel/linux_*/
+.semrel/darwin_*/
+.semrel/windows_*/
+.semrel/freebsd_*/
+# .semrel.lock is intentionally NOT ignored — commit it alongside .semrel.yaml
 
 # Generated protobuf/gRPC code (run `buf generate` to regenerate)
 /api/gen/

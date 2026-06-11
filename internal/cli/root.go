@@ -760,10 +760,23 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 // autoInstallPlugin downloads a plugin from the registry and installs it into
 // .semrel/plugins/ relative to the current working directory.
 //
-// uses may include a version pin (e.g. "github@1.2.0" or "provider-github@1.2.0").
-// When no version is specified, the latest stable release is used.
+// Version resolution order:
+//  1. Version pin in uses (e.g. "github@1.2.0").
+//  2. Version recorded in .semrel.lock for this binary (ensures CI reproducibility).
+//  3. Latest stable release from the registry.
 func autoInstallPlugin(ctx context.Context, uses string) error {
 	name, ver := splitNameVersion(uses)
+
+	// If no version is pinned in uses, consult .semrel.lock first.
+	if ver == "" {
+		binaryName := pluginBinaryName(uses)
+		if lf, lfErr := ReadLockFile(); lfErr == nil {
+			if entry := lf.FindByBinaryName(binaryName); entry != nil {
+				ver = entry.Version
+				fmt.Printf("  (using locked version %s from %s)\n", ver, LockFileName)
+			}
+		}
+	}
 
 	loader := plugin.NewLoader()
 	reg, err := loader.FetchMetadata(ctx)

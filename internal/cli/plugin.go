@@ -38,12 +38,14 @@ Subcommands:
   semrel plugin list --sort downloads
                                — list plugins by popularity
   semrel plugin search <query>    — search plugins by name or description
-  semrel plugin install <name>    — download and install a plugin`,
+  semrel plugin install <name>    — download, install and lock a plugin
+  semrel plugin restore           — install all plugins from .semrel.lock`,
 	}
 
 	cmd.AddCommand(newPluginListCommand())
 	cmd.AddCommand(newPluginSearchCommand())
 	cmd.AddCommand(newPluginInstallCommand())
+	cmd.AddCommand(newPluginRestoreCommand())
 	return cmd
 }
 
@@ -245,6 +247,16 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 
 	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", pluginRef(*meta), dest)
 
+	// Update .semrel.lock so the installed version is pinned for all contributors.
+	// Only update the lock when installing to the default project-local directory.
+	if overrideDir == "" {
+		if lockErr := updateLockFile(meta, versionEntry); lockErr != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "warning: could not update %s: %v\n", LockFileName, lockErr)
+		} else {
+			_, _ = fmt.Fprintf(os.Stdout, "  updated %s\n", LockFileName)
+		}
+	}
+
 	go func() {
 		client, err := registry.NewRegistryClientFromEnv()
 		if err != nil {
@@ -261,6 +273,21 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 	}()
 
 	return nil
+}
+
+// updateLockFile upserts the entry for meta/version into .semrel.lock.
+func updateLockFile(meta *registry.PluginMeta, version *registry.PluginVersion) error {
+	lf, err := ReadLockFile()
+	if err != nil {
+		return err
+	}
+	lf.Upsert(PluginLockEntry{
+		BinaryName: pluginBinaryName(meta.Name),
+		Ref:        pluginRef(*meta),
+		Version:    version.Version,
+		Checksums:  version.Checksums,
+	})
+	return lf.Write()
 }
 
 func fetchRegistry(ctx context.Context) (*registry.PluginRegistry, error) {
@@ -317,4 +344,94 @@ func pluginRef(p registry.PluginMeta) string {
 		return ns + "/" + p.Name
 	}
 	return p.Name
+}
+
+func newPluginRestoreCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Install all plugins from .semrel.lock",
+		Long: `Download and install every plugin pinned in .semrel.lock.
+
+Use this on CI or after cloning a repository to ensure you have exactly the
+same plugin versions as recorded in the lock file.
+
+The lock file (.semrel.lock) is created and updated automatically by
+'semrel plugin install'. Commit it alongside .semrel.yaml.
+
+Example CI step:
+  - run: semrel plugin restore`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPluginRestore(cmd.Context())
+		},
+	}
+	return cmd
+}
+
+func runPluginRestore(ctx context.Context) error {
+	lf, err := ReadLockFile()
+	if err != nil {
+		return err
+	}
+	if len(lf.Plugins) == 0 {
+		fmt.Printf("nothing to restore — %s has no plugin entries\n", LockFileName)
+		return nil
+	}
+
+	installDir := filepath.Join(".semrel", "plugins")
+	loader := plugin.NewLoader()
+
+	var failed []string
+	for _, entry := range lf.Plugins {
+		binaryName := entry.BinaryName
+		if runtime.GOOS == "windows" {
+			binaryName += ".exe"
+		}
+		dest := filepath.Join(installDir, binaryName)
+
+		// Skip if the binary is already present.
+		if info, statErr := os.Stat(dest); statErr == nil && !info.IsDir() {
+			fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
+			continue
+		}
+
+		fmt.Printf("⬇  restoring %s@%s ...\n", entry.Ref, entry.Version)
+
+		// Extract the bare plugin name for the registry/cache lookup.
+		bareName := entry.Ref
+		if idx := strings.LastIndex(bareName, "/"); idx >= 0 {
+			bareName = bareName[idx+1:]
+		}
+
+		binaryPath, dlErr := loader.ResolvePluginBinary(ctx, bareName, entry.Version)
+		if dlErr != nil {
+			fmt.Fprintf(os.Stderr, "✗  failed to restore %s: %v\n", entry.Ref, dlErr)
+			failed = append(failed, entry.Ref)
+			continue
+		}
+
+		// Verify the downloaded binary against the checksum stored in the lock file.
+		platform := runtime.GOOS + "_" + runtime.GOARCH
+		if expected, ok := entry.Checksums[platform]; ok {
+			if chkErr := loader.ValidateChecksum(binaryPath, expected); chkErr != nil {
+				fmt.Fprintf(os.Stderr, "✗  checksum mismatch for %s: %v\n", entry.Ref, chkErr)
+				failed = append(failed, entry.Ref)
+				continue
+			}
+		}
+
+		if err := os.MkdirAll(installDir, 0o755); err != nil {
+			return fmt.Errorf("creating plugin directory: %w", err)
+		}
+		if err := copyFile(binaryPath, dest, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "✗  failed to install %s: %v\n", entry.Ref, err)
+			failed = append(failed, entry.Ref)
+			continue
+		}
+		fmt.Printf("✓  restored %s@%s → %s\n", entry.Ref, entry.Version, dest)
+	}
+
+	if len(failed) > 0 {
+		return fmt.Errorf("failed to restore %d plugin(s): %v", len(failed), failed)
+	}
+	return nil
 }
