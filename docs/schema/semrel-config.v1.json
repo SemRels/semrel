@@ -2,10 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://registry.semrel.io/schemas/core/v1.json",
   "title": "semrel configuration",
-  "description": "Configuration schema for semrel — semantic release automation. https://semrel.io",
+  "description": "Configuration schema for semrel \u2014 semantic release automation. https://semrel.io",
   "type": "object",
   "additionalProperties": false,
-  "required": ["branches"],
+  "required": [
+    "branches"
+  ],
   "properties": {
     "schemaVersion": {
       "type": "integer",
@@ -24,7 +26,11 @@
       "type": "string",
       "description": "Prefix prepended to the version number when creating git tags. Default: \"v\".",
       "default": "v",
-      "examples": ["v", "release-", ""]
+      "examples": [
+        "v",
+        "release-",
+        ""
+      ]
     },
     "rules": {
       "type": "array",
@@ -34,9 +40,18 @@
       },
       "examples": [
         [
-          {"type": "feat", "bump": "minor"},
-          {"type": "fix",  "bump": "patch"},
-          {"type": "perf", "bump": "patch"}
+          {
+            "type": "feat",
+            "bump": "minor"
+          },
+          {
+            "type": "fix",
+            "bump": "patch"
+          },
+          {
+            "type": "perf",
+            "bump": "patch"
+          }
         ]
       ]
     },
@@ -51,12 +66,19 @@
       "type": "string",
       "description": "Maximum version semrel will release. Semver string, e.g. \"1.0.0\". Releases above this ceiling are handled by ceiling_strategy.",
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
-      "examples": ["1.0.0", "2.0.0"]
+      "examples": [
+        "1.0.0",
+        "2.0.0"
+      ]
     },
     "ceiling_strategy": {
       "type": "string",
       "description": "What to do when the computed next version exceeds version_ceiling. Default: \"clamp\".",
-      "enum": ["clamp", "skip", "error"],
+      "enum": [
+        "clamp",
+        "skip",
+        "error"
+      ],
       "default": "clamp"
     },
     "commit_changelog": {
@@ -67,8 +89,83 @@
     "tag_exists_strategy": {
       "type": "string",
       "description": "What to do when the computed tag already exists. Default: \"update-changelog\".",
-      "enum": ["update-changelog", "skip", "error"],
+      "enum": [
+        "update-changelog",
+        "skip",
+        "error"
+      ],
       "default": "update-changelog"
+    },
+    "workspace": {
+      "type": "object",
+      "description": "Enables multi-package workspace (monorepo) mode. Use 'semrel workspace release' to orchestrate all packages.",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "description": "Versioning strategy for workspace packages.",
+          "enum": [
+            "independent",
+            "lockstep"
+          ],
+          "default": "independent"
+        },
+        "packages": {
+          "type": "array",
+          "description": "Explicit list of workspace packages. Mutually exclusive with 'pattern'.",
+          "items": {
+            "type": "object",
+            "description": "A single workspace package.",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Directory of the package relative to the repository root.",
+                "examples": [
+                  "packages/api",
+                  "services/worker"
+                ]
+              },
+              "tagPrefix": {
+                "type": "string",
+                "description": "Git tag prefix for this package. Defaults to '<path>@v' in independent mode.",
+                "examples": [
+                  "packages/api@v",
+                  "api@v"
+                ]
+              },
+              "dependsOn": {
+                "type": "array",
+                "description": "Paths of packages this package depends on. Dependencies are released first.",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "packages/api"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern to auto-discover package directories. Mutually exclusive with 'packages'.",
+          "examples": [
+            "packages/*",
+            "services/**"
+          ]
+        },
+        "fail_fast": {
+          "type": "boolean",
+          "description": "Stop the workspace release on the first package failure. Default: false (collect all errors).",
+          "default": false
+        }
+      }
     }
   },
   "$defs": {
@@ -76,22 +173,34 @@
       "type": "object",
       "description": "Configuration for a single release branch.",
       "additionalProperties": false,
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Branch name or glob pattern (e.g. \"main\", \"release/*\", \"1.x\").",
           "minLength": 1,
-          "examples": ["main", "release/*", "1.x", "1.2.x"]
+          "examples": [
+            "main",
+            "release/*",
+            "1.x",
+            "1.2.x"
+          ]
         },
         "prerelease": {
           "type": "string",
           "description": "Pre-release identifier appended to the version (e.g. \"beta\", \"alpha.1\"). Omit for stable releases.",
-          "examples": ["beta", "alpha", "rc", "next"]
+          "examples": [
+            "beta",
+            "alpha",
+            "rc",
+            "next"
+          ]
         },
         "maintenance": {
           "type": "boolean",
-          "description": "Mark as a maintenance branch — only patch bumps are allowed. Auto-detected for N.x / N.M.x patterns.",
+          "description": "Mark as a maintenance branch \u2014 only patch bumps are allowed. Auto-detected for N.x / N.M.x patterns.",
           "default": false
         }
       }
@@ -100,18 +209,32 @@
       "type": "object",
       "description": "Maps a conventional commit type to a semver bump level.",
       "additionalProperties": false,
-      "required": ["type", "bump"],
+      "required": [
+        "type",
+        "bump"
+      ],
       "properties": {
         "type": {
           "type": "string",
           "description": "Conventional commit type (e.g. \"feat\", \"fix\", \"perf\", \"revert\", \"refactor\").",
           "minLength": 1,
-          "examples": ["feat", "fix", "perf", "revert", "refactor", "docs"]
+          "examples": [
+            "feat",
+            "fix",
+            "perf",
+            "revert",
+            "refactor",
+            "docs"
+          ]
         },
         "bump": {
           "type": "string",
           "description": "Semver bump level triggered by this commit type.",
-          "enum": ["major", "minor", "patch"]
+          "enum": [
+            "major",
+            "minor",
+            "patch"
+          ]
         }
       }
     },
@@ -120,8 +243,16 @@
       "description": "Configuration for a single semrel plugin.",
       "additionalProperties": false,
       "anyOf": [
-        {"required": ["uses"]},
-        {"required": ["path"]}
+        {
+          "required": [
+            "uses"
+          ]
+        },
+        {
+          "required": [
+            "path"
+          ]
+        }
       ],
       "properties": {
         "uses": {
@@ -164,27 +295,43 @@
         "name": {
           "type": "string",
           "description": "Local alias for this plugin instance. Useful when the same plugin is used multiple times.",
-          "examples": ["my-provider", "slack-release"]
+          "examples": [
+            "my-provider",
+            "slack-release"
+          ]
         },
         "path": {
           "type": "string",
           "description": "Absolute or relative path to the plugin binary. Use instead of 'uses' for local/custom plugins.",
-          "examples": ["/usr/local/bin/semrel-plugin-custom", "./bin/my-plugin"]
+          "examples": [
+            "/usr/local/bin/semrel-plugin-custom",
+            "./bin/my-plugin"
+          ]
         },
         "args": {
           "type": "object",
           "description": "Plugin-specific arguments passed as key-value pairs. Refer to the plugin's documentation.",
           "additionalProperties": true,
           "examples": [
-            {"webhook_url": "https://hooks.slack.com/services/..."},
-            {"go_module": "github.com/org/repo"},
-            {"file": "package.json"}
+            {
+              "webhook_url": "https://hooks.slack.com/services/..."
+            },
+            {
+              "go_module": "github.com/org/repo"
+            },
+            {
+              "file": "package.json"
+            }
           ]
         },
         "phase": {
           "type": "string",
           "description": "Pipeline phase in which this plugin runs. Default: \"release\".",
-          "enum": ["condition", "pre-tag", "release"],
+          "enum": [
+            "condition",
+            "pre-tag",
+            "release"
+          ],
           "default": "release"
         }
       }
