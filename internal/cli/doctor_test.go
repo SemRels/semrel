@@ -132,6 +132,7 @@ func TestCheckPlugins_ByPath_Found(t *testing.T) {
 
 func TestCheckEnvVars_GitHubTokenMissing(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("SEMREL_PLUGIN_TOKEN", "")
 
 	cfg := &config.Config{
 		Branches: []config.BranchConfig{{Name: "main"}},
@@ -140,20 +141,21 @@ func TestCheckEnvVars_GitHubTokenMissing(t *testing.T) {
 	checks := checkEnvVars(cfg)
 	found := false
 	for _, c := range checks {
-		if strings.Contains(c.Name, "github_token") {
+		if strings.Contains(c.Name, "semrel_plugin_token") {
 			found = true
 			if c.Status != "warn" {
-				t.Errorf("expected warn for missing GITHUB_TOKEN, got %q", c.Status)
+				t.Errorf("expected warn when neither SEMREL_PLUGIN_TOKEN nor GITHUB_TOKEN is set, got %q", c.Status)
 			}
 		}
 	}
 	if !found {
-		t.Error("expected a check for GITHUB_TOKEN")
+		t.Error("expected a check for SEMREL_PLUGIN_TOKEN")
 	}
 }
 
 func TestCheckEnvVars_GitHubTokenSet(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "ghp_test_token")
+	t.Setenv("SEMREL_PLUGIN_TOKEN", "")
 
 	cfg := &config.Config{
 		Branches: []config.BranchConfig{{Name: "main"}},
@@ -162,15 +164,16 @@ func TestCheckEnvVars_GitHubTokenSet(t *testing.T) {
 	checks := checkEnvVars(cfg)
 	found := false
 	for _, c := range checks {
-		if strings.Contains(c.Name, "github_token") {
+		if strings.Contains(c.Name, "semrel_plugin_token") {
 			found = true
+			// GITHUB_TOKEN is an accepted fallback — check must pass as "ok".
 			if c.Status != "ok" {
-				t.Errorf("expected ok for set GITHUB_TOKEN, got %q", c.Status)
+				t.Errorf("expected ok when GITHUB_TOKEN fallback is set, got %q", c.Status)
 			}
 		}
 	}
 	if !found {
-		t.Error("expected a check for GITHUB_TOKEN")
+		t.Error("expected a check for SEMREL_PLUGIN_TOKEN")
 	}
 }
 

@@ -318,9 +318,13 @@ func checkEnvVars(cfg *config.Config) []DoctorCheck {
 		return nil
 	}
 
+	// envCheck describes a required token for a provider plugin.
+	// envVars lists the accepted env var names in preference order; the check
+	// passes if at least one of them is non-empty.  The first entry is used in
+	// warning messages and the export hint.
 	type envCheck struct {
-		plugin string
-		envVar string
+		plugin  string
+		envVars []string
 	}
 
 	var needed []envCheck
@@ -328,34 +332,45 @@ func checkEnvVars(cfg *config.Config) []DoctorCheck {
 		name := strings.ToLower(p.Uses + p.Path)
 		switch {
 		case strings.Contains(name, "provider-github") || strings.Contains(name, "github"):
-			needed = append(needed, envCheck{"provider-github", "GITHUB_TOKEN"})
+			// provider-github accepts SEMREL_PLUGIN_TOKEN (preferred) or GITHUB_TOKEN.
+			needed = append(needed, envCheck{"github", []string{"SEMREL_PLUGIN_TOKEN", "GITHUB_TOKEN"}})
 		case strings.Contains(name, "provider-gitlab") || strings.Contains(name, "gitlab"):
-			needed = append(needed, envCheck{"provider-gitlab", "GITLAB_TOKEN"})
+			// provider-gitlab requires SEMREL_PLUGIN_TOKEN.
+			needed = append(needed, envCheck{"gitlab", []string{"SEMREL_PLUGIN_TOKEN"}})
 		case strings.Contains(name, "provider-gitea") || strings.Contains(name, "gitea"):
-			needed = append(needed, envCheck{"provider-gitea", "GITEA_TOKEN"})
+			// provider-gitea requires SEMREL_PLUGIN_TOKEN.
+			needed = append(needed, envCheck{"gitea", []string{"SEMREL_PLUGIN_TOKEN"}})
 		}
 	}
 
 	var checks []DoctorCheck
 	seen := map[string]bool{}
 	for _, n := range needed {
-		if seen[n.envVar] {
+		if seen[n.plugin] {
 			continue
 		}
-		seen[n.envVar] = true
+		seen[n.plugin] = true
 
-		if os.Getenv(n.envVar) != "" {
+		primaryVar := n.envVars[0]
+		found := false
+		for _, v := range n.envVars {
+			if os.Getenv(v) != "" {
+				found = true
+				break
+			}
+		}
+		if found {
 			checks = append(checks, DoctorCheck{
-				Name:    "env:" + strings.ToLower(n.envVar),
+				Name:    "env:" + strings.ToLower(primaryVar),
 				Status:  "ok",
-				Message: fmt.Sprintf("%s is set (required by %s)", n.envVar, n.plugin),
+				Message: fmt.Sprintf("%s is set (required by %s)", primaryVar, n.plugin),
 			})
 		} else {
 			checks = append(checks, DoctorCheck{
-				Name:    "env:" + strings.ToLower(n.envVar),
+				Name:    "env:" + strings.ToLower(primaryVar),
 				Status:  "warn",
-				Message: fmt.Sprintf("%s is not set — %s will fail at runtime", n.envVar, n.plugin),
-				Fix:     fmt.Sprintf("export %s=<token>", n.envVar),
+				Message: fmt.Sprintf("%s is not set — %s will fail at runtime", primaryVar, n.plugin),
+				Fix:     fmt.Sprintf("export %s=<token>", primaryVar),
 			})
 		}
 	}
@@ -409,16 +424,41 @@ func printDoctorResult(result DoctorResult) {
 // Results use status "info" and never affect the healthy flag.
 func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	// Build a set of already-configured plugin names (lower-case for comparison).
+	// Register both the literal name and the name without any category prefix
+	// (e.g. "provider-gitlab" registers as both "provider-gitlab" and "gitlab")
+	// so that suggestions are suppressed regardless of whether the user's config
+	// uses the short or prefixed plugin name.
 	configured := map[string]bool{}
+	categoryPrefixes := []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"}
 	if cfg != nil {
 		for _, p := range cfg.Plugins {
-			configured[strings.ToLower(p.Uses)] = true
-			configured[strings.ToLower(p.Path)] = true
+			for _, raw := range []string{p.Uses, p.Path} {
+				name := strings.ToLower(raw)
+				if name == "" {
+					continue
+				}
+				configured[name] = true
+				for _, prefix := range categoryPrefixes {
+					if strings.HasPrefix(name, prefix) {
+						configured[strings.TrimPrefix(name, prefix)] = true
+					}
+				}
+			}
 		}
 	}
 
 	already := func(uses string) bool {
-		return configured[strings.ToLower(uses)]
+		name := strings.ToLower(uses)
+		if configured[name] {
+			return true
+		}
+		// Also check prefixed variants (e.g. already("gitlab") → true if "provider-gitlab" configured).
+		for _, prefix := range categoryPrefixes {
+			if configured[prefix+name] {
+				return true
+			}
+		}
+		return false
 	}
 
 	var checks []DoctorCheck
@@ -450,17 +490,17 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	remote := gitRemoteURL()
 	switch {
 	case strings.Contains(remote, "github.com"):
-		suggest("provider-github", "GitHub remote detected — provider-github publishes GitHub Releases")
+		suggest("github", "GitHub remote detected — github publishes GitHub Releases")
 		if fileExists(".github/workflows") {
 			suggest("condition-github-actions", "GitHub Actions workflows detected — condition-github-actions gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitlab.com") || (remote != "" && strings.Contains(remote, "gitlab")):
-		suggest("provider-gitlab", "GitLab remote detected — provider-gitlab publishes GitLab Releases")
+		suggest("gitlab", "GitLab remote detected — gitlab publishes GitLab Releases")
 		if fileExists(".gitlab-ci.yml") {
 			suggest("condition-gitlab-ci", ".gitlab-ci.yml detected — condition-gitlab-ci gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitea.") || strings.Contains(remote, "/gitea"):
-		suggest("provider-gitea", "Gitea remote detected — provider-gitea publishes Gitea Releases")
+		suggest("gitea", "Gitea remote detected — gitea publishes Gitea Releases")
 		if fileExists(".gitea/workflows") {
 			suggest("condition-gitea-actions", "Gitea Actions workflows detected — condition-gitea-actions gates releases to CI only")
 		}

@@ -175,22 +175,22 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		switch provider {
 		case "github", "provider-github":
 			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "provider-github",
+				Uses:  "github",
 				Phase: "release",
 			})
 		case "gitlab", "provider-gitlab":
 			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "provider-gitlab",
+				Uses:  "gitlab",
 				Phase: "release",
 			})
 		case "gitea", "provider-gitea":
 			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "provider-gitea",
+				Uses:  "gitea",
 				Phase: "release",
 			})
 		case "git", "provider-git":
 			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "provider-git",
+				Uses:  "git",
 				Phase: "release",
 			})
 		}
