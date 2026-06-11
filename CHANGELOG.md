@@ -1,3 +1,9 @@
+## v0.12.5 (2026-06-11)
+
+### Bug Fixes
+
+* **registry,doctor:** FindVersion returns oldest instead of newest + doctor false positives
+
 ## v0.12.4 (2026-06-11)
 
 ### Bug Fixes
