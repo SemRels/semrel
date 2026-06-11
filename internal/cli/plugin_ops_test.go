@@ -153,7 +153,7 @@ func newCLIRegistryServer(t *testing.T, binary []byte, checksum string) *httptes
 }
 
 // newNamespacedRegistryServer returns a test server whose plugins.json contains
-// a plugin with namespace "@SemRels" for testing the namespace enforcement.
+// a plugin with namespace "@semrel" for testing the namespace enforcement.
 func newNamespacedRegistryServer(t *testing.T, binary []byte, checksum string) *httptest.Server {
 	t.Helper()
 
@@ -164,7 +164,7 @@ func newNamespacedRegistryServer(t *testing.T, binary []byte, checksum string) *
 			_, _ = w.Write([]byte(namespacedRegistryMetadataJSON(serverURL, checksum)))
 		case "/downloads/github.exe":
 			_, _ = w.Write(binary)
-		case "/api/v1/plugins/@SemRels/github/versions/1.0.0/downloads":
+		case "/api/v1/plugins/@semrel/github/versions/1.0.0/downloads":
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
@@ -184,7 +184,7 @@ func cliRegistryMetadataJSON(serverURL, checksum string) string {
 }
 
 func namespacedRegistryMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"namespace":"SemRels","name":"github","description":"GitHub releases provider","category":"provider","downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"namespace":"semrel","name":"github","description":"GitHub releases provider","category":"provider","downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
 		serverURL,
 		checksum, checksum, checksum, checksum, checksum,
 	)
@@ -208,7 +208,7 @@ func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when installing namespaced plugin by bare name")
 	}
-	if !strings.Contains(err.Error(), "@SemRels") || !strings.Contains(err.Error(), "namespace") {
+	if !strings.Contains(err.Error(), "@semrel") || !strings.Contains(err.Error(), "namespace") {
 		t.Fatalf("error = %q — expected namespace hint", err.Error())
 	}
 
@@ -219,16 +219,16 @@ func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when installing namespaced plugin by category-prefixed bare name")
 	}
-	if !strings.Contains(err.Error(), "@SemRels") {
+	if !strings.Contains(err.Error(), "@semrel") {
 		t.Fatalf("error = %q — expected namespace hint for prefixed name", err.Error())
 	}
 
 	// Full namespaced reference must succeed.
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runPluginInstall(context.Background(), "@SemRels/github@1.0.0", installDir)
+		return runPluginInstall(context.Background(), "@semrel/github@1.0.0", installDir)
 	})
 	if err != nil {
-		t.Fatalf("runPluginInstall(@SemRels/github@1.0.0) error = %v", err)
+		t.Fatalf("runPluginInstall(@semrel/github@1.0.0) error = %v", err)
 	}
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)

@@ -25,8 +25,9 @@ resolves to a binary named `semrel-plugin-github`.
 semrel resolves plugin binaries in this order:
 
 1. `path:` from `.semrel.yaml`
-2. `~/.semrel/plugins/semrel-plugin-<name>`
-3. `semrel-plugin-<name>` in `$PATH`
+2. `.semrel/plugins/semrel-plugin-<name>`
+3. `~/.semrel/plugins/semrel-plugin-<name>`
+4. `semrel-plugin-<name>` in `$PATH`
 
 When a plugin is invoked, semrel:
 
@@ -132,16 +133,32 @@ plugins:
       endpoint: https://staging.example.com
 ```
 
-You can also install it into the standard location:
+You can also install it into the standard project-local location:
 
 ```bash
-semrel plugin install demo
+semrel plugin install @semrel/demo
 ```
 
-or manually place the binary in:
+Use the full `@namespace/name` reference when the registry entry belongs to a namespace. A bare name such as `demo` only works for namespace-less plugins.
 
-- Unix/macOS: `~/.semrel/plugins/semrel-plugin-demo`
-- Windows: `~/.semrel/plugins/semrel-plugin-demo.exe` or `.cmd`
+To exercise the normal resolution order without `path:`, place the binary in one of these locations:
+
+- Project-local: `.semrel/plugins/semrel-plugin-demo`
+- User-global (Unix/macOS): `~/.semrel/plugins/semrel-plugin-demo`
+- User-global (Windows): `~/.semrel/plugins/semrel-plugin-demo.exe` or `.cmd`
+- Any directory on `$PATH`
+
+## Plugin Lock File
+
+Project-local installs update `.semrel.lock` in the repository root. The lock file records the canonical plugin reference, the pinned version, and published checksums for every supported platform so the same plugin binaries can be restored on any machine.
+
+Use it as part of the normal team workflow:
+
+1. Install or update a plugin with `semrel plugin install @semrel/demo`
+2. Commit `.semrel.lock` alongside `.semrel.yaml`
+3. Run `semrel plugin restore` in CI or after cloning the repository
+
+Installs performed with `--plugin-dir` do not update `.semrel.lock`.
 
 ## Reference implementations
 

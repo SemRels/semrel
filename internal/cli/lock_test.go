@@ -33,7 +33,7 @@ func TestPluginLockFile_UpsertAndFind(t *testing.T) {
 
 	entry := PluginLockEntry{
 		BinaryName: "semrel-plugin-github",
-		Ref:        "@SemRels/github",
+		Ref:        "@semrel/github",
 		Version:    "1.2.0",
 		Checksums:  map[string]string{"linux_amd64": "abc123"},
 	}
@@ -69,7 +69,7 @@ func TestPluginLockFile_WriteAndRead(t *testing.T) {
 	lf := &PluginLockFile{}
 	lf.Upsert(PluginLockEntry{
 		BinaryName: "semrel-plugin-github",
-		Ref:        "@SemRels/github",
+		Ref:        "@semrel/github",
 		Version:    "1.0.0",
 		Checksums:  map[string]string{"linux_amd64": "deadbeef"},
 	})
@@ -90,7 +90,7 @@ func TestPluginLockFile_WriteAndRead(t *testing.T) {
 	if len(lf2.Plugins) != 1 {
 		t.Fatalf("expected 1 plugin after round-trip, got %d", len(lf2.Plugins))
 	}
-	if lf2.Plugins[0].Ref != "@SemRels/github" {
+	if lf2.Plugins[0].Ref != "@semrel/github" {
 		t.Fatalf("ref = %q", lf2.Plugins[0].Ref)
 	}
 	if lf2.Plugins[0].Checksums["linux_amd64"] != "deadbeef" {

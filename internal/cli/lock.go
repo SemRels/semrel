@@ -35,10 +35,10 @@ type PluginLockFile struct {
 type PluginLockEntry struct {
 	// BinaryName is the stable lookup key derived from the plugin's short name,
 	// e.g. "semrel-plugin-github".  It is produced by pluginBinaryName() and is
-	// consistent across naming variants ("github", "provider-github", "@SemRels/github").
+	// (see below)/github").
 	BinaryName string `json:"binaryName"`
 
-	// Ref is the canonical registry reference, e.g. "@SemRels/github" or "github"
+	// (see below)/github" or "github"
 	// for namespace-less plugins.
 	Ref string `json:"ref"`
 

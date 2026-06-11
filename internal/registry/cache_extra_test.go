@@ -118,7 +118,7 @@ func TestMetadataLookupHelpers(t *testing.T) {
 		Versions: []PluginVersion{{Version: "0.1.0", DownloadURL: "https://example.com/ga", Checksums: map[string]string{"linux_amd64": "ga"}}},
 	}, {
 		Name:      "github",
-		Namespace: "@SemRels",
+		Namespace: "@semrel",
 		Versions:  []PluginVersion{{Version: "1.0.0", DownloadURL: "https://example.com/gh", Checksums: map[string]string{"linux_amd64": "gh"}}},
 	}}}
 
@@ -153,8 +153,8 @@ func TestMetadataLookupHelpers(t *testing.T) {
 	}
 
 	// Namespaced lookup must still match namespace.
-	if _, err := registry.FindPlugin("@SemRels/github"); err != nil {
-		t.Fatalf("FindPlugin(@SemRels/github) error = %v", err)
+	if _, err := registry.FindPlugin("@semrel/github"); err != nil {
+		t.Fatalf("FindPlugin(@semrel/github) error = %v", err)
 	}
 	if _, err := registry.FindPlugin("@other/github"); err == nil {
 		t.Fatal("expected error for wrong namespace")

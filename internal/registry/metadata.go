@@ -97,7 +97,7 @@ func (r *PluginRegistry) FindPlugin(name string) (*PluginMeta, error) {
 
 // findByBareName returns the first plugin whose Name matches bareName (case-insensitive).
 // When inputNS is non-empty, the plugin namespace must also match.
-// Leading "@" is stripped from both sides before comparing so that "@SemRels"
+// (see below)"
 // matches a registry entry that stores the namespace as "SemRels" (and vice-versa).
 func (r *PluginRegistry) findByBareName(inputNS, bareName string) *PluginMeta {
 	for i := range r.Plugins {

@@ -859,7 +859,7 @@ func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 //
 // It normalises the input by:
 //  1. Stripping a leading "semrel-plugin-" prefix (idempotent).
-//  2. Stripping any "@namespace/" prefix (e.g. "@SemRels/github" → "github").
+// (see below)/github" → "github").
 //  3. Stripping any "@version" suffix (e.g. "github@1.2.0" → "github").
 //  4. Stripping a single category prefix if present
 //     ("provider-github" → "github", "condition-github-actions" → "github-actions").
