@@ -16,13 +16,22 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /semrel \
     ./cmd/semrel
 
-# Verify binary is statically linked and has no SUID bits
 RUN chmod 0555 /semrel
 
+# ── git deps stage (for distroless) ──────────────────────────────────────────
+# Extract git and CA certificates from Debian so they can be copied into the
+# distroless/base image (which has glibc but no package manager).
+FROM debian:12-slim AS gitdeps
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # ── distroless release image ───────────────────────────────────────────────────
+# gcr.io/distroless/base-debian12 provides glibc so dynamically-linked git works.
 # Runs as nonroot (uid 65532) — no shell, no package manager, minimal attack surface.
-# Use the alpine variant for CI pipelines that need git.
-FROM gcr.io/distroless/static-debian12:nonroot AS release
+FROM gcr.io/distroless/base-debian12:nonroot AS release
 
 ARG VERSION=dev
 ARG BUILD_DATE
@@ -38,16 +47,26 @@ LABEL org.opencontainers.image.title="semrel" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="SemRels"
 
+# git binary and its runtime dependencies (dynamically linked against glibc)
+COPY --from=gitdeps /usr/bin/git                /usr/bin/git
+COPY --from=gitdeps /usr/lib/git-core/          /usr/lib/git-core/
+COPY --from=gitdeps /usr/share/git-core/        /usr/share/git-core/
+# CA certificates for HTTPS registry and forge API calls
+COPY --from=gitdeps /etc/ssl/certs/             /etc/ssl/certs/
+COPY --from=gitdeps /usr/share/ca-certificates/ /usr/share/ca-certificates/
+
 COPY --from=builder --chown=nonroot:nonroot /semrel /semrel
 
 USER nonroot
 
 ENTRYPOINT ["/semrel"]
 
-# ── alpine variant (includes git + ca-certificates) ───────────────────────────
-# Recommended for CI use — includes git, ca-certificates, and openssh.
-# Runs as dedicated non-root user (uid 10001).
-FROM alpine:3 AS alpine
+# ── alpine variant ─────────────────────────────────────────────────────────────
+# Pinned to Alpine 3.22 (latest stable minor) to prevent untracked base upgrades.
+# apk upgrade ensures all packages are at their latest patched versions,
+# eliminating the outdated-base CVEs reported by Trivy / Harbor SBOM scans.
+# Includes openssh-client for deployments that push over SSH.
+FROM alpine:3.22 AS alpine
 
 ARG VERSION=dev
 ARG BUILD_DATE
@@ -63,7 +82,13 @@ LABEL org.opencontainers.image.title="semrel (alpine)" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.vendor="SemRels"
 
-RUN apk add --no-cache git ca-certificates openssh-client \
+# Upgrade all base packages first to pick up Alpine security patches,
+# then add only the packages semrel needs at runtime.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache \
+        git \
+        ca-certificates \
+        openssh-client \
     && adduser -D -u 10001 -s /sbin/nologin semrel \
     && mkdir -p /workspace \
     && chown semrel:semrel /workspace
