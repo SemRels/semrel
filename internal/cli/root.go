@@ -766,8 +766,16 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 			}
 		}
 		// Plugin-specific config from .semrel.yaml args.
+		// Only append non-empty values: an empty args entry must not shadow a
+		// SEMREL_PLUGIN_* variable that is already set in the process environment.
+		// Go's exec deduplicates env vars keeping the last occurrence, so appending
+		// SEMREL_PLUGIN_TOKEN="" would silently erase a real token from os.Environ().
 		for k, v := range spec.Config {
-			env = append(env, fmt.Sprintf("SEMREL_PLUGIN_%s=%v", pluginEnvKey(k), v))
+			val := fmt.Sprintf("%v", v)
+			if val == "" {
+				continue // leave the env-var from os.Environ() intact
+			}
+			env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
 		}
 		cmd.Env = env
 		return cmd.Run()

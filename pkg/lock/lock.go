@@ -14,7 +14,8 @@ import (
 	"time"
 )
 
-const lockFileName = ".semrel.lock"
+// lockFileName is the release mutex — separate from .semrel.lock (plugin inventory).
+const lockFileName = ".semrel-release.lock"
 
 // ErrLocked is returned when a release lock is already held.
 var ErrLocked = errors.New("a release is already in progress")

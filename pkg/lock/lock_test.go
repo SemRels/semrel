@@ -96,7 +96,7 @@ func TestIsLocked_NoFile(t *testing.T) {
 func TestPath(t *testing.T) {
 	dir := t.TempDir()
 	l := New(dir)
-	expected := filepath.Join(dir, ".semrel.lock")
+	expected := filepath.Join(dir, ".semrel-release.lock")
 	if l.Path() != expected {
 		t.Errorf("expected %q, got %q", expected, l.Path())
 	}
