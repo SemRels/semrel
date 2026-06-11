@@ -1,3 +1,9 @@
+## v0.12.6 (2026-06-11)
+
+### Bug Fixes
+
+* **plugin:** restore verifies checksum before skipping existing binary
+
 ## v0.12.5 (2026-06-11)
 
 ### Bug Fixes
