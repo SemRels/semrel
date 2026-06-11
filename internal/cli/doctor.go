@@ -430,20 +430,34 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	// uses the short or prefixed plugin name.
 	configured := map[string]bool{}
 	categoryPrefixes := []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"}
-	if cfg != nil {
-		for _, p := range cfg.Plugins {
-			for _, raw := range []string{p.Uses, p.Path} {
-				name := strings.ToLower(raw)
-				if name == "" {
-					continue
-				}
-				configured[name] = true
-				for _, prefix := range categoryPrefixes {
-					if strings.HasPrefix(name, prefix) {
-						configured[strings.TrimPrefix(name, prefix)] = true
-					}
+	registerName := func(raw string) {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if name == "" {
+			return
+		}
+		configured[name] = true
+		// Strip namespace prefix (e.g. "@semrel/gitlab" → "gitlab").
+		if idx := strings.LastIndex(name, "/"); idx >= 0 {
+			short := name[idx+1:]
+			configured[short] = true
+			// Also strip category prefix from the short name.
+			for _, prefix := range categoryPrefixes {
+				if strings.HasPrefix(short, prefix) {
+					configured[strings.TrimPrefix(short, prefix)] = true
 				}
 			}
+		}
+		// Strip category prefix directly (e.g. "condition-gitlab-ci" → "gitlab-ci").
+		for _, prefix := range categoryPrefixes {
+			if strings.HasPrefix(name, prefix) {
+				configured[strings.TrimPrefix(name, prefix)] = true
+			}
+		}
+	}
+	if cfg != nil {
+		for _, p := range cfg.Plugins {
+			registerName(p.Uses)
+			registerName(p.Path)
 		}
 	}
 
