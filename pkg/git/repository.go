@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -89,13 +90,43 @@ func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, er
 }
 
 // CurrentBranch returns the name of the currently checked-out branch.
+// In detached-HEAD environments (e.g. GitLab CI merge-request pipelines,
+// GitHub Actions pull-request workflows) git returns the literal string "HEAD".
+// When that happens, the function falls back to well-known CI environment
+// variables so that semrel can still determine the correct release branch:
+//
+//	GitLab MR source branch : CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+//	GitLab branch/tag ref   : CI_COMMIT_REF_NAME
+//	GitHub PR head branch   : GITHUB_HEAD_REF
+//	GitHub push/tag ref     : GITHUB_REF_NAME
+//	Generic fallback        : GIT_BRANCH (set by Jenkins and many others)
 func (r *Repository) CurrentBranch(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "rev-parse", "--abbrev-ref", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("getting current branch: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	branch := strings.TrimSpace(string(out))
+
+	if branch != "HEAD" {
+		return branch, nil
+	}
+
+	// Detached HEAD — probe CI environment variables in preference order.
+	for _, envVar := range []string{
+		"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME", // GitLab MR pipeline
+		"CI_COMMIT_BRANCH",                    // GitLab branch pipeline
+		"CI_COMMIT_REF_NAME",                  // GitLab general (branch or tag name)
+		"GITHUB_HEAD_REF",                     // GitHub Actions PR
+		"GITHUB_REF_NAME",                     // GitHub Actions push/tag
+		"GIT_BRANCH",                          // Jenkins, Gitea Actions, others
+	} {
+		if v := strings.TrimSpace(os.Getenv(envVar)); v != "" && v != "HEAD" {
+			return v, nil
+		}
+	}
+
+	return "HEAD", nil
 }
 
 // CreateTag creates an annotated tag at HEAD.

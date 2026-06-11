@@ -121,6 +121,91 @@ func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 	}
 }
 
+func TestCurrentBranch_DetachedHead_CIFallback(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+	commitFile(t, repoDir, "f.txt", "x\n", "feat: init")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	// Detach HEAD so git reports "HEAD".
+	runGit(t, repoDir, "checkout", "--detach")
+
+	tests := []struct {
+		name    string
+		envVars map[string]string
+		want    string
+	}{
+		{
+			name:    "GitLab MR source branch",
+			envVars: map[string]string{"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME": "feature/my-work"},
+			want:    "feature/my-work",
+		},
+		{
+			name:    "GitLab commit branch",
+			envVars: map[string]string{"CI_COMMIT_BRANCH": "main"},
+			want:    "main",
+		},
+		{
+			name:    "GitLab ref name",
+			envVars: map[string]string{"CI_COMMIT_REF_NAME": "develop"},
+			want:    "develop",
+		},
+		{
+			name:    "GitHub PR head ref",
+			envVars: map[string]string{"GITHUB_HEAD_REF": "feat/pr-branch"},
+			want:    "feat/pr-branch",
+		},
+		{
+			name:    "GitHub ref name",
+			envVars: map[string]string{"GITHUB_REF_NAME": "main"},
+			want:    "main",
+		},
+		{
+			name:    "generic GIT_BRANCH",
+			envVars: map[string]string{"GIT_BRANCH": "release/1.0"},
+			want:    "release/1.0",
+		},
+		{
+			name:    "no CI env set — returns HEAD",
+			envVars: map[string]string{},
+			want:    "HEAD",
+		},
+	}
+
+	ciEnvVars := []string{
+		"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME",
+		"CI_COMMIT_BRANCH",
+		"CI_COMMIT_REF_NAME",
+		"GITHUB_HEAD_REF",
+		"GITHUB_REF_NAME",
+		"GIT_BRANCH",
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Clear all CI vars, then set only the ones for this test case.
+			for _, v := range ciEnvVars {
+				t.Setenv(v, "")
+			}
+			for k, v := range tc.envVars {
+				t.Setenv(k, v)
+			}
+
+			branch, err := repo.CurrentBranch(ctx)
+			if err != nil {
+				t.Fatalf("CurrentBranch() error = %v", err)
+			}
+			if branch != tc.want {
+				t.Fatalf("CurrentBranch() = %q, want %q", branch, tc.want)
+			}
+		})
+	}
+}
+
 func initGitRepository(t *testing.T) string {
 	t.Helper()
 
