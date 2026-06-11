@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/SemRels/semrel)](https://goreportcard.com/report/github.com/SemRels/semrel)
 [![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
-[![JSON Schema](https://img.shields.io/badge/schema-semrel.io%2Fschema%2Fv1.json-blue)](https://semrel.io/schema/v1.json)
+[![JSON Schema](https://img.shields.io/badge/schema-registry.semrel.io%2Fschemas%2Fcore%2Fv1.json-blue)](https://registry.semrel.io/schemas/core/v1.json)
 
 > **Status: v0.9.0** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
 
@@ -85,12 +85,12 @@ semrel update
 
 ## IDE Support
 
-The `.semrel.yaml` config file has a published [JSON Schema](https://semrel.io/schema/v1.json) that enables auto-complete, validation, and hover docs in VS Code, JetBrains IDEs, and any LSP-aware editor.
+The `.semrel.yaml` config file has a published [JSON Schema](https://registry.semrel.io/schemas/core/v1.json) that enables auto-complete, validation, and hover docs in VS Code, JetBrains IDEs, and any LSP-aware editor.
 
 `semrel config init` automatically adds the schema directive. For existing configs, add this line at the top:
 
 ```yaml
-# yaml-language-server: $schema=https://semrel.io/schema/v1.json
+# yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json
 ```
 
 VS Code users: install the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) for full support.

@@ -7,12 +7,12 @@ This document describes all supported options in `.semrel.yaml`.
 
 ## JSON Schema & IDE Support
 
-A [JSON Schema](https://semrel.io/schema/v1.json) is published at **`https://semrel.io/schema/v1.json`**.
+A [JSON Schema](https://registry.semrel.io/schemas/core/v1.json) is published at **`https://registry.semrel.io/schemas/core/v1.json`**.
 
 `semrel config init` adds the schema directive automatically. For existing files, add this comment at the top of your `.semrel.yaml`:
 
 ```yaml
-# yaml-language-server: $schema=https://semrel.io/schema/v1.json
+# yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json
 ```
 
 This enables **auto-complete, validation and hover documentation** in:

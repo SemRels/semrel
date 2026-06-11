@@ -250,7 +250,7 @@ func TestMarshalConfigYAML_ContainsComment(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := string(data)
-	if !strings.Contains(out, "semrel.io/schema/v1.json") {
+	if !strings.Contains(out, "registry.semrel.io/schemas/core/v1.json") {
 		t.Errorf("expected yaml-language-server schema directive, got: %s", out)
 	}
 	if !strings.Contains(out, "semrel configuration") {

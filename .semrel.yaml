@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The semrel Authors
-# yaml-language-server: $schema=https://semrel.io/schema/v1.json
+# yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json
 #
 # semrel uses itself to manage its own releases — dogfooding.
 # version_ceiling keeps us in 0.x.x until we deliberately promote to 1.0.0.

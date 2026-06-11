@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://semrel.io/schema/v1.json",
+  "$id": "https://registry.semrel.io/schemas/core/v1.json",
   "title": "semrel configuration",
   "description": "Configuration schema for semrel — semantic release automation. https://semrel.io",
   "type": "object",
