@@ -263,7 +263,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 			return
 		}
 		client.TrackDownload(
-			context.Background(),
+			ctx,
 			strings.TrimPrefix(meta.Namespace, "@"),
 			meta.Name,
 			versionEntry.Version,

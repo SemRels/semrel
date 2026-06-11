@@ -303,7 +303,7 @@ func TestPluginBinaryName(t *testing.T) {
 	}{
 		{"SemRels/github@1.2.3", "semrel-plugin-github"},
 		{"github", "semrel-plugin-github"},
-		{"provider-github", "semrel-plugin-github"},        // category prefix stripped
+		{"provider-github", "semrel-plugin-github"}, // category prefix stripped
 		{"github-actions", "semrel-plugin-github-actions"},
 		{"condition-github-actions", "semrel-plugin-github-actions"}, // prefix stripped
 		{"condition-github-actions@0.1.0", "semrel-plugin-github-actions"},

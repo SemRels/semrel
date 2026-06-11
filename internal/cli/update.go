@@ -69,11 +69,11 @@ func runUpdate(ctx context.Context, checkOnly bool) error {
 	}
 	latest := strings.TrimPrefix(release.TagName, "v")
 
-	switch {
-	case current == "dev":
+	switch current {
+	case "dev":
 		fmt.Printf("Current version: dev (built from source)\n")
 		fmt.Printf("Latest release:  %s\n", release.TagName)
-	case current == latest:
+	case latest:
 		fmt.Printf("✔  Already up to date (%s)\n", release.TagName)
 		return nil
 	default:
@@ -268,14 +268,17 @@ func extractFromZip(archivePath, destDir string) (string, error) {
 			}
 			out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 			if err != nil {
-				rc.Close()
+				_ = rc.Close()
 				return "", err
 			}
 			_, copyErr := io.Copy(out, rc) //nolint:gosec
-			rc.Close()
+			closeRCErr := rc.Close()
 			closeErr := out.Close()
 			if copyErr != nil {
 				return "", copyErr
+			}
+			if closeRCErr != nil {
+				return "", closeRCErr
 			}
 			if closeErr != nil {
 				return "", closeErr
