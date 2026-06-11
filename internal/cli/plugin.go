@@ -388,10 +388,23 @@ func runPluginRestore(ctx context.Context) error {
 		}
 		dest := filepath.Join(installDir, binaryName)
 
-		// Skip if the binary is already present.
+		// Skip if the binary is already present AND the checksum matches.
+		// If the file exists but the checksum differs (e.g. an old version from
+		// a stale CI cache), re-download so the lock file version is enforced.
 		if info, statErr := os.Stat(dest); statErr == nil && !info.IsDir() {
-			fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
-			continue
+			platform := runtime.GOOS + "_" + runtime.GOARCH
+			if expected, ok := entry.Checksums[platform]; ok {
+				if chkErr := loader.ValidateChecksum(dest, expected); chkErr == nil {
+					fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
+					continue
+				}
+				// Checksum mismatch — fall through to re-download.
+				fmt.Printf("↻  %s binary present but checksum differs — updating to @%s\n", entry.Ref, entry.Version)
+			} else {
+				// No checksum for this platform — trust the existing file.
+				fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
+				continue
+			}
 		}
 
 		fmt.Printf("⬇  restoring %s@%s ...\n", entry.Ref, entry.Version)
@@ -410,6 +423,7 @@ func runPluginRestore(ctx context.Context) error {
 		}
 
 		// Verify the downloaded binary against the checksum stored in the lock file.
+		// (ResolvePluginBinary may return a cached copy; re-verify here for safety.)
 		platform := runtime.GOOS + "_" + runtime.GOARCH
 		if expected, ok := entry.Checksums[platform]; ok {
 			if chkErr := loader.ValidateChecksum(binaryPath, expected); chkErr != nil {
