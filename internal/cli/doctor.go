@@ -449,10 +449,14 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 
 	already := func(uses string) bool {
 		name := strings.ToLower(uses)
+		// Strip leading "@namespace/" for comparison so that
+		// already("@semrel/gitlab") matches configured["gitlab"] and vice-versa.
+		if idx := strings.LastIndex(name, "/"); idx >= 0 {
+			name = name[idx+1:]
+		}
 		if configured[name] {
 			return true
 		}
-		// Also check prefixed variants (e.g. already("gitlab") → true if "provider-gitlab" configured).
 		for _, prefix := range categoryPrefixes {
 			if configured[prefix+name] {
 				return true
@@ -462,15 +466,17 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	}
 
 	var checks []DoctorCheck
-	suggest := func(uses, reason string) {
-		if already(uses) {
+	// suggest records a recommendation. nsRef must be the full install reference
+	// (e.g. "@semrel/gitlab") so that the hint points to the correct command.
+	suggest := func(nsRef, reason string) {
+		if already(nsRef) {
 			return
 		}
 		checks = append(checks, DoctorCheck{
-			Name:    "suggest:" + uses,
+			Name:    "suggest:" + nsRef,
 			Status:  "info",
 			Message: reason,
-			Fix:     "semrel plugin install " + uses,
+			Fix:     "semrel plugin install " + nsRef,
 		})
 	}
 
@@ -490,55 +496,55 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	remote := gitRemoteURL()
 	switch {
 	case strings.Contains(remote, "github.com"):
-		suggest("github", "GitHub remote detected — github publishes GitHub Releases")
+		suggest("@semrel/github", "GitHub remote detected — github publishes GitHub Releases")
 		if fileExists(".github/workflows") {
-			suggest("github-actions", "GitHub Actions workflows detected — github-actions gates releases to CI only")
+			suggest("@semrel/condition-github-actions", "GitHub Actions workflows detected — condition-github-actions gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitlab.com") || (remote != "" && strings.Contains(remote, "gitlab")):
-		suggest("gitlab", "GitLab remote detected — gitlab publishes GitLab Releases")
+		suggest("@semrel/gitlab", "GitLab remote detected — gitlab publishes GitLab Releases")
 		if fileExists(".gitlab-ci.yml") {
-			suggest("gitlab-ci", ".gitlab-ci.yml detected — gitlab-ci gates releases to CI only")
+			suggest("@semrel/condition-gitlab-ci", ".gitlab-ci.yml detected — condition-gitlab-ci gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitea.") || strings.Contains(remote, "/gitea"):
-		suggest("gitea", "Gitea remote detected — gitea publishes Gitea Releases")
+		suggest("@semrel/gitea", "Gitea remote detected — gitea publishes Gitea Releases")
 		if fileExists(".gitea/workflows") {
-			suggest("gitea-actions", "Gitea Actions workflows detected — gitea-actions gates releases to CI only")
+			suggest("@semrel/condition-gitea-actions", "Gitea Actions workflows detected — condition-gitea-actions gates releases to CI only")
 		}
 	}
 
 	// ── Language / ecosystem updaters ────────────────────────────────────────
 	if fileExists("go.mod") {
-		suggest("go", "go.mod detected — go keeps the version variable in source in sync with the release tag")
+		suggest("@semrel/updater-go", "go.mod detected — updater-go keeps the version variable in source in sync with the release tag")
 	}
 	if fileExists("package.json") {
-		suggest("npm", "package.json detected — npm bumps the npm version and publishes to the registry")
+		suggest("@semrel/updater-npm", "package.json detected — updater-npm bumps the npm version and publishes to the registry")
 	}
 	if fileExists("Cargo.toml") {
-		suggest("cargo", "Cargo.toml detected — cargo bumps the crate version and publishes to crates.io")
+		suggest("@semrel/updater-cargo", "Cargo.toml detected — updater-cargo bumps the crate version and publishes to crates.io")
 	}
 	if fileExists("pyproject.toml", "setup.py", "setup.cfg") {
-		suggest("python", "Python project detected — python bumps the version and publishes to PyPI")
+		suggest("@semrel/updater-python", "Python project detected — updater-python bumps the version and publishes to PyPI")
 	}
 	if fileExists("pom.xml") {
-		suggest("maven", "pom.xml detected — maven publishes the Maven artifact")
+		suggest("@semrel/updater-maven", "pom.xml detected — updater-maven publishes the Maven artifact")
 	}
 	if fileExists("build.gradle", "build.gradle.kts") {
-		suggest("gradle", "Gradle build file detected — gradle bumps the project version")
+		suggest("@semrel/updater-gradle", "Gradle build file detected — updater-gradle bumps the project version")
 	}
 	if fileExists("*.csproj", "**/*.csproj", "*.nuspec") {
-		suggest("nuget", ".csproj detected — nuget publishes the NuGet package")
+		suggest("@semrel/updater-nuget", ".csproj detected — updater-nuget publishes the NuGet package")
 	}
 	if fileExists("Chart.yaml", "charts/*/Chart.yaml") {
-		suggest("helm", "Chart.yaml detected — helm bumps the Helm chart version")
+		suggest("@semrel/updater-helm", "Chart.yaml detected — updater-helm bumps the Helm chart version")
 	}
 	if fileExists("Dockerfile", "Dockerfile.*") {
-		suggest("docker", "Dockerfile detected — docker builds and pushes the Docker image on release")
+		suggest("@semrel/updater-docker", "Dockerfile detected — updater-docker builds and pushes the Docker image on release")
 	}
 	if fileExists("*.tf", "**/*.tf") {
-		suggest("terraform", "Terraform files detected — terraform bumps the module version")
+		suggest("@semrel/updater-terraform", "Terraform files detected — updater-terraform bumps the module version")
 	}
 	if fileExists("Formula/*.rb", "Casks/*.rb") {
-		suggest("homebrew", "Homebrew formula detected — homebrew updates the formula on release")
+		suggest("@semrel/updater-homebrew", "Homebrew formula detected — updater-homebrew updates the formula on release")
 	}
 
 	return checks
