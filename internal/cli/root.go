@@ -267,6 +267,18 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			cfg.SchemaVersion, config.CurrentSchemaVersion)
 	}
 
+	// 1b. Auto-restore: if .semrel.lock exists and any configured plugin binary is
+	//     missing, run `semrel plugin restore` automatically before anything else.
+	//     This ensures a clean first-run experience: clone → release works out of
+	//     the box as long as .semrel.lock is committed.
+	if len(cfg.Plugins) > 0 {
+		if err := maybeAutoRestore(ctx, cfg.Plugins, outputFormat); err != nil {
+			// Restore failure is a hard error: the user likely committed .semrel.lock
+			// intentionally, so a mismatch is a signal something is wrong.
+			return fmt.Errorf("auto-restoring plugins: %w", err)
+		}
+	}
+
 	// 2. Open repository
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
@@ -919,6 +931,52 @@ func resolveConfigFile(configFile string) (string, error) {
 		return "", fmt.Errorf("no config file found: %w", err)
 	}
 	return found, nil
+}
+
+// maybeAutoRestore checks whether any plugin configured in plugins is missing
+// from all local search paths. When at least one binary is absent AND
+// .semrel.lock exists (meaning the project has committed a lock file),
+// it runs the full restore so every plugin is available before the pipeline
+// starts.
+//
+// This gives a "clone → release" experience: developers and CI runners do not
+// need to call `semrel plugin restore` manually as long as .semrel.lock is
+// committed alongside .semrel.yaml.
+//
+// If the lock file is absent, missing plugins are handled later by the per-
+// plugin auto-install in makePluginRunner (best-effort, uses latest stable).
+func maybeAutoRestore(ctx context.Context, plugins []config.PluginConfig, outputFormat string) error {
+	// Fast path: check whether every configured plugin binary can already be found.
+	allSpecs := make([]plugininstance.PluginSpec, 0, len(plugins))
+	for _, p := range plugins {
+		allSpecs = append(allSpecs, plugininstance.PluginSpec{Uses: p.Uses, Path: p.Path})
+	}
+
+	missingAny := false
+	for _, spec := range allSpecs {
+		if _, err := resolvePluginBinary(spec); err != nil {
+			missingAny = true
+			break
+		}
+	}
+	if !missingAny {
+		return nil // nothing to do
+	}
+
+	// At least one plugin is missing. Only proceed with auto-restore when a
+	// lock file exists; without it we fall back to per-plugin auto-install.
+	lf, err := ReadLockFile()
+	if err != nil {
+		return nil // lock file unreadable — fall back silently
+	}
+	if len(lf.Plugins) == 0 {
+		return nil // no entries — nothing to restore
+	}
+
+	if outputFormat != "json" {
+		fmt.Println("⬇  plugins missing — running semrel plugin restore from .semrel.lock…")
+	}
+	return runPluginRestore(ctx)
 }
 
 func newLintCommand(configFile *string, outputFormat *string) *cobra.Command {

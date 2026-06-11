@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/SemRels/semrel/internal/registry"
+	"github.com/SemRels/semrel/pkg/config"
 )
 
 func TestReadLockFile_NotExist(t *testing.T) {
@@ -231,5 +232,103 @@ func TestRunPluginRestoreEmpty(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "nothing to restore") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestMaybeAutoRestore_SkipsWhenAllPresent(t *testing.T) {
+	// All plugin binaries already exist → no restore needed.
+	repoDir := t.TempDir()
+	withWorkingDir(t, repoDir)
+
+	// Create a fake binary so resolvePluginBinary succeeds.
+	pluginDir := filepath.Join(repoDir, ".semrel", "plugins")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginDir, "semrel-plugin-github"), []byte("#!/bin/sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plugins := []config.PluginConfig{{Uses: "github"}}
+	stdout, _, err := captureReleaseOutput(func() error {
+		return maybeAutoRestore(context.Background(), plugins, "text")
+	})
+	if err != nil {
+		t.Fatalf("maybeAutoRestore() error = %v", err)
+	}
+	// No restore message expected when all binaries are present.
+	if strings.Contains(stdout, "restore") {
+		t.Fatalf("expected no restore, got: %q", stdout)
+	}
+}
+
+func TestMaybeAutoRestore_SkipsWithoutLockFile(t *testing.T) {
+	// Plugin missing but no .semrel.lock → fall through silently.
+	withWorkingDir(t, t.TempDir())
+	plugins := []config.PluginConfig{{Uses: "definitely-missing-xyz"}}
+	_, _, err := captureReleaseOutput(func() error {
+		return maybeAutoRestore(context.Background(), plugins, "text")
+	})
+	if err != nil {
+		t.Fatalf("maybeAutoRestore() error = %v (expected nil)", err)
+	}
+}
+
+func TestMaybeAutoRestore_RunsRestoreWhenLockExists(t *testing.T) {
+	binary := []byte("plugin-binary")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(cliRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/provider-github.exe":
+			_, _ = w.Write(binary)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	repoDir := t.TempDir()
+	t.Setenv(registry.EnvRegistryURL, serverURL)
+	t.Setenv(registry.EnvCacheDir, filepath.Join(repoDir, ".semrel", "registry-cache"))
+	withWorkingDir(t, repoDir)
+
+	// Write a lock file — plugin binary not yet installed.
+	lf := &PluginLockFile{}
+	lf.Upsert(PluginLockEntry{
+		BinaryName: "semrel-plugin-github",
+		Ref:        "provider-github",
+		Version:    "1.0.0",
+		Checksums: map[string]string{
+			"linux_amd64":   checksum,
+			"linux_arm64":   checksum,
+			"darwin_amd64":  checksum,
+			"darwin_arm64":  checksum,
+			"windows_amd64": checksum,
+			"windows_arm64": checksum,
+		},
+	})
+	if err := lf.Write(); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	plugins := []config.PluginConfig{{Uses: "github"}}
+	stdout, _, err := captureReleaseOutput(func() error {
+		return maybeAutoRestore(context.Background(), plugins, "text")
+	})
+	if err != nil {
+		t.Fatalf("maybeAutoRestore() error = %v", err)
+	}
+	if !strings.Contains(stdout, "restore") {
+		t.Fatalf("expected restore message, got: %q", stdout)
+	}
+	// Plugin should now be installed.
+	dest := filepath.Join(repoDir, ".semrel", "plugins", "semrel-plugin-github")
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("plugin binary not installed at %s: %v", dest, err)
 	}
 }
