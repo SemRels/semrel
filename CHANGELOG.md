@@ -1,3 +1,11 @@
+## v0.12.4 (2026-06-11)
+
+### Bug Fixes
+
+* **lock:** rename release mutex to .semrel-release.lock; skip release plugins in dry-run
+* **plugin:** empty args must not shadow SEMREL_PLUGIN_* env vars
+* **release:** dry-run plugin failures are warnings, not hard errors
+
 ## v0.12.3 (2026-06-11)
 
 ### Bug Fixes
