@@ -498,14 +498,83 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 
 	fileExists := func(patterns ...string) bool {
 		for _, p := range patterns {
+			// Exact path check (covers root-level files).
 			if _, err := os.Stat(p); err == nil {
 				return true
 			}
+			// Single-level glob (e.g. "Dockerfile.*", "*.tf", "charts/*/Chart.yaml").
 			if m, _ := filepath.Glob(p); len(m) > 0 {
 				return true
 			}
+			// Recursive search: strip any leading "**/" and walk up to 4 levels deep.
+			// Go's filepath.Glob does not support "**", so we do a bounded WalkDir.
+			base := strings.TrimPrefix(p, "**/")
+			if base != p || !strings.Contains(base, "/") {
+				// Only walk for bare filenames or patterns without path separators.
+				bare := filepath.Base(base)
+				_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+					if err != nil {
+						return nil
+					}
+					// Skip hidden dirs and common noise dirs to keep it fast.
+					if d.IsDir() {
+						name := d.Name()
+						if name != "." && (name[0] == '.' || name == "vendor" ||
+							name == "node_modules" || name == "dist" || name == "target") {
+							return filepath.SkipDir
+						}
+						// Limit depth: count separators.
+						if strings.Count(path, string(filepath.Separator)) >= 4 {
+							return filepath.SkipDir
+						}
+					}
+					if !d.IsDir() {
+						ok, _ := filepath.Match(bare, d.Name())
+						if ok {
+							// Signal found by using a sentinel error.
+							return filepath.SkipAll
+						}
+					}
+					return nil
+				})
+				// Re-check via Glob with one-level wildcard as well.
+				if m, _ := filepath.Glob("*/" + base); len(m) > 0 {
+					return true
+				}
+				if m, _ := filepath.Glob("*/*/" + base); len(m) > 0 {
+					return true
+				}
+			}
 		}
 		return false
+	}
+
+	// fileExistsRecursive returns true when filename is found anywhere under "."
+	// up to 4 directory levels deep (skipping hidden dirs, vendor, node_modules, etc.).
+	fileExistsRecursive := func(filename string) bool {
+		found := false
+		_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				name := d.Name()
+				if name != "." && (name[0] == '.' || name == "vendor" ||
+					name == "node_modules" || name == "dist" || name == "target") {
+					return filepath.SkipDir
+				}
+				if strings.Count(path, string(filepath.Separator)) >= 4 {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if d.Name() == filename {
+				found = true
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		return found
 	}
 
 	// ── Git forge detection ──────────────────────────────────────────────────
@@ -529,34 +598,50 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	}
 
 	// ── Language / ecosystem updaters ────────────────────────────────────────
-	if fileExists("go.mod") {
+	if fileExistsRecursive("go.mod") {
 		suggest("@semrel/updater-go", "go.mod detected — updater-go keeps the version variable in source in sync with the release tag")
 	}
-	if fileExists("package.json") {
+	if fileExistsRecursive("package.json") {
 		suggest("@semrel/updater-npm", "package.json detected — updater-npm bumps the npm version and publishes to the registry")
 	}
-	if fileExists("Cargo.toml") {
+	if fileExistsRecursive("Cargo.toml") {
 		suggest("@semrel/updater-cargo", "Cargo.toml detected — updater-cargo bumps the crate version and publishes to crates.io")
 	}
-	if fileExists("pyproject.toml", "setup.py", "setup.cfg") {
+	if fileExistsRecursive("pyproject.toml") || fileExists("setup.py", "setup.cfg") {
 		suggest("@semrel/updater-python", "Python project detected — updater-python bumps the version and publishes to PyPI")
 	}
-	if fileExists("pom.xml") {
+	if fileExistsRecursive("pom.xml") {
 		suggest("@semrel/updater-maven", "pom.xml detected — updater-maven publishes the Maven artifact")
 	}
-	if fileExists("build.gradle", "build.gradle.kts") {
+	if fileExistsRecursive("build.gradle") || fileExistsRecursive("build.gradle.kts") {
 		suggest("@semrel/updater-gradle", "Gradle build file detected — updater-gradle bumps the project version")
 	}
-	if fileExists("*.csproj", "**/*.csproj", "*.nuspec") {
+	// .csproj files can be anywhere in the tree; check up to 3 levels deep.
+	nugetFound := false
+	for _, pat := range []string{"*.csproj", "*.nuspec", "*/*.csproj", "*/*/*.csproj"} {
+		if m, _ := filepath.Glob(pat); len(m) > 0 {
+			nugetFound = true
+			break
+		}
+	}
+	if nugetFound {
 		suggest("@semrel/updater-nuget", ".csproj detected — updater-nuget publishes the NuGet package")
 	}
-	if fileExists("Chart.yaml", "charts/*/Chart.yaml") {
+	if fileExistsRecursive("Chart.yaml") {
 		suggest("@semrel/updater-helm", "Chart.yaml detected — updater-helm bumps the Helm chart version")
 	}
-	if fileExists("Dockerfile", "Dockerfile.*") {
+	if fileExists("Dockerfile", "Dockerfile.*") || fileExistsRecursive("Dockerfile") {
 		suggest("@semrel/updater-docker", "Dockerfile detected — updater-docker builds and pushes the Docker image on release")
 	}
-	if fileExists("*.tf", "**/*.tf") {
+	// Terraform: check root and one subfolder level (modules are typically shallow).
+	terraformFound := false
+	for _, pat := range []string{"*.tf", "*/*.tf", "*/*/*.tf"} {
+		if m, _ := filepath.Glob(pat); len(m) > 0 {
+			terraformFound = true
+			break
+		}
+	}
+	if terraformFound {
 		suggest("@semrel/updater-terraform", "Terraform files detected — updater-terraform bumps the module version")
 	}
 	if fileExists("Formula/*.rb", "Casks/*.rb") {
