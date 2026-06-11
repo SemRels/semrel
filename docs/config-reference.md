@@ -361,6 +361,41 @@ Controls what semrel does when the computed tag already exists. Default:
 tag_exists_strategy: update-changelog
 ```
 
+### `workspace`
+
+Enables multi-package workspace (monorepo) mode. When set, `semrel workspace release`
+orchestrates releases for all configured packages.
+
+```yaml
+workspace:
+  strategy: independent   # "independent" (default) or "lockstep"
+
+  # Explicit package list (takes precedence over pattern when both are set)
+  packages:
+    - path: packages/api
+      tagPrefix: "packages/api@v"
+    - path: packages/ui
+      tagPrefix: "packages/ui@v"
+      dependsOn: [packages/api]   # released only after api succeeds
+
+  # OR: auto-discover via glob pattern
+  # pattern: "packages/*"
+
+  fail_fast: false   # default: collect all errors
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `strategy` | string | `independent` | `independent` — each package its own semver. `lockstep` — all packages share the same version. |
+| `packages` | list | — | Explicit package list. Each entry needs `path`; `tagPrefix` and `dependsOn` are optional. |
+| `pattern` | string | — | Glob pattern for auto-discovery (e.g. `packages/*`). Mutually exclusive with `packages`. |
+| `fail_fast` | bool | `false` | Stop the workspace release on the first package failure. |
+
+Each package directory can have its own `.semrel.yaml` that overrides the root
+configuration for that package (branches, rules, plugins, tagPrefix).
+
+See the [Monorepo guide](https://semrel.io/guide/monorepo/) for full details and CI examples.
+
 ## CLI Flags
 
 | Flag | Type | Default | Description |
