@@ -1,3 +1,13 @@
+## v0.12.0 (2026-06-11)
+
+### Features
+
+* **release:** auto-restore plugins from .semrel.lock before release
+
+### Bug Fixes
+
+* **schema:** update all references to canonical registry URL
+
 ## v0.11.1 (2026-06-11)
 
 ### Bug Fixes
