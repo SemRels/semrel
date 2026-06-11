@@ -1,3 +1,9 @@
+## v0.11.1 (2026-06-11)
+
+### Bug Fixes
+
+* **plugin:** standardize namespace to @semrel in documentation and code
+
 ## v0.11.0 (2026-06-11)
 
 ### Features
