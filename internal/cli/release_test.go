@@ -22,7 +22,7 @@ var workingDirMu sync.Mutex
 
 func TestRunReleaseLoadConfigError(t *testing.T) {
 	withColorsDisabled(t)
-	if err := runRelease(context.Background(), false, "missing.yaml", false, false, false, "text", false, "", ""); err == nil || !strings.Contains(err.Error(), "loading config") {
+	if err := runRelease(context.Background(), false, "missing.yaml", false, false, false, "text", false, "", "", ""); err == nil || !strings.Contains(err.Error(), "loading config") {
 		t.Fatalf("runRelease() error = %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestRunReleaseAutoDetectsTOMLConfig(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), true, "", false, false, false, "json", false, "", "")
+		return runRelease(context.Background(), true, "", false, false, false, "json", false, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -59,7 +59,7 @@ func TestRunReleaseSkipsUnconfiguredBranchInJSON(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -86,7 +86,7 @@ func TestRunReleaseNoCommitsSinceLastReleaseJSON(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "json", false, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -113,7 +113,7 @@ func TestRunReleaseDryRunForcePatch(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), true, ".semrel.yaml", true, false, false, "text", false, "", "")
+		return runRelease(context.Background(), true, ".semrel.yaml", true, false, false, "text", false, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -148,7 +148,7 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 
 	withWorkingDir(t, repoDir)
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "text", false, "", "")
+		return runRelease(context.Background(), false, ".semrel.yaml", false, false, false, "text", false, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("runRelease() error = %v", err)
@@ -202,7 +202,7 @@ func TestRunReleaseDryRunPluginFailureIsNonFatal(t *testing.T) {
 	withWorkingDir(t, repoDir)
 
 	_, _, err := captureReleaseOutput(func() error {
-		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "text", false, "", "")
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "text", false, "", "", "")
 	})
 	// Dry-run must succeed even when a plugin fails.
 	if err != nil {
@@ -332,4 +332,58 @@ func decodeReleaseSummary(t *testing.T, raw string) ReleaseSummary {
 		t.Fatalf("json.Unmarshal(%q) error = %v", raw, err)
 	}
 	return summary
+}
+
+func TestRunReleasePrereleaseChannel(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	runReleaseGit(t, repoDir, "tag", "v1.2.0")
+	commitReleaseFile(t, repoDir, "feature.txt", "new\n", "feat: add next feature")
+	// Configure a pre-release branch: current branch is "main", prerelease: "next"
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+    prerelease: next
+tagPrefix: "v"
+`)
+	t.Setenv(registry.EnvRegistryURL, "http://127.0.0.1:0")
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+	withWorkingDir(t, repoDir)
+
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "text", false, "", "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	// Must produce a pre-release version like v1.3.0-next.1, not v1.3.0
+	if !strings.Contains(stdout, "next.") {
+		t.Fatalf("expected pre-release version with 'next.', stdout = %q", stdout)
+	}
+	if strings.Contains(stdout, "v1.3.0\n") {
+		t.Fatalf("must not produce stable version on pre-release branch, stdout = %q", stdout)
+	}
+}
+
+func TestRunReleaseNextVersionOverride(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	runReleaseGit(t, repoDir, "tag", "v1.0.0")
+	commitReleaseFile(t, repoDir, "feature.txt", "new\n", "feat: add feature")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\n")
+	t.Setenv(registry.EnvRegistryURL, "http://127.0.0.1:0")
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+	withWorkingDir(t, repoDir)
+
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "text", false, "", "", "3.0.0")
+	})
+	if err != nil {
+		t.Fatalf("runRelease(--next-version 3.0.0) error = %v", err)
+	}
+	if !strings.Contains(stdout, "3.0.0") {
+		t.Fatalf("expected overridden version 3.0.0, stdout = %q", stdout)
+	}
 }

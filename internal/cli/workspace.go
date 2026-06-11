@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/SemRels/semrel/pkg/config"
 	"github.com/SemRels/semrel/pkg/monorepo"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 func newWorkspaceCommand(configFile *string, outputFormat *string) *cobra.Command {
@@ -142,14 +144,133 @@ func runWorkspaceRelease(ctx context.Context, rootConfigFile, outputFormat strin
 		failFast = true
 	}
 
+	strategy := "independent"
+	if rootCfg.Workspace != nil && rootCfg.Workspace.Strategy != "" {
+		strategy = rootCfg.Workspace.Strategy
+	}
+
+	// Lockstep: compute the maximum bump level across all packages, then release
+	// every package at the same computed version.
+	if strategy == "lockstep" {
+		return runWorkspaceLockstep(ctx, pkgs, outputFormat, dryRun, failFast)
+	}
+
 	if parallel {
 		return runWorkspaceParallel(ctx, pkgs, outputFormat, dryRun, failFast)
 	}
-	return runWorkspaceSequential(ctx, pkgs, outputFormat, dryRun, failFast)
+	return runWorkspaceSequential(ctx, pkgs, outputFormat, dryRun, failFast, "")
+}
+
+// runWorkspaceLockstep releases all packages at the same SemVer version.
+//
+// Algorithm:
+//  1. Dry-run each package to collect its individual bump level.
+//  2. Pick the highest bump level across all packages.
+//  3. Compute the shared next version from the root current version.
+//  4. Release every package with --next-version <shared-version>.
+func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat string, dryRun, failFast bool) error {
+	origDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+	defer func() { _ = os.Chdir(origDir) }() //nolint:errcheck
+
+	// First pass: dry-run to collect bump levels and the current version.
+	bumps := map[string]string{} // package path → "major"|"minor"|"patch"|""
+	currentVersionStr := ""
+	currentTagPrefix := ""
+
+	for _, pkg := range pkgs {
+		if err := os.Chdir(pkg.Path); err != nil {
+			continue
+		}
+		cfgFile := pkg.ConfigFile
+		if cfgFile == "" {
+			if f, ferr := config.FindConfigFile("."); ferr == nil {
+				cfgFile = f
+			}
+		}
+		if cfgFile != "" {
+			if cfg, cerr := config.LoadConfig(cfgFile); cerr == nil {
+				if currentVersionStr == "" {
+					currentTagPrefix = cfg.TagPrefix
+				}
+				_ = cfg
+			}
+		}
+
+		// Capture --output json dry-run to get bump
+		var dryBuf strings.Builder
+		oldStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+		_ = runRelease(ctx, true, pkg.ConfigFile, false, false, false, "json", false, "", "", "")
+		w.Close()
+		os.Stdout = oldStdout
+		io.Copy(&dryBuf, r)
+		drySummary := dryBuf.String()
+		if strings.Contains(drySummary, `"bump":"major"`) || strings.Contains(drySummary, `"bump": "major"`) {
+			bumps[pkg.Path] = "major"
+		} else if strings.Contains(drySummary, `"bump":"minor"`) || strings.Contains(drySummary, `"bump": "minor"`) {
+			bumps[pkg.Path] = "minor"
+		} else if strings.Contains(drySummary, `"bump":"patch"`) || strings.Contains(drySummary, `"bump": "patch"`) {
+			bumps[pkg.Path] = "patch"
+		}
+		if currentVersionStr == "" {
+			if idx := strings.Index(drySummary, `"current_version":"`); idx >= 0 {
+				rest := drySummary[idx+len(`"current_version":"`):]
+				if end := strings.Index(rest, `"`); end >= 0 {
+					currentVersionStr = strings.TrimPrefix(rest[:end], currentTagPrefix)
+				}
+			}
+		}
+		_ = os.Chdir(origDir)
+	}
+
+	// Compute maximum bump.
+	maxBump := ""
+	for _, b := range bumps {
+		switch {
+		case b == "major":
+			maxBump = "major"
+		case b == "minor" && maxBump != "major":
+			maxBump = "minor"
+		case b == "patch" && maxBump == "":
+			maxBump = "patch"
+		}
+	}
+	if maxBump == "" {
+		fmt.Println("lockstep: no releasable commits across any package — nothing to release")
+		return nil
+	}
+
+	// Compute shared next version.
+	currentVer, _ := semver.ParseVersion(currentVersionStr)
+	if currentVer == nil {
+		currentVer = &semver.Version{}
+	}
+	calc := semver.NewCalculator()
+	var nextVer *semver.Version
+	switch maxBump {
+	case "major":
+		nextVer = calc.NextVersion(currentVer, false, false, true)
+	case "minor":
+		nextVer = calc.NextVersion(currentVer, true, false, false)
+	default:
+		nextVer = calc.NextVersion(currentVer, false, true, false)
+	}
+	sharedVersion := nextVer.String()
+	if outputFormat != "json" {
+		fmt.Printf("lockstep: shared next version = %s (max bump: %s)\n", sharedVersion, maxBump)
+	}
+
+	// Second pass: release each package at the shared version.
+	return runWorkspaceSequential(ctx, pkgs, outputFormat, dryRun, failFast, sharedVersion)
 }
 
 // runWorkspaceSequential releases packages one at a time in topological order.
-func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputFormat string, dryRun, failFast bool) error {
+// nextVersionOverride, when non-empty, forces all packages to use that version (lockstep mode).
+func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputFormat string, dryRun, failFast bool, nextVersionOverride string) error {
 	origDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
@@ -175,7 +296,7 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 		}
 
 		fmt.Printf("%s  releasing…\n", label)
-		releaseErr := runRelease(ctx, dryRun, pkg.ConfigFile, false, false, false, outputFormat, false, "", "")
+		releaseErr := runRelease(ctx, dryRun, pkg.ConfigFile, false, false, false, outputFormat, false, "", "", nextVersionOverride)
 		_ = os.Chdir(origDir) //nolint:errcheck
 
 		switch {

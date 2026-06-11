@@ -202,6 +202,7 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var githubOutput bool
 	var gitlabDotenv string
 	var outputFile string
+	var nextVersionOverride string
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -214,6 +215,8 @@ Pipeline steps:
   4. Find the last git tag and collect commits since then
   5. Parse commits against Conventional Commits rules
   6. Calculate the next SemVer version bump (major / minor / patch)
+     — pre-release branches generate versioned pre-release tags (1.3.0-next.1)
+     — maintenance branches (1.x) allow patch bumps only
   7. Generate changelog / release notes
   8. Run pre-tag plugins (e.g. version file updaters)
   9. Commit CHANGELOG.md (unless commit_changelog: false)
@@ -233,11 +236,14 @@ Examples:
   # Emit metadata to $GITHUB_OUTPUT (GitHub Actions)
   semrel release --github-output
 
+  # Force a specific next version (used by workspace lockstep)
+  semrel release --next-version 2.0.0
+
 Exit codes:
   0 — release created, or nothing to release on a non-release branch
   1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile)
+			err := runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
 			}
@@ -253,10 +259,11 @@ Exit codes:
 	cmd.Flags().BoolVar(&githubOutput, "github-output", false, "Write release metadata to $GITHUB_OUTPUT (GitHub Actions)")
 	cmd.Flags().StringVar(&gitlabDotenv, "gitlab-dotenv", "", "Write release metadata as dotenv artifact (GitLab CI)")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write release metadata to file (.json or .env)")
+	cmd.Flags().StringVar(&nextVersionOverride, "next-version", "", "Override the calculated next version (e.g. '2.0.0' or '1.3.0-beta.1'); used by workspace lockstep")
 	return cmd
 }
 
-func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, interactive bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string) error {
+func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, interactive bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string, nextVersionOverride string) error {
 	if dryRun {
 		_, _ = fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		_, _ = fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
@@ -434,9 +441,41 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		bump = "patch"
 	}
 
-	// 7. Calculate next version
+	// 7. Calculate next version.
+	// The calculation strategy depends on the branch configuration:
+	//   - pre-release branch (prerelease: next): 1.3.0-next.1, 1.3.0-next.2, …
+	//   - maintenance branch (1.x, 2.x patterns): only patch bumps allowed
+	//   - regular stable branch: standard major/minor/patch
 	calc := semver.NewCalculator()
-	nextVer := calc.NextVersion(currentVersion, hasFeat, hasFix, hasBreaking)
+	branchCfg := cfg.FindBranchConfig(branch)
+	isMaintenance := branchCfg != nil && config.IsMaintenance(branch, *branchCfg)
+	prereleaseChannel := ""
+	if branchCfg != nil {
+		prereleaseChannel = branchCfg.Prerelease
+	}
+
+	var nextVer *semver.Version
+
+	// --next-version override: used by workspace lockstep mode and manual releases.
+	if nextVersionOverride != "" {
+		overrideVer, parseErr := semver.ParseVersion(nextVersionOverride)
+		if parseErr != nil {
+			return fmt.Errorf("--next-version %q is not a valid semver: %w", nextVersionOverride, parseErr)
+		}
+		nextVer = overrideVer
+	} else {
+		switch {
+		case prereleaseChannel != "":
+			// Pre-release channel: generate versioned pre-release tags like 1.3.0-next.1.
+			nextVer = calc.NextPrereleaseVersion(currentVersion, hasFeat, hasFix, hasBreaking, prereleaseChannel)
+		case isMaintenance:
+			// Maintenance branch: only patch bumps are allowed (no feature or breaking releases).
+			nextVer = calc.NextVersionForBranch(currentVersion, hasFeat, hasFix, hasBreaking, true)
+		default:
+			nextVer = calc.NextVersion(currentVersion, hasFeat, hasFix, hasBreaking)
+		}
+	}
+
 	forcedPatch := false
 	if nextVer == nil {
 		if forcePatch {
