@@ -6,6 +6,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,6 +31,13 @@ import (
 	"github.com/SemRels/semrel/pkg/plugininstance"
 	"github.com/SemRels/semrel/pkg/semver"
 )
+
+// ErrNothingToRelease is returned by runRelease when there are no commits
+// that qualify for a new release on the current branch.
+// The semrel CLI treats this as a successful exit (code 0).
+// semrel workspace release uses errors.Is to show a "skipped" label instead
+// of "done" in the workspace summary output.
+var ErrNothingToRelease = errors.New("nothing to release")
 
 // ReleaseSummary holds the structured output of a release run.
 // See: https://github.com/SemRels/semrel/issues/20
@@ -229,7 +237,11 @@ Exit codes:
   0 — release created, or nothing to release on a non-release branch
   1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile)
+			err := runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile)
+			if errors.Is(err, ErrNothingToRelease) {
+				return nil // exit 0 — nothing to release is not an error for the CLI
+			}
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&forcePatch, "force-bump-patch-version", false,
@@ -332,7 +344,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			return printSummary(summary, outputFormat)
 		}
 		fmt.Println(msg)
-		return nil
+		return ErrNothingToRelease
 	}
 
 	// 4. Get last tag and commits since it
@@ -367,7 +379,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			return printSummary(summary, outputFormat)
 		}
 		fmt.Println("No commits since last release — nothing to release.")
-		return nil
+		return ErrNothingToRelease
 	}
 
 	// 5. Parse commits
@@ -416,7 +428,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			return printSummary(summary, outputFormat)
 		}
 		fmt.Println("No releasable commits found — nothing to release.")
-		return nil
+		return ErrNothingToRelease
 	}
 	if bump == "" && forcePatch {
 		bump = "patch"
@@ -449,7 +461,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				return printSummary(summary, outputFormat)
 			}
 			fmt.Println("No releasable commits found — nothing to release.")
-			return nil
+			return ErrNothingToRelease
 		}
 	}
 

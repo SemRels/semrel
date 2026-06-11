@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -177,15 +178,18 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 		releaseErr := runRelease(ctx, dryRun, pkg.ConfigFile, false, false, false, outputFormat, false, "", "")
 		_ = os.Chdir(origDir) //nolint:errcheck
 
-		if releaseErr != nil {
+		switch {
+		case releaseErr == nil:
+			fmt.Printf("%s  ✓ released\n", label)
+		case errors.Is(releaseErr, ErrNothingToRelease):
+			fmt.Printf("%s  – skipped (nothing to release)\n", label)
+		default:
 			msg := fmt.Sprintf("%s  %v", label, releaseErr)
 			if failFast {
 				return fmt.Errorf("%s", msg)
 			}
 			errs = append(errs, msg)
 			fmt.Fprintf(os.Stderr, "%s  ✗ failed: %v\n", label, releaseErr)
-		} else {
-			fmt.Printf("%s  ✓ done\n", label)
 		}
 	}
 
