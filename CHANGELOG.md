@@ -1,3 +1,9 @@
+## v0.12.1 (2026-06-11)
+
+### Bug Fixes
+
+* **doctor:** use @semrel/ namespace in suggestions and config init
+
 ## v0.12.0 (2026-06-11)
 
 ### Features
