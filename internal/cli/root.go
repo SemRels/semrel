@@ -564,12 +564,17 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			}
 			fmt.Printf("  • git tag %s\n", nextTag)
 		}
-		// Still run plugins in dry-run so they can report what they would do.
-		// Each plugin receives SEMREL_DRY_RUN=true and is expected to exit 0.
+		// Run plugins in dry-run so they can report what they would do.
+		// Each plugin receives SEMREL_DRY_RUN=true and should exit 0.
+		// Plugin failures are treated as warnings in dry-run: missing credentials
+		// or an unavailable service must not prevent the preview from completing.
 		if len(cfg.Plugins) > 0 {
 			orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 			if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
-				return err
+				if outputFormat != "json" {
+					fmt.Fprintf(os.Stderr, "⚠  dry-run: plugin(s) reported errors (skipped — no actual release was made):\n   %v\n", err)
+				}
+				// Non-fatal: the dry-run output above is still valid.
 			}
 		}
 		if outputFormat != "json" {

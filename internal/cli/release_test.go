@@ -178,6 +178,43 @@ func TestRunReleaseCreatesTagChangelogAndRunsPlugins(t *testing.T) {
 	}
 }
 
+func TestRunReleaseDryRunPluginFailureIsNonFatal(t *testing.T) {
+	// Verify that a plugin that exits non-zero during --dry-run only prints a
+	// warning to stderr and does NOT cause runRelease to return an error.
+	// Real-world case: provider-gitlab fails with "SEMREL_PLUGIN_TOKEN is required"
+	// when the token is not available in a local dry-run environment.
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	runReleaseGit(t, repoDir, "tag", "v0.1.0")
+	commitReleaseFile(t, repoDir, "feature.txt", "new\n", "feat: dry-run test")
+
+	// Write a config that uses a failing plugin (path-based so no registry call needed).
+	// The script exits 1 to simulate a missing-token failure.
+	failPlugin := filepath.Join(t.TempDir(), "semrel-plugin-fail")
+	if err := os.WriteFile(failPlugin, []byte("#!/bin/sh\necho 'SEMREL_PLUGIN_TOKEN is required' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\nplugins:\n  - path: "+failPlugin+"\n")
+
+	t.Setenv(registry.EnvRegistryURL, "http://127.0.0.1:0")
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+	withWorkingDir(t, repoDir)
+
+	_, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "text", false, "", "")
+	})
+	// Dry-run must succeed even when a plugin fails.
+	if err != nil {
+		t.Fatalf("dry-run should not fail on plugin error, got: %v", err)
+	}
+	// No tag must have been created.
+	tags := runReleaseGit(t, repoDir, "tag", "--list")
+	if strings.Contains(tags, "v0.2.0") {
+		t.Fatal("dry-run must not create a tag")
+	}
+}
+
 func initReleaseRepo(t *testing.T) string {
 	t.Helper()
 
