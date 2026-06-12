@@ -116,17 +116,10 @@ a package only starts when all its dependencies have succeeded.`,
 	return cmd
 }
 
-// workspaceResult holds the outcome of a single package release.
-type workspaceResult struct {
-	pkg     workspacePkg
-	skipped bool
-	err     error
-}
-
 // workspacePkg is an enriched package entry ready for execution.
 type workspacePkg struct {
 	monorepo.Package
-	DependsOn []string
+	DependsOn  []string
 	ConfigFile string // resolved .semrel.yaml path for this package
 }
 
@@ -568,4 +561,3 @@ func topoSort(pkgs []workspacePkg) ([]workspacePkg, error) {
 	}
 	return result, nil
 }
-
