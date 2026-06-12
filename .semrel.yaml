@@ -29,11 +29,6 @@ rules:
 plugins:
     - uses: condition-github-actions
       phase: condition
-    - uses: gobinary
-      args:
-        file: internal/version/version.go
-        var_name: Version
-      phase: pre-tag
 version_ceiling: 1.0.0
 ceiling_strategy: clamp
 commit_changelog: false

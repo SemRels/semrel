@@ -76,24 +76,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push pre-tag commit and tag to GitHub
+      - name: Push tag to GitHub
         if: steps.semrel.outputs.released == 'true'
         run: |
-          TAG="${{ steps.semrel.outputs.tag }}"
-          # Rebase the pre-tag commit onto latest origin/main so the tag points to
-          # a commit that is in the main branch. Without this, the CHANGELOG rebase
-          # (done later) would create a new SHA for the pre-tag commit, leaving the
-          # tag pointing at an orphaned commit not reachable from main.
-          git fetch origin main
-          if ! git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
-            git rebase origin/main
-            # Re-tag the rebased commit (rebase creates a new SHA)
-            git tag -f "$TAG" HEAD
-          fi
-          # Push the pre-tag commit to main first (tag must point to a main commit)
-          git push origin HEAD:main
-          # Push the tag (force in case we re-tagged after rebase)
-          git push --force origin "refs/tags/$TAG"
+          # Push only the tag — no pre-tag commit exists (gobinary plugin removed).
+          # Pushing commits to the protected main branch requires admin rights that
+          # GITHUB_TOKEN does not have; the tag push is unaffected by branch protection.
+          git push --force origin "refs/tags/${{ steps.semrel.outputs.tag }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -102,46 +91,26 @@ jobs:
         run: |
           # Preserve the updated CHANGELOG.md written by semrel (commit_changelog=false).
           cp CHANGELOG.md /tmp/CHANGELOG_updated.md
-          # Remove binary and restore CHANGELOG.md so GoReleaser sees a clean git tree.
-          # GoReleaser validates that there are no uncommitted changes before building.
           rm -f semrel-bin
-          git checkout -- CHANGELOG.md 2>/dev/null || true
 
       - name: Sync working tree to released tag
         if: steps.semrel.outputs.released == 'true'
         run: |
           # GoReleaser requires the tag to point to the current HEAD.
-          # The pre-tag commit was already pushed to origin/main in the previous step,
-          # so we just reset to the released tag (which is on a main commit).
+          # The tag is already on HEAD (no pre-tag commit), so this is effectively
+          # a clean reset that also discards the uncommitted CHANGELOG.md change.
           git reset --hard "${{ steps.semrel.outputs.tag }}"
+          # Restore the updated CHANGELOG so GoReleaser archives the new content.
+          cp /tmp/CHANGELOG_updated.md CHANGELOG.md
 
       - name: Run GoReleaser
         if: steps.semrel.outputs.released == 'true'
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
           version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit and push CHANGELOG.md
-        if: steps.semrel.outputs.released == 'true'
-        run: |
-          TAG="${{ steps.semrel.outputs.tag }}"
-          if [ -f /tmp/CHANGELOG_updated.md ]; then
-            cp /tmp/CHANGELOG_updated.md CHANGELOG.md
-            git add CHANGELOG.md
-            if git diff --cached --quiet; then
-              echo "No CHANGELOG changes to commit."
-            else
-              git commit --no-verify -m "chore(changelog): update for $TAG [skip ci]"
-              # Rebase on top of latest main to handle any commits pushed since we
-              # pushed the pre-tag commit above. The pre-tag commit is already on
-              # origin/main so this rebase only replays the CHANGELOG commit itself.
-              git pull --rebase -X ours origin main || true
-              git push origin HEAD:main
-            fi
-          fi
+          # --skip=validate: CHANGELOG.md is updated but not committed; that is
+          # intentional — we cannot push commits to the protected main branch.
+          args: release --clean --skip=validate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
