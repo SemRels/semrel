@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/pkg/analytics"
 	"github.com/SemRels/semrel/pkg/changelog"
 	"github.com/SemRels/semrel/pkg/cioutput"
 	"github.com/SemRels/semrel/pkg/commits"
@@ -110,6 +111,36 @@ func writeCIOutputs(summary ReleaseSummary, githubOutput bool, gitlabDotenv stri
 		}
 	}
 	return nil
+}
+
+// recordReleaseAnalytics appends one analytics record for a successful release
+// attempt (including dry-runs). Failures are non-fatal and only reported as
+// warnings, so analytics cannot block a release.
+func recordReleaseAnalytics(summary ReleaseSummary) {
+	if !summary.Released {
+		return
+	}
+
+	analyticsPath := os.Getenv("SEMREL_ANALYTICS_FILE")
+	if strings.TrimSpace(analyticsPath) == "" {
+		analyticsPath = analytics.DefaultFile
+	}
+
+	tracker := analytics.NewTracker(analyticsPath)
+	record := analytics.ReleaseRecord{
+		Version:         strings.TrimPrefix(summary.NextVersion, summary.TagPrefix),
+		PreviousVersion: strings.TrimPrefix(summary.CurrentVersion, summary.TagPrefix),
+		Bump:            summary.Bump,
+		Commits:         summary.Commits,
+		Breaking:        summary.Breaking,
+		Features:        summary.Features,
+		Fixes:           summary.Fixes,
+		DryRun:          summary.DryRun,
+		Branch:          summary.Branch,
+	}
+	if err := tracker.Record(record); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not record release analytics: %v\n", err)
+	}
 }
 
 func releaseBumpLabel(current, next *semver.Version) string {
@@ -630,6 +661,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		CeilingApplied: ceilingApplied,
 		VersionCeiling: cfg.VersionCeiling,
 	}
+	recordReleaseAnalytics(summary)
 
 	// 9. Output results
 	if outputFormat != "json" {

@@ -78,7 +78,7 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Plugins version and release independently from the core CLI
 - Security and release integrations continue to land in standalone plugin repos
 
-## v0.5.0 — Monorepo & Advanced
+## v0.5.0 — Monorepo & Advanced ✅ (shipped)
 **Goal:** Full monorepo support and advanced release workflows.
 
 - Workspace/package discovery (auto-detect Go, npm, Python, Java, Helm, ...)
