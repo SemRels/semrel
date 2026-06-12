@@ -127,9 +127,9 @@ func TestRunPluginInstallWritesLockFile(t *testing.T) {
 	if len(lf.Plugins) == 0 {
 		t.Fatal("expected lock file to contain at least one entry")
 	}
-	entry := lf.FindByBinaryName("semrel-plugin-github")
+	entry := lf.FindByBinaryName("semrel-plugin-provider-github")
 	if entry == nil {
-		t.Fatalf("lock entry for semrel-plugin-github not found; entries = %v", lf.Plugins)
+		t.Fatalf("lock entry for semrel-plugin-provider-github not found; entries = %v", lf.Plugins)
 	}
 	if entry.Version != "1.0.0" {
 		t.Fatalf("locked version = %q, want 1.0.0", entry.Version)

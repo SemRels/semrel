@@ -303,11 +303,11 @@ func TestPluginBinaryName(t *testing.T) {
 	}{
 		{"SemRels/github@1.2.3", "semrel-plugin-github"},
 		{"github", "semrel-plugin-github"},
-		{"provider-github", "semrel-plugin-github"}, // category prefix stripped
+		{"provider-github", "semrel-plugin-provider-github"},
 		{"github-actions", "semrel-plugin-github-actions"},
-		{"condition-github-actions", "semrel-plugin-github-actions"}, // prefix stripped
-		{"condition-github-actions@0.1.0", "semrel-plugin-github-actions"},
-		{"updater-go", "semrel-plugin-go"},
+		{"condition-github-actions", "semrel-plugin-condition-github-actions"},
+		{"condition-github-actions@0.1.0", "semrel-plugin-condition-github-actions"},
+		{"updater-go", "semrel-plugin-updater-go"},
 		{"go", "semrel-plugin-go"},
 		{"semrel-plugin-github", "semrel-plugin-github"}, // idempotent
 	}
@@ -316,6 +316,19 @@ func TestPluginBinaryName(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("pluginBinaryName(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestPluginBinaryNames_IncludesLegacyFallback(t *testing.T) {
+	got := pluginBinaryNames("condition-github-actions")
+	if len(got) != 2 {
+		t.Fatalf("pluginBinaryNames() len = %d, want 2", len(got))
+	}
+	if got[0] != "semrel-plugin-condition-github-actions" {
+		t.Fatalf("pluginBinaryNames()[0] = %q", got[0])
+	}
+	if got[1] != "semrel-plugin-github-actions" {
+		t.Fatalf("pluginBinaryNames()[1] = %q", got[1])
 	}
 }
 

@@ -979,11 +979,14 @@ func autoInstallPlugin(ctx context.Context, uses string) error {
 
 	// If no version is pinned in uses, consult .semrel.lock first.
 	if ver == "" {
-		binaryName := pluginBinaryName(uses)
+		binaryNames := pluginBinaryNames(uses)
 		if lf, lfErr := ReadLockFile(); lfErr == nil {
-			if entry := lf.FindByBinaryName(binaryName); entry != nil {
-				ver = entry.Version
-				fmt.Printf("  (using locked version %s from %s)\n", ver, LockFileName)
+			for _, binaryName := range binaryNames {
+				if entry := lf.FindByBinaryName(binaryName); entry != nil {
+					ver = entry.Version
+					fmt.Printf("  (using locked version %s from %s)\n", ver, LockFileName)
+					break
+				}
 			}
 		}
 	}
@@ -1037,32 +1040,41 @@ func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 		return spec.Path, nil
 	}
 
-	binaryName := pluginBinaryName(spec.Uses)
-	if binaryName == "" {
+	binaryNames := pluginBinaryNames(spec.Uses)
+	if len(binaryNames) == 0 {
 		return "", fmt.Errorf("plugin binary name is empty")
 	}
 
 	// 1. Project-local .semrel/plugins/ (relative to CWD) — highest priority.
 	//    Allows projects to pin plugin binaries inside the repository checkout.
-	for _, candidate := range localBinaryCandidates(filepath.Join(".semrel", "plugins", binaryName)) {
-		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
-			return candidate, nil
-		}
-	}
-
-	// 2. User-global ~/.semrel/plugins/.
-	home, err := os.UserHomeDir()
-	if err == nil {
-		local := filepath.Join(home, ".semrel", "plugins", binaryName)
-		for _, candidate := range localBinaryCandidates(local) {
+	for _, binaryName := range binaryNames {
+		for _, candidate := range localBinaryCandidates(filepath.Join(".semrel", "plugins", binaryName)) {
 			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
 				return candidate, nil
 			}
 		}
 	}
 
+	// 2. User-global ~/.semrel/plugins/.
+	home, err := os.UserHomeDir()
+	if err == nil {
+		for _, binaryName := range binaryNames {
+			local := filepath.Join(home, ".semrel", "plugins", binaryName)
+			for _, candidate := range localBinaryCandidates(local) {
+				if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+					return candidate, nil
+				}
+			}
+		}
+	}
+
 	// 3. Fall back to PATH.
-	return exec.LookPath(binaryName)
+	for _, binaryName := range binaryNames {
+		if p, err := exec.LookPath(binaryName); err == nil {
+			return p, nil
+		}
+	}
+	return "", exec.ErrNotFound
 }
 
 // pluginBinaryName derives the installed binary name from a plugin "uses" string.
@@ -1072,12 +1084,13 @@ func resolvePluginBinary(spec plugininstance.PluginSpec) (string, error) {
 //
 // (see below)/github" → "github").
 //  3. Stripping any "@version" suffix (e.g. "github@1.2.0" → "github").
-//  4. Stripping a single category prefix if present
-//     ("provider-github" → "github", "condition-github-actions" → "github-actions").
-//     This mirrors the registry's short-name convention so that config entries
-//     using category-prefixed names resolve the same binary as short-name entries.
+//  4. Keeping category prefixes intact when present
+//     ("provider-github" stays "provider-github").
 //
-// The returned name is always "semrel-plugin-<short>" (e.g. "semrel-plugin-github").
+// The returned name is always "semrel-plugin-<name>".
+//
+// Note: for backward compatibility with older installs/locks that used stripped
+// category names, resolvePluginBinary also tries a legacy fallback name.
 func pluginBinaryName(uses string) string {
 	uses = strings.TrimSpace(uses)
 	uses = strings.TrimPrefix(uses, "semrel-plugin-")
@@ -1087,7 +1100,33 @@ func pluginBinaryName(uses string) string {
 	if idx := strings.Index(uses, "@"); idx >= 0 {
 		uses = uses[:idx]
 	}
-	// Strip a single category prefix to align with the registry's short names.
+	if uses == "" {
+		return ""
+	}
+	return "semrel-plugin-" + uses
+}
+
+func pluginBinaryNames(uses string) []string {
+	primary := pluginBinaryName(uses)
+	if primary == "" {
+		return nil
+	}
+	legacy := legacyPluginBinaryName(uses)
+	if legacy == "" || legacy == primary {
+		return []string{primary}
+	}
+	return []string{primary, legacy}
+}
+
+func legacyPluginBinaryName(uses string) string {
+	uses = strings.TrimSpace(uses)
+	uses = strings.TrimPrefix(uses, "semrel-plugin-")
+	if idx := strings.LastIndex(uses, "/"); idx >= 0 {
+		uses = uses[idx+1:]
+	}
+	if idx := strings.Index(uses, "@"); idx >= 0 {
+		uses = uses[:idx]
+	}
 	lower := strings.ToLower(uses)
 	for _, prefix := range []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"} {
 		if strings.HasPrefix(lower, prefix) {
