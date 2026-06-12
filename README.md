@@ -6,7 +6,7 @@
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 [![JSON Schema](https://img.shields.io/badge/schema-registry.semrel.io%2Fschemas%2Fcore%2Fv1.json-blue)](https://registry.semrel.io/schemas/core/v1.json)
 
-> **Status: v0.9.0** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
+> **Status: v0.15.0** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
 
 A Go-based semantic versioning and release system with a plugin architecture that automates the full release lifecycle. Designed for monorepos and multi-language projects.
 
@@ -112,7 +112,6 @@ bash scripts/local-demo.sh --dry-run
 Expected outcome:
 - a new demo repository is created in your workspace root
 - semrel executes external plugins via `path:` entries
-- `internal/version/version.go` is updated by `updater-go`
 - a new semantic version tag is created (unless `--dry-run` is used)
 
 ## Available Plugins
