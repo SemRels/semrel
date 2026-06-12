@@ -198,9 +198,9 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 		r, w, _ := os.Pipe()
 		os.Stdout = w
 		_ = runRelease(ctx, true, pkg.ConfigFile, false, false, false, "json", false, "", "", "")
-		w.Close()
+		_ = w.Close()
 		os.Stdout = oldStdout
-		io.Copy(&dryBuf, r)
+		_, _ = io.Copy(&dryBuf, r)
 		drySummary := dryBuf.String()
 		if strings.Contains(drySummary, `"bump":"major"`) || strings.Contains(drySummary, `"bump": "major"`) {
 			bumps[pkg.Path] = "major"
