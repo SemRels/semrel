@@ -39,7 +39,7 @@ func TestPluginSubcommandsExist(t *testing.T) {
 		for _, sub := range cmd.Commands() {
 			names = append(names, sub.Use)
 		}
-		for _, want := range []string{"list", "search <query>", "install <name[@version]>"} {
+		for _, want := range []string{"list", "search <query>", "install <name[@version]>", "update [name[@version]]"} {
 			found := false
 			for _, n := range names {
 				if strings.HasPrefix(n, strings.Fields(want)[0]) {

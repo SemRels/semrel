@@ -39,12 +39,14 @@ Subcommands:
                                — list plugins by popularity
   semrel plugin search <query>    — search plugins by name or description
   semrel plugin install <name>    — download, install and lock a plugin
+  semrel plugin update            — check or update plugins from .semrel.lock
   semrel plugin restore           — install all plugins from .semrel.lock`,
 	}
 
 	cmd.AddCommand(newPluginListCommand())
 	cmd.AddCommand(newPluginSearchCommand())
 	cmd.AddCommand(newPluginInstallCommand())
+	cmd.AddCommand(newPluginUpdateCommand())
 	cmd.AddCommand(newPluginRestoreCommand())
 	return cmd
 }
@@ -112,6 +114,37 @@ Examples:
 		},
 	}
 	cmd.Flags().StringVar(&pluginDir, "plugin-dir", "", "Override the plugin installation directory (default: .semrel/plugins/)")
+	return cmd
+}
+
+func newPluginUpdateCommand() *cobra.Command {
+	var checkOnly bool
+	cmd := &cobra.Command{
+		Use:   "update [name[@version]]",
+		Short: "Check or update installed plugins",
+		Long: `Check for newer plugin versions in the registry and install updates.
+
+Without arguments, semrel uses .semrel.lock as the source of truth and checks
+or updates every pinned plugin.
+
+With a plugin argument, semrel checks or updates only that plugin. A version can
+be pinned explicitly (for example @semrel/github@1.2.0).
+
+Examples:
+  semrel plugin update
+  semrel plugin update --check
+  semrel plugin update @semrel/github
+  semrel plugin update @semrel/github@1.2.0`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := ""
+			if len(args) == 1 {
+				target = args[0]
+			}
+			return runPluginUpdate(cmd.Context(), target, checkOnly)
+		},
+	}
+	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check for updates, do not install")
 	return cmd
 }
 
@@ -192,18 +225,8 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("plugin %q not found in registry", name)
 	}
 
-	// Namespace enforcement: if the matched plugin belongs to a namespace but the
-	// user did not supply one, require the full "@namespace/name" reference.
-	// A bare name (e.g. "github") is only accepted for namespace-less plugins.
-	if !strings.HasPrefix(name, "@") && meta.Namespace != "" {
-		ns := meta.Namespace
-		if !strings.HasPrefix(ns, "@") {
-			ns = "@" + ns
-		}
-		return fmt.Errorf(
-			"plugin %q belongs to namespace %s — use the full reference:\n  semrel plugin install %s/%s",
-			meta.Name, ns, ns, meta.Name,
-		)
+	if err := requireNamespacedReference(name, meta, "install"); err != nil {
+		return err
 	}
 
 	versionEntry, err := meta.FindVersion(ver)
@@ -273,6 +296,207 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 	}()
 
 	return nil
+}
+
+type pluginUpdateTarget struct {
+	Ref             string
+	CurrentVersion  string
+	LatestVersion   string
+	UpdateAvailable bool
+}
+
+func runPluginUpdate(ctx context.Context, nameVer string, checkOnly bool) error {
+	loader := plugin.NewLoader()
+	reg, err := loader.FetchMetadata(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching registry: %w", err)
+	}
+
+	targets, err := pluginUpdateTargets(reg, nameVer)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		fmt.Printf("nothing to update — %s has no plugin entries\n", LockFileName)
+		return nil
+	}
+
+	for _, target := range targets {
+		switch {
+		case target.CurrentVersion == "":
+			fmt.Printf("• %s: not installed, latest is %s\n", target.Ref, target.LatestVersion)
+		case target.UpdateAvailable:
+			fmt.Printf("• %s: %s → %s\n", target.Ref, target.CurrentVersion, target.LatestVersion)
+		default:
+			fmt.Printf("• %s: up to date (%s)\n", target.Ref, target.CurrentVersion)
+		}
+	}
+
+	if checkOnly {
+		return nil
+	}
+
+	updated := 0
+	for _, target := range targets {
+		if !target.UpdateAvailable && target.CurrentVersion != "" {
+			continue
+		}
+		if err := runPluginInstall(ctx, target.Ref+"@"+target.LatestVersion, ""); err != nil {
+			return err
+		}
+		updated++
+	}
+
+	if updated == 0 {
+		fmt.Println("all plugins are already up to date")
+		return nil
+	}
+	fmt.Printf("updated %d plugin(s)\n", updated)
+	return nil
+}
+
+func pluginUpdateTargets(reg *registry.PluginRegistry, nameVer string) ([]pluginUpdateTarget, error) {
+	if strings.TrimSpace(nameVer) != "" {
+		name, requestedVersion := splitNameVersion(nameVer)
+		meta, err := reg.FindPlugin(name)
+		if err != nil {
+			return nil, fmt.Errorf("plugin %q not found in registry", name)
+		}
+		if err := requireNamespacedReference(name, meta, "update"); err != nil {
+			return nil, err
+		}
+
+		var versionEntry *registry.PluginVersion
+		if requestedVersion != "" {
+			versionEntry, err = meta.FindVersion(requestedVersion)
+			if err != nil {
+				return nil, fmt.Errorf("version %q not available for plugin %q", requestedVersion, name)
+			}
+		} else {
+			versionEntry, err = latestStableVersion(meta)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		lf, err := ReadLockFile()
+		if err != nil {
+			return nil, err
+		}
+		ref := pluginRef(*meta)
+		current := ""
+		for _, binaryName := range pluginBinaryNames(meta.Name) {
+			if entry := lf.FindByBinaryName(binaryName); entry != nil {
+				current = entry.Version
+				if entry.Ref != "" {
+					ref = entry.Ref
+				}
+				break
+			}
+		}
+
+		return []pluginUpdateTarget{{
+			Ref:             ref,
+			CurrentVersion:  current,
+			LatestVersion:   versionEntry.Version,
+			UpdateAvailable: current == "" || isVersionNewer(current, versionEntry.Version),
+		}}, nil
+	}
+
+	lf, err := ReadLockFile()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]pluginUpdateTarget, 0, len(lf.Plugins))
+	for _, entry := range lf.Plugins {
+		meta, err := reg.FindPlugin(entry.Ref)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %s not found in registry; skipping\n", entry.Ref)
+			continue
+		}
+		latest, err := latestStableVersion(meta)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: latest version lookup failed for %s: %v\n", entry.Ref, err)
+			continue
+		}
+		out = append(out, pluginUpdateTarget{
+			Ref:             entry.Ref,
+			CurrentVersion:  entry.Version,
+			LatestVersion:   latest.Version,
+			UpdateAvailable: isVersionNewer(entry.Version, latest.Version),
+		})
+	}
+	return out, nil
+}
+
+func isVersionNewer(current, candidate string) bool {
+	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
+	candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "v")
+	if current == "" {
+		return true
+	}
+
+	var (
+		cMaj, cMin, cPatch int
+		nMaj, nMin, nPatch int
+	)
+	if _, err := fmt.Sscanf(current, "%d.%d.%d", &cMaj, &cMin, &cPatch); err != nil {
+		return candidate != current
+	}
+	if _, err := fmt.Sscanf(candidate, "%d.%d.%d", &nMaj, &nMin, &nPatch); err != nil {
+		return candidate != current
+	}
+	if nMaj != cMaj {
+		return nMaj > cMaj
+	}
+	if nMin != cMin {
+		return nMin > cMin
+	}
+	return nPatch > cPatch
+}
+
+func latestStableVersion(meta *registry.PluginMeta) (*registry.PluginVersion, error) {
+	var best *registry.PluginVersion
+	for i := range meta.Versions {
+		version := &meta.Versions[i]
+		if version.Prerelease {
+			continue
+		}
+		if best == nil || isVersionNewer(best.Version, version.Version) {
+			best = version
+		}
+	}
+	if best != nil {
+		return best, nil
+	}
+
+	for i := range meta.Versions {
+		version := &meta.Versions[i]
+		if best == nil || isVersionNewer(best.Version, version.Version) {
+			best = version
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("plugin %q has no available versions", meta.Name)
+	}
+	return best, nil
+}
+
+func requireNamespacedReference(name string, meta *registry.PluginMeta, action string) error {
+	// Namespace enforcement: if the matched plugin belongs to a namespace but the
+	// user did not supply one, require the full "@namespace/name" reference.
+	// A bare name (e.g. "github") is only accepted for namespace-less plugins.
+	if strings.HasPrefix(name, "@") || meta.Namespace == "" {
+		return nil
+	}
+	ns := meta.Namespace
+	if !strings.HasPrefix(ns, "@") {
+		ns = "@" + ns
+	}
+	return fmt.Errorf(
+		"plugin %q belongs to namespace %s — use the full reference:\n  semrel plugin %s %s/%s",
+		meta.Name, ns, action, ns, meta.Name,
+	)
 }
 
 // updateLockFile upserts the entry for meta/version into .semrel.lock.
