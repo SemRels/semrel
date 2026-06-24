@@ -43,6 +43,13 @@ Copyright: 2026 The semrel Authors
 License: Apache-2.0
 
 # ----------------------------------------------------------------------------
+# JSON Schema files
+# ----------------------------------------------------------------------------
+Files: docs/schema/*.json
+Copyright: 2026 The semrel Authors
+License: Apache-2.0
+
+# ----------------------------------------------------------------------------
 # Legal files (not covered by a license themselves)
 # ----------------------------------------------------------------------------
 Files: LICENSE

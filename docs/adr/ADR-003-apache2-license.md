@@ -35,7 +35,9 @@ We will license semrel (core, API definitions, documentation) under the
 - Explicit patent grant protects users and contributors from patent litigation by contributors
 - Compatible with the majority of open-source licenses (MIT, BSD, MPL-2.0)
 - Allows plugin authors to choose any compatible license for their own plugins
+<!-- REUSE-IgnoreStart -->
 - REUSE-compliant SPDX headers (`SPDX-License-Identifier: Apache-2.0`) are already in place
+<!-- REUSE-IgnoreEnd -->
 
 **Neutral:**
 - Requires preservation of copyright notices and the `NOTICE` file in derivative works
