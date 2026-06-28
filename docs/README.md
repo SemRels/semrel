@@ -217,7 +217,8 @@ semrel changelog --from v1.0.0 --to v2.0.0
 ```bash
 semrel plugin install slack
 semrel plugin list
-semrel plugin describe slack
+semrel plugin update --check
+semrel plugin restore
 ```
 
 ## Testing semrel

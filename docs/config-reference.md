@@ -246,7 +246,8 @@ Defines the ordered list of external plugin binaries to run during a release.
 - `uses: github` resolves to `semrel-plugin-github`
 - semrel first checks `.semrel/plugins/` (project-local), then `~/.semrel/plugins/` (global), then `$PATH`
 - `path:` can be used to point at a specific binary
-- Install a plugin with `semrel plugin install github`, or place the binary manually in `~/.semrel/plugins/`
+- Install a plugin with `semrel plugin install github`, or place the binary manually in `~/.semrel/plugins/` and keep pinned versions current with `semrel plugin update`
+- During `semrel release`, missing plugins are auto-restored from `.semrel.lock` when present
 - Supported plugin categories include providers, analyzers, generators, conditions, hooks, updaters, plus parity-foundation categories packagers and publishers
 
 ```yaml
@@ -608,6 +609,26 @@ Installs a standalone plugin binary into `.semrel/plugins/` by default.
 ```bash
 semrel plugin install github
 semrel plugin install npm
+```
+
+#### `semrel plugin update`
+
+Checks for newer plugin releases from the registry and updates pinned plugins.
+
+Without arguments, semrel uses `.semrel.lock` and updates all pinned plugins.
+
+```bash
+semrel plugin update --check
+semrel plugin update
+semrel plugin update @semrel/github
+```
+
+#### `semrel plugin restore`
+
+Reinstalls exact plugin versions pinned in `.semrel.lock`. Useful in CI and on fresh clones.
+
+```bash
+semrel plugin restore
 ```
 
 ### `semrel update`

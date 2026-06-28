@@ -155,8 +155,9 @@ Project-local installs update `.semrel.lock` in the repository root. The lock fi
 Use it as part of the normal team workflow:
 
 1. Install or update a plugin with `semrel plugin install @semrel/demo`
-2. Commit `.semrel.lock` alongside `.semrel.yaml`
-3. Run `semrel plugin restore` in CI or after cloning the repository
+2. Check and apply newer plugin releases with `semrel plugin update --check` / `semrel plugin update`
+3. Commit `.semrel.lock` alongside `.semrel.yaml`
+4. Run `semrel plugin restore` in CI or after cloning the repository
 
 Installs performed with `--plugin-dir` do not update `.semrel.lock`.
 

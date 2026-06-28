@@ -237,3 +237,123 @@ func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout)
 	}
 }
+
+func TestRunPluginUpdateCheckFromLockFile(t *testing.T) {
+	withColorsDisabled(t)
+	binary := []byte("plugin-binary")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+	server := newCLIRegistryServer(t, binary, checksum)
+	defer server.Close()
+
+	repoDir := t.TempDir()
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, filepath.Join(repoDir, ".semrel", "registry-cache"))
+	withWorkingDir(t, repoDir)
+
+	lf := &PluginLockFile{}
+	lf.Upsert(PluginLockEntry{
+		BinaryName: "semrel-plugin-provider-github",
+		Ref:        "provider-github",
+		Version:    "1.0.0",
+		Checksums: map[string]string{
+			"linux_amd64":   checksum,
+			"linux_arm64":   checksum,
+			"darwin_amd64":  checksum,
+			"darwin_arm64":  checksum,
+			"windows_amd64": checksum,
+			"windows_arm64": checksum,
+		},
+	})
+	if err := lf.Write(); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	stdout, stderr, err := captureReleaseOutput(func() error {
+		return runPluginUpdate(context.Background(), "", true)
+	})
+	if err != nil {
+		t.Fatalf("runPluginUpdate(--check) error = %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	if !strings.Contains(stdout, "provider-github: 1.0.0 → 1.1.0") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	updatedLock, err := ReadLockFile()
+	if err != nil {
+		t.Fatalf("ReadLockFile() error = %v", err)
+	}
+	entry := updatedLock.FindByBinaryName("semrel-plugin-provider-github")
+	if entry == nil {
+		t.Fatal("expected lock entry semrel-plugin-provider-github")
+	}
+	if entry.Version != "1.0.0" {
+		t.Fatalf("version = %q, want 1.0.0", entry.Version)
+	}
+}
+
+func TestRunPluginUpdateApplyFromLockFile(t *testing.T) {
+	withColorsDisabled(t)
+	binary := []byte("plugin-binary")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+	server := newCLIRegistryServer(t, binary, checksum)
+	defer server.Close()
+
+	repoDir := t.TempDir()
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, filepath.Join(repoDir, ".semrel", "registry-cache"))
+	withWorkingDir(t, repoDir)
+
+	lf := &PluginLockFile{}
+	lf.Upsert(PluginLockEntry{
+		BinaryName: "semrel-plugin-provider-github",
+		Ref:        "provider-github",
+		Version:    "1.0.0",
+		Checksums: map[string]string{
+			"linux_amd64":   checksum,
+			"linux_arm64":   checksum,
+			"darwin_amd64":  checksum,
+			"darwin_arm64":  checksum,
+			"windows_amd64": checksum,
+			"windows_arm64": checksum,
+		},
+	})
+	if err := lf.Write(); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	stdout, stderr, err := captureReleaseOutput(func() error {
+		return runPluginUpdate(context.Background(), "", false)
+	})
+	if err != nil {
+		t.Fatalf("runPluginUpdate() error = %v", err)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
+	}
+	if !strings.Contains(stdout, "updated 1 plugin(s)") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+
+	updatedLock, err := ReadLockFile()
+	if err != nil {
+		t.Fatalf("ReadLockFile() error = %v", err)
+	}
+	entry := updatedLock.FindByBinaryName("semrel-plugin-provider-github")
+	if entry == nil {
+		t.Fatal("expected lock entry semrel-plugin-provider-github")
+	}
+	if entry.Version != "1.1.0" {
+		t.Fatalf("version = %q, want 1.1.0", entry.Version)
+	}
+
+	binPath := filepath.Join(repoDir, ".semrel", "plugins", "semrel-plugin-provider-github")
+	if runtime.GOOS == "windows" {
+		binPath += ".exe"
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("expected plugin binary at %s: %v", binPath, err)
+	}
+}

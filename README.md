@@ -40,6 +40,7 @@ Install any plugins you want to use:
 ```bash
 semrel plugin install github
 semrel plugin install npm
+semrel plugin update --check
 ```
 
 ## Quick Start
@@ -81,6 +82,8 @@ semrel update
 | `semrel plugin list` | List plugins available in the registry. |
 | `semrel plugin search` | Search plugins by name, description, or tag. |
 | `semrel plugin install` | Download and install a plugin binary. |
+| `semrel plugin update` | Check and apply plugin updates from `.semrel.lock` or a single plugin ref. |
+| `semrel plugin restore` | Reinstall pinned plugins from `.semrel.lock`. |
 | `semrel update` | Check for and install the latest semrel release. |
 
 ## IDE Support
