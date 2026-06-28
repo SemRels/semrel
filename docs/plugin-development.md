@@ -162,7 +162,7 @@ Installs performed with `--plugin-dir` do not update `.semrel.lock`.
 
 ## Reference implementations
 
-The standalone SemRels plugin repositories are the reference implementation for the current architecture, including providers, updaters, and hooks.
+The standalone SemRels plugin repositories are the reference implementation for the current architecture, including providers, updaters, hooks, and upcoming parity categories such as packagers and publishers.
 
 Examples:
 

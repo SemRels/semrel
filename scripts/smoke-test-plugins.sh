@@ -9,7 +9,7 @@
 #
 # If no arguments are given the script looks for plugin repos in ../
 # (i.e., sibling directories named provider-*, hook-*, condition-*, analyzer-*,
-# updater-*, generator-*).
+# updater-*, generator-*, packager-*, publisher-*).
 #
 # Each plugin repo is built with `go build ./cmd/plugin` and then executed with
 # SEMREL_DRY_RUN=true and synthetic SEMREL_* release context env vars.
@@ -51,7 +51,8 @@ find_plugin_repos() {
   find "$base" -maxdepth 1 -type d \( \
     -name "provider-*" -o -name "hook-*" -o \
     -name "condition-*" -o -name "analyzer-*" -o \
-    -name "updater-*" -o -name "generator-*" \
+    -name "updater-*" -o -name "generator-*" -o \
+    -name "packager-*" -o -name "publisher-*" \
   \) | sort
 }
 

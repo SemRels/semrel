@@ -150,6 +150,11 @@ Install any plugin with `semrel plugin install <name>`.
 | `gobinary` | Updater | Update Go version variable in source | [SemRels/updater-go](https://github.com/SemRels/updater-go) |
 | `homebrew` | Updater | Update Homebrew formula | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
 | `terraform` | Updater | Bump Terraform module version | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
+| **Packagers** | | | |
+| `nfpm` | Packager | Build Linux packages (deb/rpm/apk) | [SemRels/packager-nfpm](https://github.com/SemRels/packager-nfpm) |
+| **Publishers** | | | |
+| `oci` | Publisher | Publish release artifacts to OCI registries | [SemRels/publisher-oci](https://github.com/SemRels/publisher-oci) |
+| `generic-http` | Publisher | Publish release artifacts via generic HTTP endpoints | [SemRels/publisher-generic-http](https://github.com/SemRels/publisher-generic-http) |
 | **Hooks** | | | |
 | `slack` | Hook | Send release notifications to Slack | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
 | `teams` | Hook | Send release notifications to Microsoft Teams | [SemRels/hook-teams](https://github.com/SemRels/hook-teams) |

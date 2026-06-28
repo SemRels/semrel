@@ -89,3 +89,13 @@ A Go-native, plugin-based semantic release system that covers the full release l
 - Pre-release channels (alpha/beta/rc) per branch
 - Release lock, Commitlint, Interactive release notes editor
 - Jira/Linear issue auto-close, Release analytics, Plugin SDK for third-party plugins
+
+## v0.18.0 — Parity Foundation _(in progress)_
+**Goal:** Close the highest-impact parity gaps to GoReleaser for build/package/publish workflows.
+
+- Registry model extended for upcoming plugin categories: **Packager** and **Publisher**
+- Plugin release metadata hardening with explicit compatibility hints per published version
+- First delivery target: nFPM packaging baseline via dedicated packager plugin
+- Publisher baseline target: OCI and generic HTTP artifact publishing plugins
+- Reliability baseline: retry/backoff orchestration for transient release failures
+- CI ergonomics: stronger auto-detection defaults with explicit override behavior

@@ -247,6 +247,7 @@ Defines the ordered list of external plugin binaries to run during a release.
 - semrel first checks `.semrel/plugins/` (project-local), then `~/.semrel/plugins/` (global), then `$PATH`
 - `path:` can be used to point at a specific binary
 - Install a plugin with `semrel plugin install github`, or place the binary manually in `~/.semrel/plugins/`
+- Supported plugin categories include providers, analyzers, generators, conditions, hooks, updaters, plus parity-foundation categories packagers and publishers
 
 ```yaml
 plugins:
@@ -278,6 +279,9 @@ plugins:
 | `nuget` | Updater | `semrel-plugin-nuget` | [SemRels/updater-nuget](https://github.com/SemRels/updater-nuget) |
 | `homebrew` | Updater | `semrel-plugin-homebrew` | [SemRels/updater-homebrew](https://github.com/SemRels/updater-homebrew) |
 | `terraform` | Updater | `semrel-plugin-terraform` | [SemRels/updater-terraform](https://github.com/SemRels/updater-terraform) |
+| `packager-nfpm` | Packager | `semrel-plugin-packager-nfpm` | _planned_ |
+| `publisher-oci` | Publisher | `semrel-plugin-publisher-oci` | _planned_ |
+| `publisher-generic-http` | Publisher | `semrel-plugin-publisher-generic-http` | _planned_ |
 | `slack` | Hook | `semrel-plugin-slack` | [SemRels/hook-slack](https://github.com/SemRels/hook-slack) |
 | `matrix` | Hook | `semrel-plugin-matrix` | [SemRels/hook-matrix](https://github.com/SemRels/hook-matrix) |
 | `email` | Hook | `semrel-plugin-email` | [SemRels/hook-email](https://github.com/SemRels/hook-email) |

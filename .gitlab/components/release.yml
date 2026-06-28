@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+
+##
+# semrel GitLab CI Component
+#
+# Include this component to add a fully automated semantic release stage to any
+# GitLab pipeline with a single `include:` line.
+#
+# Usage:
+#   include:
+#     - component: $CI_SERVER_FQDN/SemRels/semrel/release@~latest
+#       inputs:
+#         dry_run: "false"
+#
+# See https://semrel.io/guide/ci-cd/ for full documentation.
+##
+
+spec:
+  inputs:
+    # Set to "true" to preview the release without making any changes.
+    dry_run:
+      default: "false"
+      description: "Simulate the release without writing tags or changelogs."
+    # Semrel version to download. Defaults to the latest stable release.
+    semrel_version:
+      default: "latest"
+      description: "semrel version to download (e.g. v1.2.3 or 'latest')."
+    # Path to the semrel configuration file.
+    config:
+      default: ".semrel.yaml"
+      description: "Path to the .semrel.yaml configuration file."
+    # Registry URL override (useful for air-gapped environments).
+    registry_url:
+      default: ""
+      description: "Override the default plugin registry URL."
+    # Stage name — override when you need a different pipeline stage.
+    stage:
+      default: "release"
+      description: "Pipeline stage in which the release job runs."
+
+---
+
+.semrel-release:
+  stage: $[[ inputs.stage ]]
+  image: golang:1.24-alpine
+  rules:
+    # Only run on the default branch, never on merge-request pipelines.
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "merge_request_event"
+  variables:
+    SEMREL_DRY_RUN: $[[ inputs.dry_run ]]
+    SEMREL_CONFIG: $[[ inputs.config ]]
+    SEMREL_REGISTRY_URL: $[[ inputs.registry_url ]]
+    # Use the GitLab token injected by the CI runner for tag / release creation.
+    SEMREL_TOKEN: $CI_JOB_TOKEN
+    GIT_DEPTH: 0          # semrel needs full git history for commit analysis
+  before_script:
+    - apk add --no-cache git curl
+    - |
+      VERSION="${{ inputs.semrel_version }}"
+      if [ "$VERSION" = "latest" ]; then
+        VERSION=$(curl -fsSL "https://registry.semrel.io/api/v1/plugins/@semrel/semrel/latest" \
+          | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "latest")
+      fi
+      echo "Downloading semrel ${VERSION}..."
+      curl -fsSL "https://github.com/SemRels/semrel/releases/download/${VERSION}/semrel_linux_amd64.tar.gz" \
+        | tar -xz -C /usr/local/bin semrel
+      semrel --version
+  script:
+    - |
+      ARGS=""
+      [ "${SEMREL_DRY_RUN}" = "true" ] && ARGS="${ARGS} --dry-run"
+      [ -n "${SEMREL_CONFIG}" ]        && ARGS="${ARGS} --config ${SEMREL_CONFIG}"
+      [ -n "${SEMREL_REGISTRY_URL}" ]  && ARGS="${ARGS} --registry ${SEMREL_REGISTRY_URL}"
+      semrel ${ARGS} release
+  # Expose version and release status as dotenv artifacts for downstream jobs.
+  artifacts:
+    reports:
+      dotenv: semrel.env
+    expire_in: 1 hour
+  after_script:
+    - |
+      # Write semrel.env so downstream jobs can read $SEMREL_VERSION / $SEMREL_RELEASED.
+      if [ -n "$(semrel --config ${SEMREL_CONFIG} current-version 2>/dev/null)" ]; then
+        echo "SEMREL_RELEASED=true"  >> semrel.env
+        semrel --config ${SEMREL_CONFIG} current-version | xargs -I{} echo "SEMREL_VERSION={}" >> semrel.env
+      else
+        echo "SEMREL_RELEASED=false" >> semrel.env
+        echo "SEMREL_VERSION="       >> semrel.env
+      fi

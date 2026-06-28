@@ -338,7 +338,7 @@ func TestSmokeTestAllPlugins(t *testing.T) {
 	)
 
 	pluginPrefixes := []string{
-		"provider-", "hook-", "condition-", "analyzer-", "updater-", "generator-",
+		"provider-", "hook-", "condition-", "analyzer-", "updater-", "generator-", "packager-", "publisher-",
 	}
 	isPlugin := func(name string) bool {
 		for _, prefix := range pluginPrefixes {
