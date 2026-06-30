@@ -338,6 +338,85 @@ func TestValidate_DuplicateRuleType(t *testing.T) {
 	}
 }
 
+func TestValidate_DuplicateRuleTypeAndScope(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "deps", Scope: "major", Bump: "major"},
+			{Type: "deps", Scope: "major", Bump: "minor"}, // duplicate (type+scope)
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for duplicate rule type+scope combination")
+	}
+}
+
+func TestValidate_SameTypeWithDifferentScopesIsValid(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "deps", Scope: "major", Bump: "major"},
+			{Type: "deps", Scope: "minor", Bump: "minor"},
+			{Type: "deps", Scope: "patch", Bump: "patch"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected valid config for same type with different scopes, got: %v", err)
+	}
+}
+
+func TestValidate_ScopeFalseIsValid(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "chore", Scope: false, Bump: "patch"},
+			{Type: "feat", Bump: "minor"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected scope:false to be valid, got: %v", err)
+	}
+}
+
+func TestValidate_ScopeFalseDuplicateIsError(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "chore", Scope: false, Bump: "patch"},
+			{Type: "chore", Scope: false, Bump: "minor"}, // duplicate
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for duplicate scope:false rule")
+	}
+}
+
+func TestValidate_ScopeFalseAndScopeStringAreDistinct(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "chore", Scope: false, Bump: "patch"},  // scopeless commits
+			{Type: "chore", Scope: "deps", Bump: "minor"}, // scoped commits
+			{Type: "chore", Bump: "patch"},                 // any commit (inc. scoped)
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected scope:false and scope:string to be distinct keys, got: %v", err)
+	}
+}
+
+func TestValidate_ScopeInvalidTypeIsError(t *testing.T) {
+	cfg := &Config{
+		TagPrefix: "v",
+		Rules: []ReleaseRule{
+			{Type: "feat", Scope: true, Bump: "minor"}, // scope:true is invalid
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for scope:true")
+	}
+}
+
 func TestValidate_PluginMissingUsesAndPath(t *testing.T) {
 	cfg := &Config{
 		TagPrefix: "v",

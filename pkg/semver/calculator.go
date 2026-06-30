@@ -323,17 +323,52 @@ func (c *Calculator) ForcePatch(current *Version) *Version {
 	}
 }
 
-// BumpFromRules analyses commits against release rules and returns the bump level.
-func BumpFromRules(commitTypes []string, rules map[string]string, hasBreaking bool) string {
+// CommitInfo holds the type and scope of a parsed commit for rule matching.
+type CommitInfo struct {
+	Type  string
+	Scope string
+}
+
+// RuleEntry maps a commit type (and optionally scope) to a bump level.
+// Scope matching is controlled by Scope and ScopeNone:
+//   - Scope == "" && !ScopeNone: matches commits of that type regardless of scope.
+//   - Scope != "":               matches only commits with that exact type+scope.
+//   - ScopeNone == true:         matches only commits of that type that carry NO scope.
+type RuleEntry struct {
+	Type      string // required
+	Scope     string // exact scope to match (only when ScopeNone is false)
+	ScopeNone bool   // true when the rule was declared with scope: false
+	Bump      string // "major", "minor", "patch"
+}
+
+// BumpFromRules analyses commits against release rules and returns the highest bump level.
+// Rules with both type and scope match only commits with exactly that type+scope combination.
+// Rules with only type (no scope) match commits of that type regardless of their scope.
+// A rule with ScopeNone matches only commits that carry no scope at all.
+// Returns "major" immediately if hasBreaking is true.
+func BumpFromRules(commitList []CommitInfo, rules []RuleEntry, hasBreaking bool) string {
 	if hasBreaking {
 		return "major"
 	}
 	best := ""
 	order := map[string]int{"major": 3, "minor": 2, "patch": 1}
-	for _, t := range commitTypes {
-		if bump, ok := rules[t]; ok {
-			if order[bump] > order[best] {
-				best = bump
+	for _, c := range commitList {
+		for _, r := range rules {
+			if r.Type != c.Type {
+				continue
+			}
+			switch {
+			case r.ScopeNone:
+				if c.Scope != "" {
+					continue // rule wants scopeless, but commit has a scope
+				}
+			case r.Scope != "":
+				if r.Scope != c.Scope {
+					continue // scope doesn't match
+				}
+			}
+			if order[r.Bump] > order[best] {
+				best = r.Bump
 			}
 		}
 	}

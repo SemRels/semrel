@@ -129,10 +129,16 @@ func (c *Config) FindBranchConfig(branchName string) *BranchConfig {
 	return nil
 }
 
-// ReleaseRule maps commit type to version bump level.
+// ReleaseRule maps a commit type (and optionally scope) to a version bump level.
+//
+// Scope matching behaviour:
+//   - Scope omitted (nil): matches commits of the given type regardless of scope.
+//   - Scope is a string:   matches only commits with that exact type AND scope.
+//   - Scope is false:      matches only commits of the given type that carry NO scope.
 type ReleaseRule struct {
-	Type string `yaml:"type" toml:"type" json:"type"`
-	Bump string `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
+	Type  string      `yaml:"type" toml:"type" json:"type"`
+	Scope interface{} `yaml:"scope,omitempty" toml:"scope,omitempty" json:"scope,omitempty"`
+	Bump  string      `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
 }
 
 // PluginConfig configures a plugin.
@@ -171,9 +177,9 @@ func (c *Config) Validate() error {
 		seenBranches[b.Name] = true
 	}
 
-	// Release rules: type and bump must be valid
+	// Release rules: type and bump must be valid, (type, scope) pairs must be unique
 	validBumps := map[string]bool{"major": true, "minor": true, "patch": true}
-	seenTypes := make(map[string]bool)
+	seenRules := make(map[string]bool)
 	for i, r := range c.Rules {
 		if strings.TrimSpace(r.Type) == "" {
 			errs = append(errs, fmt.Sprintf("rules[%d]: type must not be empty", i))
@@ -181,10 +187,23 @@ func (c *Config) Validate() error {
 		if !validBumps[r.Bump] {
 			errs = append(errs, fmt.Sprintf("rules[%d]: bump %q is not valid (must be major, minor, or patch)", i, r.Bump))
 		}
-		if seenTypes[r.Type] {
-			errs = append(errs, fmt.Sprintf("rules[%d]: duplicate rule type %q", i, r.Type))
+		// Validate and canonicalise the scope value for duplicate detection.
+		scopeKey, scopeErr := canonicaliseScopeKey(r.Scope)
+		if scopeErr != nil {
+			errs = append(errs, fmt.Sprintf("rules[%d]: scope %v", i, scopeErr))
 		}
-		seenTypes[r.Type] = true
+		key := r.Type + "\x00" + scopeKey
+		if seenRules[key] {
+			switch v := r.Scope.(type) {
+			case string:
+				errs = append(errs, fmt.Sprintf("rules[%d]: duplicate rule for type %q with scope %q", i, r.Type, v))
+			case bool:
+				errs = append(errs, fmt.Sprintf("rules[%d]: duplicate rule for type %q with scope false", i, r.Type))
+			default:
+				errs = append(errs, fmt.Sprintf("rules[%d]: duplicate rule type %q", i, r.Type))
+			}
+		}
+		seenRules[key] = true
 	}
 
 	// Plugins: uses or path must be set
@@ -319,4 +338,30 @@ func (c *Config) ResolvedTagExistsStrategy() string {
 		return "update-changelog"
 	}
 	return c.TagExistsStrategy
+}
+
+// canonicaliseScopeKey returns a stable string key for a scope value used in
+// duplicate-detection and rule-matching. Valid values are:
+//   - nil / absent  → ""           (match any scope)
+//   - string        → "s:<value>"  (match exact scope)
+//   - bool false    → "none"       (match scopeless commits only)
+//
+// Any other value is an error.
+func canonicaliseScopeKey(scope interface{}) (string, error) {
+	switch v := scope.(type) {
+	case nil:
+		return "", nil
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return "", fmt.Errorf("must not be an empty string; omit scope to match any commit, or use false to match scopeless commits")
+		}
+		return "s:" + v, nil
+	case bool:
+		if v {
+			return "", fmt.Errorf("as a boolean must be false (matches commits with no scope)")
+		}
+		return "none", nil
+	default:
+		return "", fmt.Errorf("must be a string or false, got %T", scope)
+	}
 }

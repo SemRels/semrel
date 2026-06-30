@@ -15,6 +15,7 @@ tagPrefix: "v"
 
 # Commit type → SemVer bump level mapping.
 # Types not listed here are ignored for versioning (but may appear in changelog).
+# An optional 'scope' narrows the rule to commits that match both type AND scope.
 rules:
   - type: feat
     bump: minor
@@ -24,6 +25,16 @@ rules:
     bump: patch
   - type: revert
     bump: patch
+  # scope-based example: deps(major): … → major, deps(minor): … → minor
+  # - type: deps
+  #   scope: major
+  #   bump: major
+  # - type: deps
+  #   scope: minor
+  #   bump: minor
+  # - type: deps
+  #   scope: patch
+  #   bump: patch
   # breaking change (footer BREAKING CHANGE: or type!) always triggers major
 
 # Release plugins executed in order.

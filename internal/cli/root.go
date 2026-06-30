@@ -424,22 +424,31 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	parser := commits.NewParser()
 	parsed := parser.ParseAll(rawMessages)
 
-	// 6. Build rule map and analyse commits
-	ruleMap := make(map[string]string)
+	// 6. Build rule list and analyse commits
+	rules := make([]semver.RuleEntry, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		ruleMap[r.Type] = r.Bump
+		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump}
+		switch v := r.Scope.(type) {
+		case string:
+			entry.Scope = v
+		case bool:
+			if !v {
+				entry.ScopeNone = true
+			}
+		}
+		rules = append(rules, entry)
 	}
 
 	var (
 		hasFeat, hasFix, hasBreaking bool
-		commitTypes                  []string
+		commitInfos                  []semver.CommitInfo
 	)
 	for _, c := range parsed {
 		if c.IsBreakingChange {
 			hasBreaking = true
 		}
 		if c.Type != "" {
-			commitTypes = append(commitTypes, c.Type)
+			commitInfos = append(commitInfos, semver.CommitInfo{Type: c.Type, Scope: c.Scope})
 		}
 		switch c.Type {
 		case "feat":
@@ -449,7 +458,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 	}
 
-	bump := semver.BumpFromRules(commitTypes, ruleMap, hasBreaking)
+	bump := semver.BumpFromRules(commitInfos, rules, hasBreaking)
 	if bump == "" && !forcePatch {
 		summary := ReleaseSummary{
 			Released:       false,

@@ -135,32 +135,138 @@ func TestVersionString(t *testing.T) {
 }
 
 func TestBumpFromRules(t *testing.T) {
-	rules := map[string]string{
-		"feat": "minor",
-		"fix":  "patch",
-		"perf": "patch",
-		"docs": "patch",
+	rules := []RuleEntry{
+		{Type: "feat", Bump: "minor"},
+		{Type: "fix", Bump: "patch"},
+		{Type: "perf", Bump: "patch"},
+		{Type: "docs", Bump: "patch"},
 	}
 
 	tests := []struct {
 		name        string
-		types       []string
+		commits     []CommitInfo
 		hasBreaking bool
 		want        string
 	}{
 		{"no commits", nil, false, ""},
-		{"only feat", []string{"feat"}, false, "minor"},
-		{"only fix", []string{"fix"}, false, "patch"},
-		{"feat+fix = minor", []string{"feat", "fix"}, false, "minor"},
-		{"breaking overrides all", []string{"feat"}, true, "major"},
+		{"only feat", []CommitInfo{{Type: "feat"}}, false, "minor"},
+		{"only fix", []CommitInfo{{Type: "fix"}}, false, "patch"},
+		{"feat+fix = minor", []CommitInfo{{Type: "feat"}, {Type: "fix"}}, false, "minor"},
+		{"breaking overrides all", []CommitInfo{{Type: "feat"}}, true, "major"},
 		{"breaking with no commits", nil, true, "major"},
-		{"unknown type", []string{"chore"}, false, ""},
-		{"docs patch", []string{"docs"}, false, "patch"},
+		{"unknown type", []CommitInfo{{Type: "chore"}}, false, ""},
+		{"docs patch", []CommitInfo{{Type: "docs"}}, false, "patch"},
+		{"scope ignored when rule has no scope", []CommitInfo{{Type: "feat", Scope: "api"}}, false, "minor"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := BumpFromRules(tt.types, rules, tt.hasBreaking)
+			got := BumpFromRules(tt.commits, rules, tt.hasBreaking)
+			if got != tt.want {
+				t.Errorf("got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBumpFromRules_WithScope(t *testing.T) {
+	rules := []RuleEntry{
+		{Type: "deps", Scope: "major", Bump: "major"},
+		{Type: "deps", Scope: "minor", Bump: "minor"},
+		{Type: "deps", Scope: "patch", Bump: "patch"},
+		{Type: "feat", Bump: "minor"},
+	}
+
+	tests := []struct {
+		name        string
+		commits     []CommitInfo
+		hasBreaking bool
+		want        string
+	}{
+		{
+			name:    "deps(major) triggers major",
+			commits: []CommitInfo{{Type: "deps", Scope: "major"}},
+			want:    "major",
+		},
+		{
+			name:    "deps(minor) triggers minor",
+			commits: []CommitInfo{{Type: "deps", Scope: "minor"}},
+			want:    "minor",
+		},
+		{
+			name:    "deps(patch) triggers patch",
+			commits: []CommitInfo{{Type: "deps", Scope: "patch"}},
+			want:    "patch",
+		},
+		{
+			name:    "deps with unknown scope matches no rule",
+			commits: []CommitInfo{{Type: "deps", Scope: "security"}},
+			want:    "",
+		},
+		{
+			name:    "scope rule wins over type-only rule when scope matches",
+			commits: []CommitInfo{{Type: "deps", Scope: "major"}, {Type: "feat"}},
+			want:    "major",
+		},
+		{
+			name:    "highest bump wins across scope and non-scope rules",
+			commits: []CommitInfo{{Type: "deps", Scope: "patch"}, {Type: "feat"}},
+			want:    "minor",
+		},
+		{
+			name:        "breaking still overrides scope rules",
+			commits:     []CommitInfo{{Type: "deps", Scope: "patch"}},
+			hasBreaking: true,
+			want:        "major",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BumpFromRules(tt.commits, rules, tt.hasBreaking)
+			if got != tt.want {
+				t.Errorf("got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBumpFromRules_ScopeNone(t *testing.T) {
+	rules := []RuleEntry{
+		{Type: "chore", ScopeNone: true, Bump: "patch"}, // chore with NO scope → patch
+		{Type: "feat", Bump: "minor"},                   // feat regardless of scope → minor
+	}
+
+	tests := []struct {
+		name    string
+		commits []CommitInfo
+		want    string
+	}{
+		{
+			name:    "chore without scope matches ScopeNone rule",
+			commits: []CommitInfo{{Type: "chore", Scope: ""}},
+			want:    "patch",
+		},
+		{
+			name:    "chore with scope does NOT match ScopeNone rule",
+			commits: []CommitInfo{{Type: "chore", Scope: "deps"}},
+			want:    "",
+		},
+		{
+			name:    "feat with scope matches type-only rule",
+			commits: []CommitInfo{{Type: "feat", Scope: "api"}},
+			want:    "minor",
+		},
+		{
+			name:    "feat without scope matches type-only rule",
+			commits: []CommitInfo{{Type: "feat", Scope: ""}},
+			want:    "minor",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BumpFromRules(tt.commits, rules, false)
 			if got != tt.want {
 				t.Errorf("got %q want %q", got, tt.want)
 			}

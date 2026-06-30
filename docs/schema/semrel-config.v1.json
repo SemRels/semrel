@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://registry.semrel.io/schemas/core/v1.json",
   "title": "semrel configuration",
-  "description": "Configuration schema for semrel \u2014 semantic release automation. https://semrel.io",
+  "description": "Configuration schema for semrel — semantic release automation. https://semrel.io",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -34,7 +34,7 @@
     },
     "rules": {
       "type": "array",
-      "description": "Mapping of conventional commit types to semver bump levels. Overrides the built-in defaults.",
+      "description": "Mapping of conventional commit types (and optionally scopes) to semver bump levels. Overrides the built-in defaults.",
       "items": {
         "$ref": "#/$defs/ReleaseRule"
       },
@@ -50,6 +50,31 @@
           },
           {
             "type": "perf",
+            "bump": "patch"
+          }
+        ],
+        [
+          {
+            "type": "deps",
+            "scope": "major",
+            "bump": "major"
+          },
+          {
+            "type": "deps",
+            "scope": "minor",
+            "bump": "minor"
+          },
+          {
+            "type": "deps",
+            "scope": "patch",
+            "bump": "patch"
+          },
+          {
+            "type": "feat",
+            "bump": "minor"
+          },
+          {
+            "type": "fix",
             "bump": "patch"
           }
         ]
@@ -200,14 +225,14 @@
         },
         "maintenance": {
           "type": "boolean",
-          "description": "Mark as a maintenance branch \u2014 only patch bumps are allowed. Auto-detected for N.x / N.M.x patterns.",
+          "description": "Mark as a maintenance branch — only patch bumps are allowed. Auto-detected for N.x / N.M.x patterns.",
           "default": false
         }
       }
     },
     "ReleaseRule": {
       "type": "object",
-      "description": "Maps a conventional commit type to a semver bump level.",
+      "description": "Maps a conventional commit type (and optionally scope) to a semver bump level. Scope can be a string (exact match), false (scopeless commits only), or omitted (any scope).",
       "additionalProperties": false,
       "required": [
         "type",
@@ -224,12 +249,34 @@
             "perf",
             "revert",
             "refactor",
-            "docs"
+            "docs",
+            "deps"
+          ]
+        },
+        "scope": {
+          "description": "Optional scope filter. When omitted the rule matches commits of this type regardless of scope. When set to a string it matches only commits with that exact scope. When set to false it matches only commits that carry no scope at all.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "examples": [
+                "api",
+                "ui",
+                "major",
+                "minor",
+                "patch"
+              ]
+            },
+            {
+              "type": "boolean",
+              "const": false,
+              "description": "false — match only commits with no scope."
+            }
           ]
         },
         "bump": {
           "type": "string",
-          "description": "Semver bump level triggered by this commit type.",
+          "description": "Semver bump level triggered by this commit type (and scope, if set).",
           "enum": [
             "major",
             "minor",
