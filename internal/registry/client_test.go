@@ -278,12 +278,14 @@ func assertRegistryErrorCode(t *testing.T, err error, want string) {
 	}
 }
 
-func TestDownloadPluginTracksDownload(t *testing.T) {
+func TestDownloadPluginDoesNotTrackFromDownloadLayer(t *testing.T) {
+	// Tracking is the responsibility of the CLI layer (plugin.go), not the
+	// download layer. Verifies no POST to /downloads is fired from DownloadPlugin.
 	t.Parallel()
 
 	binary := []byte("test-plugin-binary")
 	checksum := sha256Hex(binary)
-	trackCh := make(chan string, 1)
+	trackCalled := false
 	var serverURL string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -292,11 +294,10 @@ func TestDownloadPluginTracksDownload(t *testing.T) {
 			_, _ = w.Write([]byte(testMetadataJSON(serverURL, checksum)))
 		case "/downloads/provider-github.exe":
 			_, _ = w.Write(binary)
-		case "/api/v1/plugins/provider-github/versions/1.0.0/downloads":
-			// Tracking endpoint: record that it was called.
-			trackCh <- r.URL.RawQuery
-			w.WriteHeader(http.StatusNoContent)
 		default:
+			if strings.Contains(r.URL.Path, "/downloads") && r.Method == http.MethodPost {
+				trackCalled = true
+			}
 			http.NotFound(w, r)
 		}
 	}))
@@ -309,14 +310,10 @@ func TestDownloadPluginTracksDownload(t *testing.T) {
 		t.Fatalf("DownloadPlugin() error = %v", err)
 	}
 
-	// TrackDownload is fire-and-forget — wait up to 2s for it to arrive.
-	select {
-	case query := <-trackCh:
-		if !strings.Contains(query, "platform=windows_amd64") {
-			t.Errorf("expected platform=windows_amd64 in tracking query, got %q", query)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("TrackDownload was not called after successful download")
+	// Brief wait to catch any unexpected async POST.
+	time.Sleep(200 * time.Millisecond)
+	if trackCalled {
+		t.Error("DownloadPlugin must not call the tracking endpoint — tracking is the CLI layer's job")
 	}
 }
 
