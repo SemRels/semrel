@@ -280,20 +280,19 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		}
 	}
 
-	go func() {
-		client, err := registry.NewRegistryClientFromEnv()
-		if err != nil {
-			return
-		}
+	// Track the download synchronously before returning.
+	// TrackDownload has its own 5 s timeout and silently ignores errors —
+	// the process must not exit before the HTTP request completes.
+	if client, err := registry.NewRegistryClientFromEnv(); err == nil {
 		client.TrackDownload(
-			context.Background(), // cobra ctx is cancelled on return — use background
+			context.Background(),
 			strings.TrimPrefix(meta.Namespace, "@"),
 			meta.Name,
 			versionEntry.Version,
 			runtime.GOOS,
 			runtime.GOARCH,
 		)
-	}()
+	}
 
 	return nil
 }
@@ -667,21 +666,16 @@ func runPluginRestore(ctx context.Context) error {
 		}
 		fmt.Printf("✓  restored %s@%s → %s\n", entry.Ref, entry.Version, dest)
 
-		// Track the restore as a download (fire-and-forget, background context).
-		ref := entry.Ref
-		ver := entry.Version
-		go func() {
-			client, err := registry.NewRegistryClientFromEnv()
-			if err != nil {
-				return
-			}
-			ns, name := "", ref
-			if idx := strings.LastIndex(ref, "/"); idx > 0 {
-				ns = strings.TrimPrefix(ref[:idx], "@")
-				name = ref[idx+1:]
-			}
-			client.TrackDownload(context.Background(), ns, name, ver, runtime.GOOS, runtime.GOARCH)
-		}()
+		// Track the restore as a download — synchronous so the process doesn't
+		// exit before the HTTP request completes.
+		ns, name := "", entry.Ref
+		if idx := strings.LastIndex(entry.Ref, "/"); idx > 0 {
+			ns = strings.TrimPrefix(entry.Ref[:idx], "@")
+			name = entry.Ref[idx+1:]
+		}
+		if client, err := registry.NewRegistryClientFromEnv(); err == nil {
+			client.TrackDownload(context.Background(), ns, name, entry.Version, runtime.GOOS, runtime.GOARCH)
+		}
 	}
 
 	if len(failed) > 0 {

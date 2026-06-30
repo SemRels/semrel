@@ -5,9 +5,8 @@
 # https://goreleaser.com/customization/
 version: 2
 
-before:
-  hooks:
-    - go mod tidy
+# No before hooks — go mod tidy is enforced as a separate CI step
+# (see release.yaml) to avoid marking the build dirty.
 
 builds:
   - id: semrel

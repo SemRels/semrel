@@ -1,7 +1,7 @@
 BIN_DIR      := bin
 BINARY       := $(BIN_DIR)/semrel
-VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS      := -X github.com/GoSemantics/semrel/internal/cli.version=$(VERSION)
+VERSION      ?= $(shell git describe --tags --always 2>/dev/null || echo "dev")
+LDFLAGS      := -X github.com/SemRels/semrel/internal/version.Version=$(VERSION)
 GOFLAGS      := -trimpath
 
 .PHONY: all build test coverage lint reuse clean tidy dry-run smoke-test local-demo

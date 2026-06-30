@@ -190,6 +190,140 @@ func namespacedRegistryMetadataJSON(serverURL, checksum string) string {
 	)
 }
 
+func TestRunPluginInstallTracksDownloadCount(t *testing.T) {
+	withColorsDisabled(t)
+
+	binary := []byte("plugin-binary-content")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+
+	var trackHits int
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(cliRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/provider-github.exe":
+			_, _ = w.Write(binary)
+		case "/api/v1/plugins/provider-github/versions/1.0.0/downloads":
+			trackHits++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+
+	installDir := t.TempDir()
+	_, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "provider-github@1.0.0", installDir)
+	})
+	if err != nil {
+		t.Fatalf("runPluginInstall() error = %v", err)
+	}
+
+	// Tracking is synchronous — no sleep required.
+	if trackHits != 1 {
+		t.Errorf("download tracking endpoint called %d times, want 1", trackHits)
+	}
+}
+
+func TestRunPluginInstallTracksNamespacedDownload(t *testing.T) {
+	withColorsDisabled(t)
+
+	binary := []byte("plugin-binary-namespaced")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+
+	var trackHits int
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(namespacedRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/github.exe":
+			_, _ = w.Write(binary)
+		case "/api/v1/plugins/@semrel/github/versions/1.0.0/downloads":
+			trackHits++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+
+	installDir := t.TempDir()
+	_, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "@semrel/github@1.0.0", installDir)
+	})
+	if err != nil {
+		t.Fatalf("runPluginInstall(@semrel/github) error = %v", err)
+	}
+
+	if trackHits != 1 {
+		t.Errorf("download tracking endpoint called %d times, want 1 (namespaced plugin)", trackHits)
+	}
+}
+
+func TestRunPluginInstallDoesNotDoubleTrack(t *testing.T) {
+	withColorsDisabled(t)
+
+	binary := []byte("plugin-binary-cached")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+
+	var trackHits int
+	cacheDir := t.TempDir()
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(cliRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/provider-github.exe":
+			_, _ = w.Write(binary)
+		case "/api/v1/plugins/provider-github/versions/1.0.0/downloads":
+			trackHits++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, cacheDir)
+
+	// First install — download + track (1 hit).
+	installDir := t.TempDir()
+	_, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "provider-github@1.0.0", installDir)
+	})
+	if err != nil {
+		t.Fatalf("first runPluginInstall() error = %v", err)
+	}
+	if trackHits != 1 {
+		t.Fatalf("after first install: tracking hits = %d, want 1", trackHits)
+	}
+
+	// Second install — binary cached, reinstall is a deliberate action → tracks again.
+	installDir2 := t.TempDir()
+	_, _, err = captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "provider-github@1.0.0", installDir2)
+	})
+	if err != nil {
+		t.Fatalf("second runPluginInstall() error = %v", err)
+	}
+	if trackHits != 2 {
+		t.Errorf("after second install: tracking hits = %d, want 2", trackHits)
+	}
+}
+
 func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
 	withColorsDisabled(t)
 	binary := []byte("plugin-binary")
