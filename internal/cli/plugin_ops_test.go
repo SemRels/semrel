@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SemRels/semrel/internal/registry"
 )
@@ -188,6 +189,53 @@ func namespacedRegistryMetadataJSON(serverURL, checksum string) string {
 		serverURL,
 		checksum, checksum, checksum, checksum, checksum,
 	)
+}
+
+// TestRunPluginInstallOfflineDoesNotHang verifies that when the tracking
+// endpoint is unreachable (offline / air-gapped), plugin install completes
+// quickly without a long hang.
+func TestRunPluginInstallOfflineDoesNotHang(t *testing.T) {
+	withColorsDisabled(t)
+
+	binary := []byte("plugin-binary-offline")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+
+	// Registry serves the plugin but the tracking endpoint is deliberately absent
+	// (returns 404), simulating an offline registry from the tracking perspective.
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(cliRegistryMetadataJSON(serverURL, checksum)))
+		case "/downloads/provider-github.exe":
+			_, _ = w.Write(binary)
+		default:
+			// Tracking endpoint and everything else → 404 (simulates unreachable)
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, t.TempDir())
+
+	installDir := t.TempDir()
+	start := time.Now()
+	_, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "provider-github@1.0.0", installDir)
+	})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("runPluginInstall() error = %v", err)
+	}
+
+	// Install must complete within 2 seconds even when tracking is unreachable.
+	// (TrackDownload timeout is 500 ms; 2 s gives generous headroom.)
+	if elapsed > 2*time.Second {
+		t.Errorf("install took %v — tracking must not block more than ~500 ms when offline", elapsed)
+	}
 }
 
 func TestRunPluginInstallTracksDownloadCount(t *testing.T) {

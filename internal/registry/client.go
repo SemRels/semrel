@@ -147,7 +147,9 @@ func (c *RegistryClient) GetPlugin(ctx context.Context, name, version, goos, goa
 }
 
 // TrackDownload fires a download event to the registry API.
-// Tracking failures are intentionally silent.
+// Tracking failures are intentionally silent — this is best-effort telemetry.
+// The timeout is deliberately short (500 ms) so offline or air-gapped users
+// experience no noticeable delay.
 func (c *RegistryClient) TrackDownload(ctx context.Context, namespace, name, version, goos, goarch string) {
 	var path string
 	if namespace != "" {
@@ -159,7 +161,7 @@ func (c *RegistryClient) TrackDownload(ctx context.Context, namespace, name, ver
 	}
 	trackURL := c.baseURL + path
 
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, trackURL, nil)
@@ -168,7 +170,8 @@ func (c *RegistryClient) TrackDownload(ctx context.Context, namespace, name, ver
 	}
 	req.Header.Set("User-Agent", c.userAgent())
 
-	resp, err := c.httpClient.Do(req)
+	trackClient := &http.Client{Timeout: 500 * time.Millisecond}
+	resp, err := trackClient.Do(req)
 	if err != nil {
 		return
 	}

@@ -1,0 +1,19 @@
+{
+  "semrelLockVersion": 1,
+  "updatedAt": "2026-06-30T10:36:07Z",
+  "plugins": [
+    {
+      "binaryName": "semrel-plugin-go",
+      "ref": "@semrel/go",
+      "version": "0.3.0",
+      "checksums": {
+        "darwin_amd64": "33f5e8e6c8ca834046b952255f794f7d784e22e129831f175355758827e200cd",
+        "darwin_arm64": "8bb8a40117dea462665edd2268f44fdbacb8371907917f5c987500a2e395f9c5",
+        "linux_amd64": "fbd1aa2c26ec6d226718fa271a67cefd13484790d7c1be9f500e8d880ac61f5c",
+        "linux_arm64": "7f6e8a028bdee6516c0ca75b920bb265b22d956428f95c388cb95530d3c53b87",
+        "windows_amd64": "db62caffd2b552beddc97ff70b2798eb4ad33d90bb2c738c2facb5370182a134",
+        "windows_arm64": "6fd9c8a3d356e74aa5fa5e598e59da19d4fe6a592ec6681d7339c69a4e480e83"
+      }
+    }
+  ]
+}
