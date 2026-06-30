@@ -60,11 +60,6 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 	if err := c.downloadWithRetry(ctx, downloadURL, targetPath, checksum); err != nil {
 		return "", err
 	}
-
-	// Report the download to the registry (fire-and-forget, non-blocking).
-	// Use a background context so a cancelled caller ctx doesn't suppress tracking.
-	go c.TrackDownload(context.Background(), pluginMeta.Namespace, pluginMeta.Name, version, goos, goarch)
-
 	return targetPath, nil
 }
 

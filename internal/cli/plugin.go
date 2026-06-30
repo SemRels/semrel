@@ -286,7 +286,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 			return
 		}
 		client.TrackDownload(
-			ctx,
+			context.Background(), // cobra ctx is cancelled on return — use background
 			strings.TrimPrefix(meta.Namespace, "@"),
 			meta.Name,
 			versionEntry.Version,
@@ -666,6 +666,22 @@ func runPluginRestore(ctx context.Context) error {
 			continue
 		}
 		fmt.Printf("✓  restored %s@%s → %s\n", entry.Ref, entry.Version, dest)
+
+		// Track the restore as a download (fire-and-forget, background context).
+		ref := entry.Ref
+		ver := entry.Version
+		go func() {
+			client, err := registry.NewRegistryClientFromEnv()
+			if err != nil {
+				return
+			}
+			ns, name := "", ref
+			if idx := strings.LastIndex(ref, "/"); idx > 0 {
+				ns = strings.TrimPrefix(ref[:idx], "@")
+				name = ref[idx+1:]
+			}
+			client.TrackDownload(context.Background(), ns, name, ver, runtime.GOOS, runtime.GOARCH)
+		}()
 	}
 
 	if len(failed) > 0 {
