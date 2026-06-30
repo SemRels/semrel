@@ -1,21 +1,19 @@
-# semrel — Example configuration
+# yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json
+# semrel configuration — https://semrel.io/guide/configuration/
+#
+# Run `semrel config init` to generate this file interactively.
+# Run `semrel config validate` to check for errors.
 
-# Branches that trigger a release and their channel mapping.
+# ─────────────────────────────────────────────────────────────
+#  MVP — minimal config for a GitHub project on GitHub Actions
+# ─────────────────────────────────────────────────────────────
+schemaVersion: 1
+
 branches:
-  - name: main          # stable releases
-  - name: next          # pre-release channel "next"  (e.g. 1.2.0-next.1)
-    prerelease: next
-  - name: beta          # pre-release channel "beta"
-    prerelease: beta
-  - name: alpha         # pre-release channel "alpha"
-    prerelease: alpha
+  - name: main              # stable releases
 
-# Tag prefix applied to all version tags (e.g. "v" → v1.2.3).
 tagPrefix: "v"
 
-# Commit type → SemVer bump level mapping.
-# Types not listed here are ignored for versioning (but may appear in changelog).
-# An optional 'scope' narrows the rule to commits that match both type AND scope.
 rules:
   - type: feat
     bump: minor
@@ -25,23 +23,77 @@ rules:
     bump: patch
   - type: revert
     bump: patch
-  # scope-based example: deps(major): … → major, deps(minor): … → minor
-  # - type: deps
-  #   scope: major
-  #   bump: major
-  # - type: deps
-  #   scope: minor
-  #   bump: minor
-  # - type: deps
-  #   scope: patch
-  #   bump: patch
-  # breaking change (footer BREAKING CHANGE: or type!) always triggers major
+  # Breaking changes (feat! or BREAKING CHANGE: footer) always → major
 
-# Release plugins executed in order.
 plugins:
-  - uses: git           # create annotated tag and push
-  - uses: changelog     # generate/update CHANGELOG.md
-  - uses: github        # create GitHub Release with release notes
-  # - uses: npm
-  # - uses: docker
-  # - uses: helm
+  - uses: condition-github-actions  # only release on GitHub Actions, not local
+    phase: condition
+  - uses: "@semrel/github"          # create GitHub Release + push tag
+    phase: release
+  - uses: generator-changelog-md    # generate/update CHANGELOG.md
+
+# ─────────────────────────────────────────────────────────────
+#  Optional — uncomment what you need
+# ─────────────────────────────────────────────────────────────
+
+# Pre-release channels (branches trigger versioned pre-releases)
+# branches:
+#   - name: main
+#   - name: next        # → v1.2.3-next.1
+#     prerelease: next
+#   - name: beta        # → v1.2.3-beta.1
+#     prerelease: beta
+
+# Scope-based bump rules (e.g. for Renovate)
+# rules:
+#   - type: deps
+#     scope: major
+#     bump: major
+#   - type: deps
+#     scope: minor
+#     bump: minor
+#   - type: deps
+#     scope: patch
+#     bump: patch
+
+# Other providers
+# - uses: "@semrel/gitlab"   phase: release
+# - uses: "@semrel/gitea"    phase: release
+# - uses: "@semrel/git"      phase: release   # bare git tag + push
+
+# Version file updaters
+# - uses: updater-npm        # updates package.json
+# - uses: updater-go         # updates internal/version/version.go
+# - uses: updater-cargo      # updates Cargo.toml
+# - uses: updater-docker     # updates Dockerfile ARG VERSION
+# - uses: updater-helm       # updates Chart.yaml appVersion
+# - uses: updater-maven      # updates pom.xml
+# - uses: updater-gradle     # updates gradle.properties
+# - uses: updater-python     # updates pyproject.toml / setup.py
+# - uses: updater-nuget      # updates .csproj
+# - uses: updater-terraform  # updates variables.tf
+
+# Notification hooks
+# - uses: hook-slack         phase: release
+# - uses: hook-teams         phase: release
+# - uses: hook-matrix        phase: release
+# - uses: hook-email         phase: release
+# - uses: hook-jira          phase: release
+
+# Monorepo workspace
+# workspace:
+#   strategy: independent   # or: lockstep
+#   packages:
+#     - path: packages/api
+#       tagPrefix: api@v
+#     - path: packages/cli
+#       tagPrefix: cli@v
+#       dependsOn: [packages/api]
+
+# Version ceiling (useful while in 0.x.x pre-release)
+# version_ceiling: "1.0.0"
+# ceiling_strategy: clamp    # clamp (default), skip, or error
+
+# Changelog commit behaviour
+# commit_changelog: true          # default: commit CHANGELOG.md before tagging
+# tag_exists_strategy: update-changelog  # default

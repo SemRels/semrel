@@ -122,12 +122,24 @@ func runConfigInit(configFile string, noInteractive bool, force bool) error {
 	return nil
 }
 
-// defaultConfig returns a sensible starting config.
+// defaultConfig returns a sensible MVP starting config that works out-of-the-box
+// for GitHub-hosted projects running on GitHub Actions.
 func defaultConfig() *config.Config {
 	return &config.Config{
-		Branches:  []config.BranchConfig{{Name: "main"}},
-		TagPrefix: "v",
-		Plugins:   []config.PluginConfig{},
+		SchemaVersion: 1,
+		Branches:      []config.BranchConfig{{Name: "main"}},
+		TagPrefix:     "v",
+		Rules: []config.ReleaseRule{
+			{Type: "feat", Bump: "minor"},
+			{Type: "fix", Bump: "patch"},
+			{Type: "perf", Bump: "patch"},
+			{Type: "revert", Bump: "patch"},
+		},
+		Plugins: []config.PluginConfig{
+			{Uses: "condition-github-actions", Phase: "condition"},
+			{Uses: "@semrel/github", Phase: "release"},
+			{Uses: "generator-changelog-md"},
+		},
 	}
 }
 
@@ -151,6 +163,22 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		return v
 	}
 
+	promptBool := func(label string, def bool) bool {
+		defStr := "Y/n"
+		if !def {
+			defStr = "y/N"
+		}
+		fmt.Fprintf(os.Stderr, "? %s [%s]: ", label, defStr)
+		if !scanner.Scan() {
+			return def
+		}
+		v := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		if v == "" {
+			return def
+		}
+		return v == "y" || v == "yes"
+	}
+
 	// Release branch.
 	branchesInput := prompt("Release branch(es) (comma-separated)", "main")
 	var branches []config.BranchConfig
@@ -165,8 +193,38 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 	cfg.Branches = branches
 
+	// Pre-release channel (optional).
+	if promptBool("Add pre-release channel (e.g. next → v1.2.3-next.1)", false) {
+		channel := prompt("Pre-release channel name", "next")
+		cfg.Branches = append(cfg.Branches, config.BranchConfig{Name: channel, Prerelease: channel})
+	}
+
 	// Tag prefix.
 	cfg.TagPrefix = prompt("Tag prefix", "v")
+
+	// Rules — use semrel defaults; they can be customised later.
+	cfg.Rules = []config.ReleaseRule{
+		{Type: "feat", Bump: "minor"},
+		{Type: "fix", Bump: "patch"},
+		{Type: "perf", Bump: "patch"},
+		{Type: "revert", Bump: "patch"},
+	}
+
+	// CI condition plugin.
+	fmt.Fprintf(os.Stderr, "? CI environment [github-actions/gitlab-ci/gitea-actions/generic/skip]: ")
+	if scanner.Scan() {
+		ci := strings.TrimSpace(strings.ToLower(scanner.Text()))
+		switch {
+		case strings.Contains(ci, "github"):
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-github-actions", Phase: "condition"})
+		case strings.Contains(ci, "gitlab"):
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-gitlab-ci", Phase: "condition"})
+		case strings.Contains(ci, "gitea"):
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-gitea-actions", Phase: "condition"})
+		case strings.Contains(ci, "generic") || strings.Contains(ci, "other"):
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-generic", Phase: "condition"})
+		}
+	}
 
 	// Provider plugin.
 	fmt.Fprintf(os.Stderr, "? Git forge / provider plugin [github/gitlab/gitea/git/skip]: ")
@@ -174,36 +232,25 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		provider := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch provider {
 		case "github", "provider-github":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "@semrel/github",
-				Phase: "release",
-			})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/github", Phase: "release"})
 		case "gitlab", "provider-gitlab":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "@semrel/gitlab",
-				Phase: "release",
-			})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/gitlab", Phase: "release"})
 		case "gitea", "provider-gitea":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "@semrel/gitea",
-				Phase: "release",
-			})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/gitea", Phase: "release"})
 		case "git", "provider-git":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses:  "@semrel/git",
-				Phase: "release",
-			})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/git", Phase: "release"})
 		}
 	}
 
 	// Changelog generator.
-	fmt.Fprintf(os.Stderr, "? Add changelog generator? [changelog-md/skip]: ")
+	fmt.Fprintf(os.Stderr, "? Add changelog generator? [changelog-md/changelog-html/skip]: ")
 	if scanner.Scan() {
 		gen := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		if gen == "changelog-md" || gen == "generator-changelog-md" {
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{
-				Uses: "generator-changelog-md",
-			})
+		switch {
+		case strings.Contains(gen, "html"):
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "generator-changelog-html"})
+		case strings.Contains(gen, "md") || gen == "changelog":
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "generator-changelog-md"})
 		}
 	}
 
@@ -229,19 +276,71 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 // marshalConfigYAML serialises the config to YAML with explanatory comments.
 func marshalConfigYAML(cfg *config.Config) ([]byte, error) {
 	var sb strings.Builder
-	// yaml-language-server directive enables schema validation and auto-complete
-	// in VS Code (YAML extension), JetBrains IDEs, and any LSP-aware editor.
 	sb.WriteString("# yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json\n")
-	sb.WriteString("# semrel configuration — https://semrel.io\n")
-	sb.WriteString("#\n")
-	sb.WriteString("# Full reference: https://semrel.io/guide/configuration/\n\n")
+	sb.WriteString("# semrel configuration — https://semrel.io/guide/configuration/\n\n")
+	sb.WriteString("schemaVersion: 1\n\n")
 
-	// Marshal the struct to YAML without comments first, then prepend the header.
-	raw, err := yaml.Marshal(cfg)
-	if err != nil {
-		return nil, err
+	// Branches section with inline comments
+	sb.WriteString("# Branches that trigger a release.\n")
+	sb.WriteString("branches:\n")
+	for _, b := range cfg.Branches {
+		if b.Prerelease != "" {
+			sb.WriteString(fmt.Sprintf("  - name: %s\n    prerelease: %s\n", b.Name, b.Prerelease))
+		} else {
+			sb.WriteString(fmt.Sprintf("  - name: %s\n", b.Name))
+		}
 	}
-	sb.Write(raw)
+
+	sb.WriteString(fmt.Sprintf("\ntagPrefix: %q\n", cfg.TagPrefix))
+
+	// Rules
+	sb.WriteString("\n# Commit type → SemVer bump. Breaking changes (feat! / BREAKING CHANGE:) always → major.\n")
+	sb.WriteString("rules:\n")
+	if len(cfg.Rules) > 0 {
+		for _, r := range cfg.Rules {
+			if r.Scope != nil {
+				switch v := r.Scope.(type) {
+				case string:
+					sb.WriteString(fmt.Sprintf("  - type: %s\n    scope: %s\n    bump: %s\n", r.Type, v, r.Bump))
+				case bool:
+					sb.WriteString(fmt.Sprintf("  - type: %s\n    scope: false\n    bump: %s\n", r.Type, r.Bump))
+				}
+			} else {
+				sb.WriteString(fmt.Sprintf("  - type: %s\n    bump: %s\n", r.Type, r.Bump))
+			}
+		}
+	} else {
+		sb.WriteString("  - type: feat\n    bump: minor\n")
+		sb.WriteString("  - type: fix\n    bump: patch\n")
+		sb.WriteString("  - type: perf\n    bump: patch\n")
+		sb.WriteString("  - type: revert\n    bump: patch\n")
+	}
+
+	// Plugins
+	if len(cfg.Plugins) > 0 {
+		sb.WriteString("\n# Plugins run in order. condition → pre-tag → release (default).\n")
+		sb.WriteString("plugins:\n")
+		for _, p := range cfg.Plugins {
+			uses := p.Uses
+			if uses == "" {
+				uses = p.Path
+			}
+			// Quote values that start with @ (YAML special character)
+			if strings.HasPrefix(uses, "@") {
+				uses = fmt.Sprintf("%q", uses)
+			}
+			if p.Phase != "" && p.Phase != "release" {
+				sb.WriteString(fmt.Sprintf("  - uses: %s\n    phase: %s\n", uses, p.Phase))
+			} else {
+				sb.WriteString(fmt.Sprintf("  - uses: %s\n", uses))
+			}
+		}
+	}
+
+	sb.WriteString("\n# Uncomment to enable additional features:\n")
+	sb.WriteString("# commit_changelog: true   # commit CHANGELOG.md before tagging\n")
+	sb.WriteString("# version_ceiling: \"1.0.0\" # cap releases below this version\n")
+
 	return []byte(sb.String()), nil
 }
 
