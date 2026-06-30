@@ -278,6 +278,48 @@ func assertRegistryErrorCode(t *testing.T, err error, want string) {
 	}
 }
 
+func TestDownloadPluginTracksDownload(t *testing.T) {
+	t.Parallel()
+
+	binary := []byte("test-plugin-binary")
+	checksum := sha256Hex(binary)
+	trackCh := make(chan string, 1)
+	var serverURL string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/plugins.json":
+			_, _ = w.Write([]byte(testMetadataJSON(serverURL, checksum)))
+		case "/downloads/provider-github.exe":
+			_, _ = w.Write(binary)
+		case "/api/v1/plugins/provider-github/versions/1.0.0/downloads":
+			// Tracking endpoint: record that it was called.
+			trackCh <- r.URL.RawQuery
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	serverURL = server.URL
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	_, err := client.DownloadPlugin(context.Background(), "provider-github", "1.0.0", "windows", "amd64")
+	if err != nil {
+		t.Fatalf("DownloadPlugin() error = %v", err)
+	}
+
+	// TrackDownload is fire-and-forget — wait up to 2s for it to arrive.
+	select {
+	case query := <-trackCh:
+		if !strings.Contains(query, "platform=windows_amd64") {
+			t.Errorf("expected platform=windows_amd64 in tracking query, got %q", query)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("TrackDownload was not called after successful download")
+	}
+}
+
 const checksumPlaceholder = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func testMetadataJSON(serverURL, checksum string) string {
