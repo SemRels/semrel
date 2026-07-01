@@ -194,11 +194,6 @@ jobs:
           SEMREL_PLUGIN_OWNER: SemRels
           SEMREL_PLUGIN_REPO: semrel
           SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.sig,dist/checksums.txt.pem"
-          # --skip=validate: CHANGELOG.md is updated but not committed; that is
-          # intentional — we cannot push commits to the protected main branch.
-          args: release --clean --skip=validate
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         run: |
