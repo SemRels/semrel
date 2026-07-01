@@ -72,6 +72,14 @@ jobs:
         # directly as a standalone subprocess below, after release assets
         # exist — not orchestrated through `semrel release` itself (see the
         # "Publish GitHub release" step for why).
+        #
+        # GOPROXY=direct is required here: the default proxy.golang.org
+        # caches "@main" resolutions for several minutes, which can serve a
+        # stale commit right after a fix lands on provider-github's main
+        # branch. Fetching directly from GitHub avoids that staleness.
+        env:
+          GOPROXY: direct
+          GOSUMDB: "off"
         run: |
           go install github.com/SemRels/provider-github/cmd/plugin@main
           mv "$(go env GOPATH)/bin/plugin" /tmp/provider-github-plugin
