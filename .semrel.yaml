@@ -9,8 +9,13 @@
 # Plugins are sourced from their respective repos until they have official releases.
 # The semrel-release workflow builds them from source before running semrel.
 #
-# provider-github is intentionally omitted: GoReleaser handles the GitHub release
-# and attaches binary assets, which provider-github cannot do.
+# provider-github is intentionally NOT listed here as a `phase: provider` plugin:
+# it needs the built release archives/checksums to already exist as
+# SEMREL_PLUGIN_ASSETS, but those can only be built *after* semrel has
+# determined the version/tag. The semrel-release workflow instead builds the
+# release assets after `semrel release` runs, then invokes the
+# provider-github plugin binary directly (same env-var contract, just called
+# standalone) to create the GitHub release and upload the assets.
 
 
 schemaVersion: 1

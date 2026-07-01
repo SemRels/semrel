@@ -2,8 +2,9 @@
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
 # semrel-release — uses semrel to version semrel itself (dogfooding).
-# Flow: push to main → semrel creates tag → GoReleaser publishes release → Docker build+push
-#       → CHANGELOG.md committed back to main after GoReleaser
+# Flow: push to main → semrel creates tag → build release binaries + checksums,
+#       sign with cosign → publish GitHub release via semrel's own
+#       provider-github plugin → Docker build+push
 #
 # NOTE: All steps are inlined in one workflow because GITHUB_TOKEN-triggered events
 # (tag pushes, release creation) cannot trigger other workflows (GitHub Actions security
@@ -25,7 +26,7 @@ permissions: read-all
 
 jobs:
   release:
-    name: Run semrel + GoReleaser
+    name: Run semrel release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,6 +67,15 @@ jobs:
           echo "Installed plugins:"
           ls -la "$PLUGIN_DIR"
 
+      - name: Build provider-github plugin binary
+        # Built separately (not into ~/.semrel/plugins) because it is invoked
+        # directly as a standalone subprocess below, after release assets
+        # exist — not orchestrated through `semrel release` itself (see the
+        # "Publish GitHub release" step for why).
+        run: |
+          go install github.com/SemRels/provider-github/cmd/plugin@main
+          mv "$(go env GOPATH)/bin/plugin" /tmp/provider-github-plugin
+
       - name: Configure git identity
         run: |
           git config user.name  "semrel-bot"
@@ -87,7 +97,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Save CHANGELOG and clean up before GoReleaser
+      - name: Save CHANGELOG and clean up before building release assets
         if: steps.semrel.outputs.released == 'true'
         run: |
           # Preserve the updated CHANGELOG.md written by semrel (commit_changelog=false).
@@ -97,22 +107,93 @@ jobs:
       - name: Sync working tree to released tag
         if: steps.semrel.outputs.released == 'true'
         run: |
-          # GoReleaser requires the tag to point to the current HEAD.
+          # The build step below embeds the tag/version into the binaries via
+          # ldflags, so the working tree must point at the exact released commit.
           # The tag is already on HEAD (no pre-tag commit), so this is effectively
           # a clean reset that also discards the uncommitted CHANGELOG.md change.
           git reset --hard "${{ steps.semrel.outputs.tag }}"
-          # Restore the updated CHANGELOG so GoReleaser archives the new content.
+          # Restore the updated CHANGELOG so the release archives contain the new content.
           cp /tmp/CHANGELOG_updated.md CHANGELOG.md
+
+      - name: Build cross-platform release binaries
+        # Replaces GoReleaser: semrel's own build+archive+checksum step, mirroring
+        # the pattern already used by every plugin repo's release.yml. Combined
+        # with the provider-github plugin's asset-upload support (added after
+        # this workflow was first written), semrel no longer needs an external
+        # release tool for its own dogfooded release pipeline.
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          version="${{ steps.semrel.outputs.version_short }}"
+          commit="${{ github.sha }}"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w -X github.com/SemRels/semrel/internal/version.Version=${version} -X main.commit=${commit} -X main.date=${build_date}"
+
+          for goos in linux darwin windows; do
+            for goarch in amd64 arm64; do
+              ext=""
+              [ "$goos" = "windows" ] && ext=".exe"
+              stage="$(mktemp -d)"
+              echo "Building ${goos}/${goarch}..."
+              CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+                go build -trimpath -ldflags="${ldflags}" -o "${stage}/semrel${ext}" ./cmd/semrel
+              cp LICENSE README.md CHANGELOG.md "$stage/"
+              name="semrel_${version}_${goos}_${goarch}"
+              if [ "$goos" = "windows" ]; then
+                (cd "$stage" && zip -q -r "${GITHUB_WORKSPACE}/dist/${name}.zip" .)
+              else
+                tar -C "$stage" -czf "dist/${name}.tar.gz" .
+              fi
+              rm -rf "$stage"
+            done
+          done
+          ls -la dist
+
+      - name: Generate checksums
+        if: steps.semrel.outputs.released == 'true'
+        working-directory: dist
+        run: sha256sum -- *.tar.gz *.zip > checksums.txt
 
       - name: Install cosign
         if: steps.semrel.outputs.released == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      - name: Run GoReleaser
+      - name: Sign checksums with cosign
+        # Keyless (OIDC) signing, same scheme previously configured in GoReleaser's
+        # `signs:` block. Verify with:
+        #   cosign verify-blob --certificate-identity-regexp \
+        #     'https://github.com/SemRels/semrel/.github/workflows/semrel-release.yaml.*' \
+        #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        #     --certificate checksums.txt.pem --signature checksums.txt.sig checksums.txt
         if: steps.semrel.outputs.released == 'true'
-        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
-        with:
-          version: latest
+        working-directory: dist
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign-blob --yes \
+            --output-signature=checksums.txt.sig \
+            --output-certificate=checksums.txt.pem \
+            checksums.txt
+
+      - name: Publish GitHub release
+        # Invoked directly as a plugin subprocess (not via `semrel release`
+        # itself) because the release assets above must exist first, and
+        # `semrel release` is what determines/creates the tag and version in
+        # the first place. Provider plugins follow a simple env-var contract,
+        # so it is safe to run standalone.
+        if: steps.semrel.outputs.released == 'true'
+        run: /tmp/provider-github-plugin
+        env:
+          SEMREL_VERSION: ${{ steps.semrel.outputs.version_short }}
+          SEMREL_NEXT_VERSION: ${{ steps.semrel.outputs.tag }}
+          SEMREL_TAG_NAME: ${{ steps.semrel.outputs.tag }}
+          SEMREL_CHANGELOG: ${{ steps.semrel.outputs.changelog }}
+          SEMREL_DRY_RUN: "false"
+          SEMREL_PLUGIN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMREL_PLUGIN_OWNER: SemRels
+          SEMREL_PLUGIN_REPO: semrel
+          SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.sig,dist/checksums.txt.pem"
           # --skip=validate: CHANGELOG.md is updated but not committed; that is
           # intentional — we cannot push commits to the protected main branch.
           args: release --clean --skip=validate
