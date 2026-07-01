@@ -397,7 +397,7 @@ func TestValidate_ScopeFalseAndScopeStringAreDistinct(t *testing.T) {
 		Rules: []ReleaseRule{
 			{Type: "chore", Scope: false, Bump: "patch"},  // scopeless commits
 			{Type: "chore", Scope: "deps", Bump: "minor"}, // scoped commits
-			{Type: "chore", Bump: "patch"},                 // any commit (inc. scoped)
+			{Type: "chore", Bump: "patch"},                // any commit (inc. scoped)
 		},
 	}
 	if err := cfg.Validate(); err != nil {
