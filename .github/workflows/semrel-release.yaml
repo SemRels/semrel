@@ -173,6 +173,7 @@ jobs:
         run: |
           cosign sign-blob --yes \
             --new-bundle-format=false \
+            --use-signing-config=false \
             --output-signature=checksums.txt.sig \
             --output-certificate=checksums.txt.pem \
             checksums.txt
