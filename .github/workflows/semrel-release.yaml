@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          version="${{ steps.semrel.outputs.version_short }}"
+          version="${{ steps.semrel.outputs.version }}"
           commit="${{ github.sha }}"
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           ldflags="-s -w -X github.com/SemRels/semrel/internal/version.Version=${version} -X main.commit=${commit} -X main.date=${build_date}"
@@ -187,7 +187,7 @@ jobs:
         if: steps.semrel.outputs.released == 'true'
         run: /tmp/provider-github-plugin
         env:
-          SEMREL_VERSION: ${{ steps.semrel.outputs.version_short }}
+          SEMREL_VERSION: ${{ steps.semrel.outputs.version }}
           SEMREL_NEXT_VERSION: ${{ steps.semrel.outputs.tag }}
           SEMREL_TAG_NAME: ${{ steps.semrel.outputs.tag }}
           SEMREL_CHANGELOG: ${{ steps.semrel.outputs.changelog }}
