@@ -1,12 +1,13 @@
 # semrel
 
+[![Latest Release](https://img.shields.io/github/v/release/SemRels/semrel?label=version&color=blue)](https://github.com/SemRels/semrel/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/SemRels/semrel)](https://goreportcard.com/report/github.com/SemRels/semrel)
 [![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 [![JSON Schema](https://img.shields.io/badge/schema-registry.semrel.io%2Fschemas%2Fcore%2Fv1.json-blue)](https://registry.semrel.io/schemas/core/v1.json)
 
-> **Status: v0.15.0** — core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
+> **Status:** core pipeline, plugin system, and CI/CD are fully functional. Self-versioned via semrel — see the badge above for the current release. Not yet recommended for production use; see [ROADMAP.md](ROADMAP.md) for the path to v1.0.0.
 
 A Go-based semantic versioning and release system with a plugin architecture that automates the full release lifecycle. Designed for monorepos and multi-language projects.
 
