@@ -52,7 +52,10 @@ When a plugin is invoked, semrel:
 | `SEMREL_CHANGELOG` | Generated release changelog |
 | `SEMREL_DRY_RUN` | `true` or `false` |
 | `SEMREL_COMMITS` | JSON array of raw commit messages since last release (e.g. `["feat: foo","fix: bar"]`) |
+| `SEMREL_CONTRIBUTORS` | JSON array of per-release contributor metadata sorted by commit count descending (e.g. `[{"name":"Jane Doe","email":"jane@example.com","commits":3,"firstContribution":true}]`) |
 | `SEMREL_REPOSITORY_URL` | Repository base URL (e.g. `https://github.com/org/repo`) — used for PR/commit linkification |
+
+`SEMREL_CONTRIBUTORS` is populated for plugins that run after semrel has analysed the release commit range (for example generator, pre-tag, provider, hook, publisher, and updater plugins). Condition and analyzer plugins should not rely on it.
 
 ### Plugin config from `args:`
 

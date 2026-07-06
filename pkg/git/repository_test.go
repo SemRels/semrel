@@ -103,6 +103,50 @@ func TestRepositoryOperations(t *testing.T) {
 	}
 }
 
+func TestCommitsDetailedSinceAndCommitCountsByAuthorEmail(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFileAsAuthor(t, repoDir, "README.md", "base\n", "feat: bootstrap", "Existing Author", "existing@example.com")
+	runGit(t, repoDir, "tag", "v1.0.0")
+	commitFileAsAuthor(t, repoDir, "feature.txt", "one\n", "feat: add feature", "New Contributor", "New@Example.com")
+	commitFileAsAuthor(t, repoDir, "feature.txt", "two\n", "fix: tighten feature", "New Contributor", "new@example.com")
+	commitFileAsAuthor(t, repoDir, "README.md", "update\n", "fix: patch docs", "Existing Author", "Existing@Example.com")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	commits, err := repo.CommitsDetailedSince(ctx, "v1.0.0")
+	if err != nil {
+		t.Fatalf("CommitsDetailedSince() error = %v", err)
+	}
+	if len(commits) != 3 {
+		t.Fatalf("CommitsDetailedSince() len = %d, want 3", len(commits))
+	}
+	if commits[0].AuthorEmail != "Existing@Example.com" {
+		t.Fatalf("CommitsDetailedSince()[0].AuthorEmail = %q, want %q", commits[0].AuthorEmail, "Existing@Example.com")
+	}
+	if commits[1].AuthorName != "New Contributor" {
+		t.Fatalf("CommitsDetailedSince()[1].AuthorName = %q, want %q", commits[1].AuthorName, "New Contributor")
+	}
+	if !strings.Contains(commits[2].Message, "feat: add feature") {
+		t.Fatalf("CommitsDetailedSince()[2].Message = %q, want feature commit", commits[2].Message)
+	}
+
+	counts, err := repo.CommitCountsByAuthorEmail(ctx)
+	if err != nil {
+		t.Fatalf("CommitCountsByAuthorEmail() error = %v", err)
+	}
+	if counts["new@example.com"] != 2 {
+		t.Fatalf("CommitCountsByAuthorEmail()[new@example.com] = %d, want 2", counts["new@example.com"])
+	}
+	if counts["existing@example.com"] != 2 {
+		t.Fatalf("CommitCountsByAuthorEmail()[existing@example.com] = %d, want 2", counts["existing@example.com"])
+	}
+}
+
 func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 	repoDir := initGitRepository(t)
 	commitFile(t, repoDir, "README.md", "hello\n", "docs: first commit")
@@ -233,6 +277,26 @@ func commitFile(t *testing.T, dir, name, contents, message string) {
 	runGit(t, dir, "branch", "-M", "main")
 }
 
+func commitFileAsAuthor(t *testing.T, dir, name, contents, message, authorName, authorEmail string) {
+	t.Helper()
+
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGit(t, dir, "add", name)
+	runGitEnv(t, dir, map[string]string{
+		"GIT_AUTHOR_NAME":     authorName,
+		"GIT_AUTHOR_EMAIL":    authorEmail,
+		"GIT_COMMITTER_NAME":  authorName,
+		"GIT_COMMITTER_EMAIL": authorEmail,
+	}, "commit", "-m", message)
+	runGit(t, dir, "branch", "-M", "main")
+}
+
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 
@@ -240,6 +304,21 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func runGitEnv(t *testing.T, dir string, env map[string]string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s error: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return strings.TrimSpace(string(out))
 }

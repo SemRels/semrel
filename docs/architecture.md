@@ -153,6 +153,8 @@ semrel passes release context to plugin binaries through environment variables.
 | `SEMREL_CHANGELOG` | Generated release changelog |
 | `SEMREL_REPOSITORY` | Repository slug such as `owner/repo` |
 | `SEMREL_DRY_RUN` | `"true"` or `"false"` |
+| `SEMREL_COMMITS` | JSON array of raw commit messages in the current release window |
+| `SEMREL_CONTRIBUTORS` | JSON array of contributors for the current release window, including `name`, `email`, `commits`, and `firstContribution` |
 | `SEMREL_IS_PRERELEASE` | `"true"` or `"false"` |
 
 ### Plugin arguments

@@ -326,6 +326,7 @@ func TestSmokeTestAllPlugins(t *testing.T) {
 		"SEMREL_CHANGELOG=## v1.2.3\n\n- fix: test change",
 		"SEMREL_DRY_RUN=true",
 		`SEMREL_COMMITS=["fix: test commit"]`,
+		`SEMREL_CONTRIBUTORS=[{"name":"Jane Doe","email":"jane@example.com","commits":1,"firstContribution":true}]`,
 		"GITHUB_ACTIONS=true",
 		"GITHUB_TOKEN=fake-token",
 		"GITHUB_REF_NAME=main",

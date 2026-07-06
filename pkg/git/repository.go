@@ -19,6 +19,14 @@ type Repository struct {
 	Path string // path to the repository root
 }
 
+// Commit holds commit metadata used by release plugins.
+type Commit struct {
+	Hash        string
+	Message     string
+	AuthorName  string
+	AuthorEmail string
+}
+
 // OpenRepository opens a Git repository at the given path.
 // Issue: https://github.com/SemRels/semrel/issues/5
 func OpenRepository(path string) (*Repository, error) {
@@ -87,6 +95,69 @@ func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, er
 		}
 	}
 	return messages, nil
+}
+
+// CommitsDetailedSince returns commit metadata since the given ref (exclusive).
+// If ref is empty, returns all commits reachable from HEAD.
+func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string) ([]Commit, error) {
+	var args []string
+	if ref == "" {
+		args = []string{"-C", r.Path, "log", "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
+	} else {
+		args = []string{"-C", r.Path, "log", fmt.Sprintf("%s..HEAD", ref), "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+
+	raw := string(out)
+	records := strings.Split(raw, "\x00\x00")
+	commits := make([]Commit, 0, len(records))
+	for _, record := range records {
+		record = strings.TrimSuffix(record, "\x00")
+		record = strings.TrimSpace(record)
+		if record == "" {
+			continue
+		}
+		fields := strings.SplitN(record, "\x00", 4)
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("unexpected git log record format")
+		}
+		message := strings.TrimSpace(fields[3])
+		if message == "" {
+			continue
+		}
+		commits = append(commits, Commit{
+			Hash:        strings.TrimSpace(fields[0]),
+			AuthorName:  strings.TrimSpace(fields[1]),
+			AuthorEmail: strings.TrimSpace(fields[2]),
+			Message:     message,
+		})
+	}
+	return commits, nil
+}
+
+// CommitCountsByAuthorEmail returns commit counts across the full repository
+// history keyed by normalized (lowercase) author email.
+func (r *Repository) CommitCountsByAuthorEmail(ctx context.Context) (map[string]int, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "log", "--all", "--format=%ae%x00")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log --all: %w", err)
+	}
+
+	counts := map[string]int{}
+	for _, part := range strings.Split(string(out), "\x00") {
+		email := strings.ToLower(strings.TrimSpace(part))
+		if email == "" {
+			continue
+		}
+		counts[email]++
+	}
+	return counts, nil
 }
 
 // CurrentBranch returns the name of the currently checked-out branch.

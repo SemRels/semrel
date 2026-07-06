@@ -59,6 +59,7 @@ type ReleaseSummary struct {
 	TagPrefix      string   `json:"tag_prefix"`
 	CeilingApplied bool     `json:"ceiling_applied,omitempty"`
 	VersionCeiling string   `json:"version_ceiling,omitempty"`
+	contributors   []contributorMetadata
 }
 
 // printSummary writes the summary to stdout in the selected format.
@@ -391,10 +392,20 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("getting last tag: %w", err)
 	}
 
-	rawMessages, err := repo.CommitsSince(ctx, lastTag)
+	releaseCommits, err := repo.CommitsDetailedSince(ctx, lastTag)
 	if err != nil {
 		return fmt.Errorf("getting commits: %w", err)
 	}
+	rawMessages := make([]string, 0, len(releaseCommits))
+	for _, commit := range releaseCommits {
+		rawMessages = append(rawMessages, commit.Message)
+	}
+
+	contributorHistory, err := repo.CommitCountsByAuthorEmail(ctx)
+	if err != nil {
+		return fmt.Errorf("getting contributor history: %w", err)
+	}
+	contributors := buildContributorMetadata(releaseCommits, contributorHistory)
 
 	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, cfg.TagPrefix))
 	if err != nil {
@@ -612,6 +623,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				Branch:         branch,
 				TagPrefix:      cfg.TagPrefix,
 				Changelog:      changelogEntry,
+				CommitMessages: rawMessages,
+				contributors:   contributors,
 			})
 			if genErr != nil {
 				return fmt.Errorf("generator plugin %q: %w", label, genErr)
@@ -669,6 +682,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		TagPrefix:      cfg.TagPrefix,
 		CeilingApplied: ceilingApplied,
 		VersionCeiling: cfg.VersionCeiling,
+		contributors:   contributors,
 	}
 	recordReleaseAnalytics(summary)
 
@@ -892,28 +906,7 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		env := os.Environ()
-		// Release context — available to all plugin binaries as SEMREL_* env vars.
-		// Variable names match the documented plugin contract in docs/plugin-development.md.
-		dryRunStr := "false"
-		if dryRun {
-			dryRunStr = "true"
-		}
-		env = append(env,
-			"SEMREL_CURRENT_VERSION="+rel.CurrentVersion,
-			"SEMREL_VERSION="+rel.NextVersion,
-			"SEMREL_TAG_NAME="+rel.NextVersion,
-			"SEMREL_NEXT_VERSION="+rel.NextVersion,
-			"SEMREL_BUMP="+rel.Bump,
-			"SEMREL_TAG_PREFIX="+rel.TagPrefix,
-			"SEMREL_CHANGELOG="+rel.Changelog,
-			"SEMREL_BRANCH="+rel.Branch,
-			"SEMREL_DRY_RUN="+dryRunStr,
-		)
-		if len(rel.CommitMessages) > 0 {
-			if commitsJSON, err := json.Marshal(rel.CommitMessages); err == nil {
-				env = append(env, "SEMREL_COMMITS="+string(commitsJSON))
-			}
-		}
+		env = append(env, releaseContextEnv(rel, dryRun)...)
 		// Plugin-specific config from .semrel.yaml args.
 		// Only append non-empty values: an empty args entry must not shadow a
 		// SEMREL_PLUGIN_* variable that is already set in the process environment.
@@ -953,17 +946,7 @@ func runGeneratorPlugin(ctx context.Context, spec plugininstance.PluginSpec, rel
 	cmd.Stdout = &buf // capture stdout — this becomes the new SEMREL_CHANGELOG
 	cmd.Stderr = os.Stderr
 	env := os.Environ()
-	env = append(env,
-		"SEMREL_CURRENT_VERSION="+rel.CurrentVersion,
-		"SEMREL_VERSION="+rel.NextVersion,
-		"SEMREL_TAG_NAME="+rel.NextVersion,
-		"SEMREL_NEXT_VERSION="+rel.NextVersion,
-		"SEMREL_BUMP="+rel.Bump,
-		"SEMREL_TAG_PREFIX="+rel.TagPrefix,
-		"SEMREL_CHANGELOG="+rel.Changelog,
-		"SEMREL_BRANCH="+rel.Branch,
-		"SEMREL_DRY_RUN=false",
-	)
+	env = append(env, releaseContextEnv(rel, false)...)
 	for k, v := range spec.Config {
 		val := fmt.Sprintf("%v", v)
 		if val != "" {
@@ -975,6 +958,37 @@ func runGeneratorPlugin(ctx context.Context, spec plugininstance.PluginSpec, rel
 		return "", err
 	}
 	return strings.TrimSpace(buf.String()), nil
+}
+
+func releaseContextEnv(rel ReleaseSummary, dryRun bool) []string {
+	// Release context — available to plugin binaries as SEMREL_* env vars.
+	// Variable names match the documented plugin contract in docs/plugin-development.md.
+	dryRunStr := "false"
+	if dryRun {
+		dryRunStr = "true"
+	}
+	env := []string{
+		"SEMREL_CURRENT_VERSION=" + rel.CurrentVersion,
+		"SEMREL_VERSION=" + rel.NextVersion,
+		"SEMREL_TAG_NAME=" + rel.NextVersion,
+		"SEMREL_NEXT_VERSION=" + rel.NextVersion,
+		"SEMREL_BUMP=" + rel.Bump,
+		"SEMREL_TAG_PREFIX=" + rel.TagPrefix,
+		"SEMREL_CHANGELOG=" + rel.Changelog,
+		"SEMREL_BRANCH=" + rel.Branch,
+		"SEMREL_DRY_RUN=" + dryRunStr,
+	}
+	if len(rel.CommitMessages) > 0 {
+		if commitsJSON, err := json.Marshal(rel.CommitMessages); err == nil {
+			env = append(env, "SEMREL_COMMITS="+string(commitsJSON))
+		}
+	}
+	if len(rel.contributors) > 0 {
+		if contributorsJSON, err := json.Marshal(rel.contributors); err == nil {
+			env = append(env, "SEMREL_CONTRIBUTORS="+string(contributorsJSON))
+		}
+	}
+	return env
 }
 
 // autoInstallPlugin downloads a plugin from the registry and installs it into
