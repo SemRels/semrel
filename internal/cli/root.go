@@ -1151,7 +1151,7 @@ func legacyPluginBinaryName(uses string) string {
 		uses = uses[:idx]
 	}
 	lower := strings.ToLower(uses)
-	for _, prefix := range []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"} {
+	for _, prefix := range []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-", "packager-", "publisher-"} {
 		if strings.HasPrefix(lower, prefix) {
 			uses = uses[len(prefix):]
 			break

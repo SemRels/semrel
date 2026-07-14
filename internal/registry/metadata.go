@@ -56,7 +56,7 @@ type Compatibility struct {
 // ("github-actions", "github", "go"), so FindPlugin strips these prefixes as a
 // fallback when no exact match is found.
 var categoryPrefixes = []string{
-	"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-",
+	"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-", "packager-", "publisher-",
 }
 
 // FindPlugin returns the registry entry for the named plugin.

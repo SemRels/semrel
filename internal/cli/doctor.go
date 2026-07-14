@@ -431,7 +431,7 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	// so that suggestions are suppressed regardless of whether the user's config
 	// uses the short or prefixed plugin name.
 	configured := map[string]bool{}
-	categoryPrefixes := []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"}
+	categoryPrefixes := []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-", "packager-", "publisher-"}
 	registerName := func(raw string) {
 		name := strings.ToLower(strings.TrimSpace(raw))
 		if name == "" {
