@@ -51,6 +51,7 @@ $officialRepositories = @(
     'provider-github',
     'provider-gitlab',
     'publisher-crates',
+    'publisher-docker',
     'publisher-generic-http',
     'publisher-npm',
     'publisher-oci',
@@ -94,6 +95,7 @@ $dockerRepositories = @(
     'provider-github',
     'provider-gitlab',
     'publisher-crates',
+    'publisher-docker',
     'publisher-generic-http',
     'publisher-npm',
     'publisher-oci',
@@ -115,10 +117,10 @@ $dockerRepositories = @(
 $nonDockerRationale = @{
     'hook-teams' = 'No Dockerfile exists and its README does not document a container image; it is released as six standalone plugin binaries.'
 }
-Assert-True ($officialRepositories.Count -eq 42) "Official repository inventory must contain exactly 42 repositories."
-Assert-True ($dockerRepositories.Count -eq 41) "Docker repository inventory must contain exactly 41 repositories."
+Assert-True ($officialRepositories.Count -eq 43) "Official repository inventory must contain exactly 43 repositories."
+Assert-True ($dockerRepositories.Count -eq 42) "Docker repository inventory must contain exactly 42 repositories."
 Assert-True ($nonDockerRationale.Count -eq 1 -and $nonDockerRationale.ContainsKey('hook-teams')) "hook-teams must be the one explicitly classified non-Docker repository."
-Assert-True (($officialRepositories | Select-Object -Unique).Count -eq 42) "Official repository inventory contains duplicates."
+Assert-True (($officialRepositories | Select-Object -Unique).Count -eq 43) "Official repository inventory contains duplicates."
 Assert-True (($dockerRepositories | Where-Object { $_ -notin $officialRepositories }).Count -eq 0) "Docker inventory contains a non-official repository."
 
 $excluded = @('repos', 'tmp-repos', 'semrel-core', 'semrel-docs-work')
@@ -156,7 +158,7 @@ foreach ($repo in $repos) {
 }
 
 $actualPlugins = @($automated | Where-Object { $_.Repo -notin @('plugin-template', 'semrel') })
-Assert-True ($actualPlugins.Count -eq 42) "Expected all 42 official repositories to have automated release workflows; found $($actualPlugins.Count)."
+Assert-True ($actualPlugins.Count -eq 43) "Expected all 43 official repositories to have automated release workflows; found $($actualPlugins.Count)."
 foreach ($repoName in $officialRepositories) {
     Assert-True ($repoName -in $actualPlugins.Repo) "${repoName}: semrel-release.yaml is missing."
 }
@@ -192,13 +194,24 @@ foreach ($repo in $repos) {
         }
     }
 }
-Assert-True ($generated.Count -eq 42) "Expected 41 official Docker releases plus plugin-template; found $($generated.Count)."
+Assert-True ($generated.Count -eq 43) "Expected 42 official Docker releases plus plugin-template; found $($generated.Count)."
 foreach ($repoName in $dockerRepositories) {
     Assert-True ($repoName -in $generated.Repo) "${repoName}: full Docker release architecture is missing."
 }
 Assert-True ('hook-teams' -notin $generated.Repo) 'hook-teams: non-Docker release was incorrectly given Docker jobs.'
-$generatedHashes = @($generated | ForEach-Object { (Get-FileHash -LiteralPath $_.Path -Algorithm SHA256).Hash } | Select-Object -Unique)
-Assert-True ($generatedHashes.Count -eq 1) "Generated release workflows have drifted into $($generatedHashes.Count) variants."
+$generatedHashes = @($generated | ForEach-Object {
+    # Dependabot can advance an independently pinned setup-go patch release
+    # without changing the generated workflow architecture checked below.
+    $normalized = $_.Text -replace 'uses: actions/setup-go@[0-9a-f]{40} # v6\.[0-9]+\.[0-9]+', 'uses: actions/setup-go@<PIN> # v6.x.x'
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        [Convert]::ToHexString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($normalized)))
+    }
+    finally {
+        $sha.Dispose()
+    }
+} | Select-Object -Unique)
+Assert-True ($generatedHashes.Count -eq 1) "Generated release workflows have structurally drifted into $($generatedHashes.Count) variants."
 foreach ($workflow in $generated) {
     Assert-True (-not ($workflow.Text -match '(?m)^concurrency:$')) "$($workflow.Repo): exact release workflow has top-level concurrency and can lose a pending version."
     Assert-True ($workflow.Text -match 'ref: \$\{\{ needs\.version\.outputs\.source_sha \}\}' -and $workflow.Text -match 'source_epoch=\$\(git show -s --format=%ct HEAD\)') "$($workflow.Repo): release builds are not pinned to deterministic tag source metadata."
@@ -281,7 +294,7 @@ foreach ($repoName in $officialRepositories) {
         $officialReleases += [PSCustomObject]@{ Repo = $repoName; Path = $path; Text = Read-Workflow $path }
     }
 }
-Assert-True ($officialReleases.Count -eq 42) "Expected release workflows for all 42 official repositories; found $($officialReleases.Count)."
+Assert-True ($officialReleases.Count -eq 43) "Expected release workflows for all 43 official repositories; found $($officialReleases.Count)."
 foreach ($workflow in $officialReleases) {
     Assert-True ($workflow.Text -match "semver_re='\^v\?\(0\|\[1-9\]\[0-9\]\*\)" -and $workflow.Text -match '\^0\[0-9\]\+\$') "$($workflow.Repo): release version is not validated as strict SemVer."
     Assert-True ($workflow.Text -match 'go build -trimpath' -and $workflow.Text -match 'if-no-files-found: error') "$($workflow.Repo): release build/artifact checks are incomplete."
@@ -307,8 +320,10 @@ foreach ($repoName in $officialRepositories) {
     }
 }
 $nfpmCI = Read-Workflow (Join-Path $WorkspaceRoot 'packager-nfpm\.github\workflows\ci.yml')
+$dockerPublisherCI = Read-Workflow (Join-Path $WorkspaceRoot 'publisher-docker\.github\workflows\ci.yml')
 $ociCI = Read-Workflow (Join-Path $WorkspaceRoot 'publisher-oci\.github\workflows\ci.yml')
 Assert-True ($nfpmCI -match 'goreleaser/nfpm/v2/cmd/nfpm@v2\.43\.0' -and $nfpmCI -match 'go test -count=1 -tags=integration') 'packager-nfpm: ecosystem-specific package integration checks are missing.'
+Assert-True ($dockerPublisherCI -match 'registry:2\.8\.3' -and $dockerPublisherCI -match 'SEMREL_TEST_DOCKER_REGISTRY' -and $dockerPublisherCI -match 'go test -count=1 -tags=integration') 'publisher-docker: ecosystem-specific registry integration checks are missing.'
 Assert-True ($ociCI -match 'registry:2\.8\.3' -and $ociCI -match 'SEMREL_TEST_OCI_REF') 'publisher-oci: ecosystem-specific registry integration checks are missing.'
 
 $coreFiles = @(
@@ -643,6 +658,7 @@ $go125Repositories = @(
     'hook-gitplugin',
     'hook-matrix',
     'hook-slack',
+    'publisher-docker',
     'updater-composer',
     'updater-docker',
     'updater-helm',
@@ -650,7 +666,7 @@ $go125Repositories = @(
     'updater-pubspec',
     'updater-python'
 )
-Assert-True ($go125Repositories.Count -eq 12) 'Go 1.25 Dockerfile allowlist must contain exactly 12 repositories.'
+Assert-True ($go125Repositories.Count -eq 13) 'Go 1.25 Dockerfile allowlist must contain exactly 13 repositories.'
 foreach ($repoName in $go125Repositories) {
     $dockerfile = Join-Path $WorkspaceRoot "$repoName\Dockerfile"
     $dockerText = [IO.File]::ReadAllText($dockerfile)
@@ -695,10 +711,12 @@ foreach ($repo in $repos) {
 }
 
 $nfpmDocker = [IO.File]::ReadAllText((Join-Path $WorkspaceRoot 'packager-nfpm\Dockerfile'))
+$dockerPublisherDocker = [IO.File]::ReadAllText((Join-Path $WorkspaceRoot 'publisher-docker\Dockerfile'))
 $npmDocker = [IO.File]::ReadAllText((Join-Path $WorkspaceRoot 'publisher-npm\Dockerfile'))
 $ociDocker = [IO.File]::ReadAllText((Join-Path $WorkspaceRoot 'publisher-oci\Dockerfile'))
 $npmReadme = [IO.File]::ReadAllText((Join-Path $WorkspaceRoot 'publisher-npm\README.md'))
 Assert-True ($nfpmDocker -match 'goreleaser/nfpm/v2/cmd/nfpm@v2\.43\.0' -and $nfpmDocker -match 'COPY --from=build /out/nfpm') 'packager-nfpm: published image does not include its pinned nFPM runtime dependency.'
+Assert-True ($dockerPublisherDocker -match '(?m)^FROM docker:28\.3\.3-cli AS docker-cli\r?$' -and $dockerPublisherDocker -match 'COPY --from=docker-cli /usr/local/bin/docker') 'publisher-docker: published image does not include its pinned Docker CLI runtime dependency.'
 Assert-True ($ociDocker -match 'oras\.land/oras/cmd/oras@v1\.3\.1' -and $ociDocker -match 'COPY --from=build /out/oras') 'publisher-oci: published image does not include its pinned ORAS runtime dependency.'
 Assert-True ($npmReadme -match 'docker pull ghcr\.io/semrels/publisher-npm:latest') 'publisher-npm: documented GHCR publication was not detected.'
 Assert-True ($npmDocker -match '(?m)^FROM node:24-alpine\r?$' -and $npmDocker -match 'corepack@0\.34\.0' -and $npmDocker -match 'corepack enable' -and $npmDocker -match 'pnpm@10\.14\.0' -and $npmDocker -match 'yarn@1\.22\.22') 'publisher-npm: published image lacks npm/pnpm/yarn runtime support.'
