@@ -6,11 +6,13 @@ package cli
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -91,11 +93,31 @@ func TestPluginLockFile_WriteAndRead(t *testing.T) {
 	if len(lf2.Plugins) != 1 {
 		t.Fatalf("expected 1 plugin after round-trip, got %d", len(lf2.Plugins))
 	}
-	if lf2.Plugins[0].Ref != "@semrel/github" {
+	if lf2.Plugins[0].Ref != "@semrel/provider-github" {
 		t.Fatalf("ref = %q", lf2.Plugins[0].Ref)
 	}
 	if lf2.Plugins[0].Checksums["linux_amd64"] != "deadbeef" {
 		t.Fatalf("checksum = %q", lf2.Plugins[0].Checksums["linux_amd64"])
+	}
+}
+
+func TestPluginLockFileCanonicalizesTypedAndAmbiguousLegacyRefs(t *testing.T) {
+	withWorkingDir(t, t.TempDir())
+	lf := &PluginLockFile{Plugins: []PluginLockEntry{
+		{BinaryName: "semrel-plugin-npm-publisher", Ref: "publisher-npm", Version: "1.0.0"},
+		{BinaryName: "semrel-plugin-npm", Ref: "npm", Version: "2.0.0"},
+	}}
+	if err := lf.Write(); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	got, err := ReadLockFile()
+	if err != nil {
+		t.Fatalf("ReadLockFile() error = %v", err)
+	}
+	if len(got.Plugins) != 2 ||
+		got.Plugins[0].Ref != "@semrel/publisher-npm" ||
+		got.Plugins[1].Ref != "@semrel/updater-npm" {
+		t.Fatalf("canonical lock refs = %#v", got.Plugins)
 	}
 }
 
@@ -187,8 +209,7 @@ func TestRunPluginRestore(t *testing.T) {
 	withWorkingDir(t, repoDir)
 
 	// Write a lock file manually.
-	lf := &PluginLockFile{}
-	lf.Upsert(PluginLockEntry{
+	lf := &PluginLockFile{LockVersion: 1, Plugins: []PluginLockEntry{{
 		BinaryName: "semrel-plugin-github",
 		Ref:        "provider-github",
 		Version:    "1.0.0",
@@ -200,9 +221,13 @@ func TestRunPluginRestore(t *testing.T) {
 			"windows_amd64": checksum,
 			"windows_arm64": checksum,
 		},
-	})
-	if err := lf.Write(); err != nil {
-		t.Fatalf("Write() error = %v", err)
+	}}}
+	rawLock, err := json.Marshal(lf)
+	if err != nil {
+		t.Fatalf("Marshal(old lock) error = %v", err)
+	}
+	if err := os.WriteFile(LockFileName, rawLock, 0o644); err != nil {
+		t.Fatalf("WriteFile(old lock) error = %v", err)
 	}
 
 	stdout, _, err := captureReleaseOutput(func() error {
@@ -217,6 +242,9 @@ func TestRunPluginRestore(t *testing.T) {
 
 	// Binary should be installed.
 	dest := filepath.Join(repoDir, ".semrel", "plugins", "semrel-plugin-github")
+	if runtime.GOOS == "windows" {
+		dest += ".exe"
+	}
 	if _, err := os.Stat(dest); err != nil {
 		t.Fatalf("installed binary not found at %s: %v", dest, err)
 	}
@@ -295,6 +323,10 @@ func TestMaybeAutoRestore_RunsRestoreWhenLockExists(t *testing.T) {
 	repoDir := t.TempDir()
 	t.Setenv(registry.EnvRegistryURL, serverURL)
 	t.Setenv(registry.EnvCacheDir, filepath.Join(repoDir, ".semrel", "registry-cache"))
+	isolatedHome := t.TempDir()
+	t.Setenv("HOME", isolatedHome)
+	t.Setenv("USERPROFILE", isolatedHome)
+	t.Setenv("PATH", t.TempDir())
 	withWorkingDir(t, repoDir)
 
 	// Write a lock file — plugin binary not yet installed.
@@ -323,12 +355,18 @@ func TestMaybeAutoRestore_RunsRestoreWhenLockExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeAutoRestore() error = %v", err)
 	}
-	if !strings.Contains(stdout, "restore") {
-		t.Fatalf("expected restore message, got: %q", stdout)
+	if !strings.Contains(stdout, "restored @semrel/provider-github@1.0.0") {
+		t.Fatalf("stdout = %q — expected restore message", stdout)
 	}
-	// Plugin should now be installed.
 	dest := filepath.Join(repoDir, ".semrel", "plugins", "semrel-plugin-github")
-	if _, err := os.Stat(dest); err != nil {
+	if runtime.GOOS == "windows" {
+		dest += ".exe"
+	}
+	restored, err := os.ReadFile(dest)
+	if err != nil {
 		t.Fatalf("plugin binary not installed at %s: %v", dest, err)
+	}
+	if string(restored) != string(binary) {
+		t.Fatalf("project-local plugin binary = %q, want %q", restored, binary)
 	}
 }

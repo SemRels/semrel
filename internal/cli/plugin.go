@@ -94,20 +94,18 @@ The plugin binary is placed in .semrel/plugins/ relative to the current working
 directory so that it is local to the project. Use --plugin-dir to override the
 installation path (e.g. ~/.semrel/plugins/ for a user-global install).
 
-When a plugin belongs to a namespace the full reference is required:
+Canonical first-party references include the plugin category:
 
-  semrel plugin install @semrel/github
-  semrel plugin install @semrel/github@1.2.0
+  semrel plugin install @semrel/provider-github
+  semrel plugin install @semrel/provider-github@1.2.0
 
-Bare names (without "@namespace/") are only accepted for plugins that have no
-namespace in the registry. Config entries using category-prefixed names
-(e.g. "provider-github", "condition-github-actions") are resolved to their short
-registry names and follow the same namespace rule.
+Legacy bare, unscoped typed, and @semrel/<short> references remain accepted
+during the compatibility transition and resolve deterministically.
 
 Examples:
-  semrel plugin install @semrel/github
-  semrel plugin install @semrel/github@1.2.0
-  semrel plugin install github          (only if registry entry has no namespace)`,
+  semrel plugin install @semrel/provider-github
+  semrel plugin install @semrel/provider-github@1.2.0
+  semrel plugin install github`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPluginInstall(cmd.Context(), args[0], pluginDir)
@@ -128,13 +126,13 @@ Without arguments, semrel uses .semrel.lock as the source of truth and checks
 or updates every pinned plugin.
 
 With a plugin argument, semrel checks or updates only that plugin. A version can
-be pinned explicitly (for example @semrel/github@1.2.0).
+be pinned explicitly (for example @semrel/provider-github@1.2.0).
 
 Examples:
   semrel plugin update
   semrel plugin update --check
-  semrel plugin update @semrel/github
-  semrel plugin update @semrel/github@1.2.0`,
+  semrel plugin update @semrel/provider-github
+  semrel plugin update @semrel/provider-github@1.2.0`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := ""
@@ -195,6 +193,7 @@ func runPluginSearch(ctx context.Context, query string) error {
 	for _, p := range reg.Plugins {
 		if strings.Contains(strings.ToLower(pluginRef(p)), q) ||
 			strings.Contains(strings.ToLower(p.Name), q) ||
+			containsTag(p.Aliases, q) ||
 			strings.Contains(strings.ToLower(p.Description), q) ||
 			strings.Contains(strings.ToLower(p.Category), q) ||
 			containsTag(p.Tags, q) {
@@ -225,9 +224,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("plugin %q not found in registry", name)
 	}
 
-	if err := requireNamespacedReference(name, meta, "install"); err != nil {
-		return err
-	}
+	warnLegacyPluginRef(name, meta)
 
 	versionEntry, err := meta.FindVersion(ver)
 	if err != nil {
@@ -240,9 +237,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 
 	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", pluginRef(*meta), versionEntry.Version)
 
-	// Use meta.Name (canonical registry name) for the download so that the cache key
-	// is stable regardless of whether the user specified a category-prefixed name.
-	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.Name, versionEntry.Version)
+	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.CanonicalRef(), versionEntry.Version)
 	if err != nil {
 		return fmt.Errorf("installing plugin: %w", err)
 	}
@@ -255,10 +250,7 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("creating plugin directory: %w", err)
 	}
 
-	// Derive the binary name from the canonical registry name so that config entries
-	// using either the short name ("github") or a category-prefixed name ("provider-github")
-	// resolve to the same binary on disk ("semrel-plugin-github").
-	binaryName := pluginBinaryName(meta.Name)
+	binaryName := pluginBinaryName(meta.ExecutableName())
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
@@ -361,9 +353,7 @@ func pluginUpdateTargets(reg *registry.PluginRegistry, nameVer string) ([]plugin
 		if err != nil {
 			return nil, fmt.Errorf("plugin %q not found in registry", name)
 		}
-		if err := requireNamespacedReference(name, meta, "update"); err != nil {
-			return nil, err
-		}
+		warnLegacyPluginRef(name, meta)
 
 		var versionEntry *registry.PluginVersion
 		if requestedVersion != "" {
@@ -384,12 +374,9 @@ func pluginUpdateTargets(reg *registry.PluginRegistry, nameVer string) ([]plugin
 		}
 		ref := pluginRef(*meta)
 		current := ""
-		for _, binaryName := range pluginBinaryNames(meta.Name) {
+		for _, binaryName := range pluginBinaryNames(meta.CanonicalRef()) {
 			if entry := lf.FindByBinaryName(binaryName); entry != nil {
 				current = entry.Version
-				if entry.Ref != "" {
-					ref = entry.Ref
-				}
 				break
 			}
 		}
@@ -419,7 +406,7 @@ func pluginUpdateTargets(reg *registry.PluginRegistry, nameVer string) ([]plugin
 			continue
 		}
 		out = append(out, pluginUpdateTarget{
-			Ref:             entry.Ref,
+			Ref:             meta.CanonicalRef(),
 			CurrentVersion:  entry.Version,
 			LatestVersion:   latest.Version,
 			UpdateAvailable: isVersionNewer(entry.Version, latest.Version),
@@ -481,21 +468,11 @@ func latestStableVersion(meta *registry.PluginMeta) (*registry.PluginVersion, er
 	return best, nil
 }
 
-func requireNamespacedReference(name string, meta *registry.PluginMeta, action string) error {
-	// Namespace enforcement: if the matched plugin belongs to a namespace but the
-	// user did not supply one, require the full "@namespace/name" reference.
-	// A bare name (e.g. "github") is only accepted for namespace-less plugins.
-	if strings.HasPrefix(name, "@") || meta.Namespace == "" {
-		return nil
+func warnLegacyPluginRef(name string, meta *registry.PluginMeta) {
+	canonical := meta.CanonicalRef()
+	if meta.IsFirstParty() && !strings.EqualFold(strings.TrimSpace(name), canonical) {
+		fmt.Fprintf(os.Stderr, "warning: plugin reference %q is deprecated; use %s\n", name, canonical)
 	}
-	ns := meta.Namespace
-	if !strings.HasPrefix(ns, "@") {
-		ns = "@" + ns
-	}
-	return fmt.Errorf(
-		"plugin %q belongs to namespace %s — use the full reference:\n  semrel plugin %s %s/%s",
-		meta.Name, ns, action, ns, meta.Name,
-	)
 }
 
 // updateLockFile upserts the entry for meta/version into .semrel.lock.
@@ -504,9 +481,18 @@ func updateLockFile(meta *registry.PluginMeta, version *registry.PluginVersion) 
 	if err != nil {
 		return err
 	}
+	canonical := meta.CanonicalRef()
+	filtered := lf.Plugins[:0]
+	for _, entry := range lf.Plugins {
+		if ref, ok := registry.CanonicalLegacyRef(entry.Ref); ok && strings.EqualFold(ref, canonical) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	lf.Plugins = filtered
 	lf.Upsert(PluginLockEntry{
-		BinaryName: pluginBinaryName(meta.Name),
-		Ref:        pluginRef(*meta),
+		BinaryName: pluginBinaryName(meta.ExecutableName()),
+		Ref:        canonical,
 		Version:    version.Version,
 		Checksums:  version.Checksums,
 	})
@@ -559,14 +545,7 @@ func copyFile(src, dst string, perm os.FileMode) error {
 // pluginRef returns the canonical display reference for a plugin:
 // "@namespace/name" when a namespace is present, otherwise just "name".
 func pluginRef(p registry.PluginMeta) string {
-	if p.Namespace != "" {
-		ns := p.Namespace
-		if !strings.HasPrefix(ns, "@") {
-			ns = "@" + ns
-		}
-		return ns + "/" + p.Name
-	}
-	return p.Name
+	return p.CanonicalRef()
 }
 
 func newPluginRestoreCommand() *cobra.Command {
@@ -632,13 +611,7 @@ func runPluginRestore(ctx context.Context) error {
 
 		fmt.Printf("⬇  restoring %s@%s ...\n", entry.Ref, entry.Version)
 
-		// Extract the bare plugin name for the registry/cache lookup.
-		bareName := entry.Ref
-		if idx := strings.LastIndex(bareName, "/"); idx >= 0 {
-			bareName = bareName[idx+1:]
-		}
-
-		binaryPath, dlErr := loader.ResolvePluginBinary(ctx, bareName, entry.Version)
+		binaryPath, dlErr := loader.ResolvePluginBinary(ctx, entry.Ref, entry.Version)
 		if dlErr != nil {
 			fmt.Fprintf(os.Stderr, "✗  failed to restore %s: %v\n", entry.Ref, dlErr)
 			failed = append(failed, entry.Ref)

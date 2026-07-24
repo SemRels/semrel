@@ -10,7 +10,12 @@ on:
   schedule:
     - cron: "30 2 * * 1" # Weekly on Monday
 
-permissions: read-all
+permissions:
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   scorecard:
@@ -22,7 +27,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -32,12 +37,12 @@ jobs:
           results_format: sarif
           publish_results: true
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: scorecard-results
           path: scorecard-results.sarif
           retention-days: 5
 
-      - uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4
+      - uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: scorecard-results.sarif

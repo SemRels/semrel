@@ -26,11 +26,11 @@ rules:
   # Breaking changes (feat! or BREAKING CHANGE: footer) always → major
 
 plugins:
-  - uses: condition-github-actions  # only release on GitHub Actions, not local
+  - uses: "@semrel/condition-github-actions"  # only release on GitHub Actions, not local
     phase: condition
-  - uses: "@semrel/github"          # create GitHub Release + push tag
+  - uses: "@semrel/provider-github"          # create GitHub Release + push tag
     phase: release
-  - uses: generator-changelog-md    # generate/update CHANGELOG.md
+  - uses: "@semrel/generator-changelog-md"   # generate/update CHANGELOG.md
 
 # ─────────────────────────────────────────────────────────────
 #  Optional — uncomment what you need
@@ -57,28 +57,28 @@ plugins:
 #     bump: patch
 
 # Other providers
-# - uses: "@semrel/gitlab"   phase: release
-# - uses: "@semrel/gitea"    phase: release
-# - uses: "@semrel/git"      phase: release   # bare git tag + push
+# - uses: "@semrel/provider-gitlab"   phase: release
+# - uses: "@semrel/provider-gitea"    phase: release
+# - uses: "@semrel/provider-git"      phase: release   # bare git tag + push
 
 # Version file updaters
-# - uses: updater-npm        # updates package.json
-# - uses: updater-go         # updates internal/version/version.go
-# - uses: updater-cargo      # updates Cargo.toml
-# - uses: updater-docker     # updates Dockerfile ARG VERSION
-# - uses: updater-helm       # updates Chart.yaml appVersion
-# - uses: updater-maven      # updates pom.xml
-# - uses: updater-gradle     # updates gradle.properties
-# - uses: updater-python     # updates pyproject.toml / setup.py
-# - uses: updater-nuget      # updates .csproj
-# - uses: updater-terraform  # updates variables.tf
+# - uses: "@semrel/updater-npm"        # updates package.json
+# - uses: "@semrel/updater-go"         # updates internal/version/version.go
+# - uses: "@semrel/updater-cargo"      # updates Cargo.toml
+# - uses: "@semrel/updater-docker"     # updates Dockerfile ARG VERSION
+# - uses: "@semrel/updater-helm"       # updates Chart.yaml appVersion
+# - uses: "@semrel/updater-maven"      # updates pom.xml
+# - uses: "@semrel/updater-gradle"     # updates gradle.properties
+# - uses: "@semrel/updater-python"     # updates pyproject.toml / setup.py
+# - uses: "@semrel/updater-nuget"      # updates .csproj
+# - uses: "@semrel/updater-terraform"  # updates variables.tf
 
 # Notification hooks
-# - uses: hook-slack         phase: release
-# - uses: hook-teams         phase: release
-# - uses: hook-matrix        phase: release
-# - uses: hook-email         phase: release
-# - uses: hook-jira          phase: release
+# - uses: "@semrel/hook-slack"         phase: release
+# - uses: "@semrel/hook-teams"         phase: release
+# - uses: "@semrel/hook-matrix"        phase: release
+# - uses: "@semrel/hook-email"         phase: release
+# - uses: "@semrel/hook-jira"          phase: release
 
 # Monorepo workspace
 # workspace:

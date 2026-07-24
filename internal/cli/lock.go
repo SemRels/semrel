@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/SemRels/semrel/internal/registry"
 )
 
 const (
@@ -73,8 +76,9 @@ func ReadLockFile() (*PluginLockFile, error) {
 func (lf *PluginLockFile) Write() error {
 	lf.LockVersion = lockFileVersion
 	lf.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	lf.normalizePluginRefs()
 	sort.Slice(lf.Plugins, func(i, j int) bool {
-		return lf.Plugins[i].BinaryName < lf.Plugins[j].BinaryName
+		return lf.Plugins[i].Ref < lf.Plugins[j].Ref
 	})
 	data, err := json.MarshalIndent(lf, "", "  ")
 	if err != nil {
@@ -89,13 +93,42 @@ func (lf *PluginLockFile) Write() error {
 
 // Upsert adds or replaces the lock entry identified by entry.BinaryName.
 func (lf *PluginLockFile) Upsert(entry PluginLockEntry) {
+	if canonical, ok := registry.CanonicalLegacyRef(entry.Ref); ok {
+		entry.Ref = canonical
+	}
 	for i := range lf.Plugins {
-		if lf.Plugins[i].BinaryName == entry.BinaryName {
+		existingRef := lf.Plugins[i].Ref
+		if canonical, ok := registry.CanonicalLegacyRef(existingRef); ok {
+			existingRef = canonical
+		}
+		if (entry.Ref != "" && strings.EqualFold(existingRef, entry.Ref)) ||
+			lf.Plugins[i].BinaryName == entry.BinaryName {
 			lf.Plugins[i] = entry
 			return
 		}
 	}
 	lf.Plugins = append(lf.Plugins, entry)
+}
+
+func (lf *PluginLockFile) normalizePluginRefs() {
+	normalized := make([]PluginLockEntry, 0, len(lf.Plugins))
+	index := make(map[string]int, len(lf.Plugins))
+	for _, entry := range lf.Plugins {
+		if canonical, ok := registry.CanonicalLegacyRef(entry.Ref); ok {
+			entry.Ref = canonical
+		}
+		key := strings.ToLower(entry.Ref)
+		if key == "" {
+			key = "binary:" + strings.ToLower(entry.BinaryName)
+		}
+		if i, ok := index[key]; ok {
+			normalized[i] = entry
+			continue
+		}
+		index[key] = len(normalized)
+		normalized = append(normalized, entry)
+	}
+	lf.Plugins = normalized
 }
 
 // FindByBinaryName returns the lock entry for the given binary name, or nil if

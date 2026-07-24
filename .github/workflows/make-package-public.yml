@@ -9,7 +9,11 @@ name: Make container package public
 on:
   workflow_dispatch:
 
-permissions: read-all
+permissions: {}
+
+concurrency:
+  group: make-package-public
+  cancel-in-progress: false
 
 jobs:
   set-public:

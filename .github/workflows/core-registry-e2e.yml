@@ -1,0 +1,40 @@
+name: Core registry E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-registry-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-path:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: SemRels/condition-generic
+          # condition-generic v0.4.0
+          ref: 2ca699a4eacd762a6cbea9562d4b2dbe7ad75315
+          path: actual-plugins/condition-generic
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: SemRels/provider-git
+          # provider-git v0.3.0
+          ref: 722a1e3e4e22f3adcf69398d8b966a33037bfee9
+          path: actual-plugins/provider-git
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run real plugin release path
+        env:
+          SEMREL_PLUGIN_REPOS_DIR: ${{ github.workspace }}/actual-plugins
+        run: go test -count=1 -run TestCoreRegistryReleasePathWithActualPlugins -v ./test/integration

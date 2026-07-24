@@ -34,7 +34,7 @@ Config file fields:
     - type            commit type (e.g. "feat", "fix", "perf")
       bump            bump level: major, minor, or patch
   plugins             ordered list of plugin definitions
-    - uses            plugin name from the registry (e.g. "provider-github")
+    - uses            canonical plugin reference (e.g. "@semrel/provider-github")
       path            path to a local plugin binary (alternative to uses)
       args            plugin-specific arguments (key/value map)
       phase           when to run: condition, pre-tag, or release (default: release)
@@ -48,8 +48,8 @@ Example .semrel.yaml:
     - name: main
   tagPrefix: v
   plugins:
-    - uses: provider-github
-    - uses: generator-changelog-md
+    - uses: @semrel/provider-github
+    - uses: @semrel/generator-changelog-md
 
 Quick start:
   semrel config init      — interactive wizard to create .semrel.yaml
@@ -216,13 +216,13 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		ci := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch {
 		case strings.Contains(ci, "github"):
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-github-actions", Phase: "condition"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/condition-github-actions", Phase: "condition"})
 		case strings.Contains(ci, "gitlab"):
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-gitlab-ci", Phase: "condition"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/condition-gitlab-ci", Phase: "condition"})
 		case strings.Contains(ci, "gitea"):
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-gitea-actions", Phase: "condition"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/condition-gitea-actions", Phase: "condition"})
 		case strings.Contains(ci, "generic") || strings.Contains(ci, "other"):
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "condition-generic", Phase: "condition"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/condition-generic", Phase: "condition"})
 		}
 	}
 
@@ -232,13 +232,13 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		provider := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch provider {
 		case "github", "provider-github":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/github", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/provider-github", Phase: "release"})
 		case "gitlab", "provider-gitlab":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/gitlab", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/provider-gitlab", Phase: "release"})
 		case "gitea", "provider-gitea":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/gitea", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/provider-gitea", Phase: "release"})
 		case "git", "provider-git":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/git", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/provider-git", Phase: "release"})
 		}
 	}
 
@@ -248,9 +248,9 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		gen := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch {
 		case strings.Contains(gen, "html"):
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "generator-changelog-html"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-html"})
 		case strings.Contains(gen, "md") || gen == "changelog":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "generator-changelog-md"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-md"})
 		}
 	}
 
@@ -260,13 +260,13 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		hook := strings.TrimSpace(strings.ToLower(scanner.Text()))
 		switch hook {
 		case "slack":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "hook-slack", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/hook-slack", Phase: "release"})
 		case "teams":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "hook-teams", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/hook-teams", Phase: "release"})
 		case "matrix":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "hook-matrix", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/hook-matrix", Phase: "release"})
 		case "email":
-			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "hook-email", Phase: "release"})
+			cfg.Plugins = append(cfg.Plugins, config.PluginConfig{Uses: "@semrel/hook-email", Phase: "release"})
 		}
 	}
 

@@ -72,6 +72,7 @@ func TestCheckPlugins_NotFound(t *testing.T) {
 			{Uses: "semrel-plugin-definitely-not-installed-xyz123"},
 		},
 	}
+
 	checks := checkPlugins(cfg)
 	if len(checks) == 0 {
 		t.Fatal("expected at least one check")
@@ -84,6 +85,28 @@ func TestCheckPlugins_NotFound(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected at least one fail check for missing plugin")
+	}
+}
+
+func TestCheckPluginsDeduplicatesLegacyAliases(t *testing.T) {
+	cfg := &config.Config{
+		Branches: []config.BranchConfig{{Name: "main"}},
+		Plugins: []config.PluginConfig{
+			{Uses: "github"},
+			{Uses: "@semrel/github"},
+			{Uses: "provider-github"},
+			{Uses: "@semrel/provider-github"},
+		},
+	}
+	checks := checkPlugins(cfg)
+	if len(checks) != 1 {
+		t.Fatalf("checkPlugins() returned %d checks, want 1: %#v", len(checks), checks)
+	}
+	if checks[0].Name != "plugin:@semrel/provider-github" {
+		t.Fatalf("check name = %q", checks[0].Name)
+	}
+	if checks[0].Status == "fail" && !strings.Contains(checks[0].Fix, "@semrel/provider-github") {
+		t.Fatalf("fix = %q", checks[0].Fix)
 	}
 }
 

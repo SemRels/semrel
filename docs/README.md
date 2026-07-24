@@ -4,6 +4,8 @@ This directory contains architecture documentation, design decisions, and techni
 
 ## Contents
 
+- [Test suites and shared harness](./testing.md)
+
 ### Architecture Decision Records (ADRs)
 
 ADRs document significant technical decisions and their rationale:

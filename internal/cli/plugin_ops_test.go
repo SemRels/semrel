@@ -372,7 +372,7 @@ func TestRunPluginInstallDoesNotDoubleTrack(t *testing.T) {
 	}
 }
 
-func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
+func TestRunPluginInstallLegacyNamespaceAliases(t *testing.T) {
 	withColorsDisabled(t)
 	binary := []byte("plugin-binary")
 	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
@@ -383,40 +383,71 @@ func TestRunPluginInstallNamespaceEnforcement(t *testing.T) {
 	t.Setenv(registry.EnvCacheDir, t.TempDir())
 	installDir := t.TempDir()
 
-	// Bare name must be rejected when the plugin has a namespace.
-	_, _, err := captureReleaseOutput(func() error {
+	// Legacy aliases remain usable but produce a migration warning.
+	_, stderr, err := captureReleaseOutput(func() error {
 		return runPluginInstall(context.Background(), "github", installDir)
 	})
-	if err == nil {
-		t.Fatal("expected error when installing namespaced plugin by bare name")
-	}
-	if !strings.Contains(err.Error(), "@semrel") || !strings.Contains(err.Error(), "namespace") {
-		t.Fatalf("error = %q — expected namespace hint", err.Error())
+	if err != nil {
+		t.Fatalf("legacy bare install error = %v", err)
 	}
 
-	// Category-prefixed bare name must also be rejected.
-	_, _, err = captureReleaseOutput(func() error {
+	if !strings.Contains(stderr, "@semrel/provider-github") {
+		t.Fatalf("stderr = %q, want canonical migration hint", stderr)
+	}
+
+	_, stderr, err = captureReleaseOutput(func() error {
 		return runPluginInstall(context.Background(), "provider-github", installDir)
 	})
-	if err == nil {
-		t.Fatal("expected error when installing namespaced plugin by category-prefixed bare name")
+	if err != nil {
+		t.Fatalf("legacy typed install error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "@semrel") {
-		t.Fatalf("error = %q — expected namespace hint for prefixed name", err.Error())
+	if !strings.Contains(stderr, "@semrel/provider-github") {
+		t.Fatalf("stderr = %q, want canonical migration hint", stderr)
 	}
 
-	// Full namespaced reference must succeed.
+	// Canonical reference succeeds without a warning.
 	stdout, stderr, err := captureReleaseOutput(func() error {
-		return runPluginInstall(context.Background(), "@semrel/github@1.0.0", installDir)
+		return runPluginInstall(context.Background(), "@semrel/provider-github@1.0.0", installDir)
 	})
 	if err != nil {
-		t.Fatalf("runPluginInstall(@semrel/github@1.0.0) error = %v", err)
+		t.Fatalf("runPluginInstall(canonical) error = %v", err)
 	}
 	if stderr != "" {
 		t.Fatalf("stderr = %q, want empty", stderr)
 	}
 	if !strings.Contains(stdout, "Installing") || !strings.Contains(stdout, "1.0.0") {
 		t.Fatalf("stdout = %q", stdout)
+	}
+}
+
+func TestRunPluginInstallWritesCanonicalFirstPartyLock(t *testing.T) {
+	binary := []byte("plugin-binary")
+	checksum := fmt.Sprintf("%x", sha256.Sum256(binary))
+	server := newNamespacedRegistryServer(t, binary, checksum)
+	defer server.Close()
+
+	repoDir := t.TempDir()
+	t.Setenv(registry.EnvRegistryURL, server.URL)
+	t.Setenv(registry.EnvCacheDir, filepath.Join(repoDir, ".semrel", "registry-cache"))
+	withWorkingDir(t, repoDir)
+
+	if _, _, err := captureReleaseOutput(func() error {
+		return runPluginInstall(context.Background(), "@semrel/provider-github@1.0.0", "")
+	}); err != nil {
+		t.Fatalf("canonical install error = %v", err)
+	}
+	lf, err := ReadLockFile()
+	if err != nil {
+		t.Fatalf("ReadLockFile() error = %v", err)
+	}
+	if len(lf.Plugins) != 1 {
+		t.Fatalf("lock plugins = %#v", lf.Plugins)
+	}
+	if lf.Plugins[0].Ref != "@semrel/provider-github" {
+		t.Fatalf("lock ref = %q", lf.Plugins[0].Ref)
+	}
+	if lf.Plugins[0].BinaryName != "semrel-plugin-github" {
+		t.Fatalf("binary compatibility name = %q", lf.Plugins[0].BinaryName)
 	}
 }
 

@@ -25,8 +25,8 @@ const maxDownloadAttempts = 3
 
 // DownloadPlugin resolves a plugin locally and downloads it from the registry when missing.
 func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, goos, goarch string) (string, error) {
-	localDir := c.localPluginDir(plugin, version, goos, goarch)
-	if existingPath, err := findLocalPluginBinary(localDir); err != nil {
+	// Preserve offline compatibility with cache entries written by older clients.
+	if existingPath, err := findLocalPluginBinary(c.localPluginDir(plugin, version, goos, goarch)); err != nil {
 		return "", err
 	} else if existingPath != "" {
 		return existingPath, nil
@@ -41,6 +41,19 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 	if err != nil {
 		return "", err
 	}
+
+	artifactName := pluginMeta.ExecutableName()
+	cacheNames := uniqueStrings(artifactName, pluginMeta.Name, plugin)
+	for _, cacheName := range cacheNames {
+		localDir := c.localPluginDir(cacheName, version, goos, goarch)
+		if existingPath, findErr := findLocalPluginBinary(localDir); findErr != nil {
+			return "", findErr
+		} else if existingPath != "" {
+			return existingPath, nil
+		}
+	}
+
+	localDir := c.localPluginDir(artifactName, version, goos, goarch)
 	pluginVersion, err := pluginMeta.FindVersion(version)
 	if err != nil {
 		return "", err
@@ -56,11 +69,25 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 	}
 
 	downloadURL := pluginVersion.DownloadURLForPlatform(goos, goarch)
-	targetPath := filepath.Join(localDir, downloadFileName(downloadURL, plugin, goos))
+	targetPath := filepath.Join(localDir, downloadFileName(downloadURL, artifactName, goos))
 	if err := c.downloadWithRetry(ctx, downloadURL, targetPath, checksum); err != nil {
 		return "", err
 	}
 	return targetPath, nil
+}
+
+func uniqueStrings(values ...string) []string {
+	var result []string
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }
 
 // ValidateChecksum validates a file against the expected SHA-256 checksum.

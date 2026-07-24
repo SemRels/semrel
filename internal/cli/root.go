@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/SemRels/semrel/internal/colors"
+	"github.com/SemRels/semrel/internal/registry"
 	"github.com/SemRels/semrel/pkg/analytics"
 	"github.com/SemRels/semrel/pkg/changelog"
 	"github.com/SemRels/semrel/pkg/cioutput"
@@ -1034,8 +1035,7 @@ func autoInstallPlugin(ctx context.Context, uses string) error {
 		return fmt.Errorf("plugin %q@%s has no binary releases yet", meta.Name, versionEntry.Version)
 	}
 
-	// Download using the canonical registry name for a consistent cache key.
-	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.Name, versionEntry.Version)
+	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.CanonicalRef(), versionEntry.Version)
 	if err != nil {
 		return fmt.Errorf("downloading: %w", err)
 	}
@@ -1045,7 +1045,7 @@ func autoInstallPlugin(ctx context.Context, uses string) error {
 		return fmt.Errorf("creating plugin directory: %w", err)
 	}
 
-	binaryName := pluginBinaryName(meta.Name)
+	binaryName := pluginBinaryName(meta.ExecutableName())
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
@@ -1054,7 +1054,7 @@ func autoInstallPlugin(ctx context.Context, uses string) error {
 		return fmt.Errorf("installing binary: %w", err)
 	}
 
-	fmt.Printf("✓  auto-installed %s@%s → %s\n", meta.Name, versionEntry.Version, dest)
+	fmt.Printf("✓  auto-installed %s@%s → %s\n", meta.CanonicalRef(), versionEntry.Version, dest)
 	return nil
 }
 
@@ -1134,33 +1134,40 @@ func pluginBinaryNames(uses string) []string {
 	if primary == "" {
 		return nil
 	}
-	legacy := legacyPluginBinaryName(uses)
-	if legacy == "" || legacy == primary {
-		return []string{primary}
+	candidates := []string{primary}
+	legacySource := uses
+	if canonical, ok := registry.CanonicalLegacyRef(pluginRefWithoutVersion(uses)); ok {
+		candidates = append(candidates, pluginBinaryName(canonical))
+		legacySource = canonical
 	}
-	return []string{primary, legacy}
+	candidates = append(candidates, legacyPluginBinaryName(legacySource))
+
+	result := make([]string, 0, len(candidates))
+	seen := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		result = append(result, candidate)
+	}
+	return result
+}
+
+func pluginRefWithoutVersion(uses string) string {
+	name, _ := splitNameVersion(strings.TrimSpace(uses))
+	return name
 }
 
 func legacyPluginBinaryName(uses string) string {
 	uses = strings.TrimSpace(uses)
 	uses = strings.TrimPrefix(uses, "semrel-plugin-")
-	if idx := strings.LastIndex(uses, "/"); idx >= 0 {
-		uses = uses[idx+1:]
-	}
-	if idx := strings.Index(uses, "@"); idx >= 0 {
-		uses = uses[:idx]
-	}
-	lower := strings.ToLower(uses)
-	for _, prefix := range []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"} {
-		if strings.HasPrefix(lower, prefix) {
-			uses = uses[len(prefix):]
-			break
-		}
-	}
-	if uses == "" {
+	uses = pluginRefWithoutVersion(uses)
+	legacy, ok := registry.LegacyExecutableName(uses)
+	if !ok {
 		return ""
 	}
-	return "semrel-plugin-" + uses
+	return "semrel-plugin-" + legacy
 }
 
 func localBinaryCandidates(base string) []string {

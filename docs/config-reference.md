@@ -620,7 +620,7 @@ Without arguments, semrel uses `.semrel.lock` and updates all pinned plugins.
 ```bash
 semrel plugin update --check
 semrel plugin update
-semrel plugin update @semrel/github
+semrel plugin update @semrel/provider-github
 ```
 
 #### `semrel plugin restore`
