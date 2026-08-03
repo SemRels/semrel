@@ -72,9 +72,11 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 	if err != nil {
 		return "", err
 	}
+	writeCachePath := resolvedCachePath
 	cacheNames := []string{resolvedCachePath}
 	if pluginMeta.IsFirstParty() || !strings.HasPrefix(pluginMeta.CanonicalRef(), "@") {
 		cacheNames = uniqueStrings(artifactName, pluginMeta.Name, requestedCachePath)
+		writeCachePath = artifactName
 	}
 	for _, cacheName := range cacheNames {
 		localDir := c.localPluginDir(cacheName, version, goos, goarch)
@@ -85,7 +87,7 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 		}
 	}
 
-	localDir := c.localPluginDir(resolvedCachePath, version, goos, goarch)
+	localDir := c.localPluginDir(writeCachePath, version, goos, goarch)
 	pluginVersion, err := pluginMeta.FindVersion(version)
 	if err != nil {
 		return "", err
