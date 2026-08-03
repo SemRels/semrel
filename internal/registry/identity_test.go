@@ -26,7 +26,12 @@ func TestFirstPartyCanonicalIdentityAllCategories(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.category, func(t *testing.T) {
-			meta := PluginMeta{Namespace: "semrel", Name: tt.short, Category: tt.category}
+			meta := PluginMeta{
+				Namespace:  "semrel",
+				Name:       tt.short,
+				Category:   tt.category,
+				Repository: "https://github.com/SemRels/" + tt.category + "-" + tt.short,
+			}
 			reg := PluginRegistry{Plugins: []PluginMeta{meta}}
 			canonical := "@semrel/" + tt.category + "-" + tt.short
 			if got := meta.CanonicalRef(); got != canonical {
@@ -52,6 +57,7 @@ func TestPackageNameMetadataKeepsStableResolverID(t *testing.T) {
 		"packageName":"@semrel/hook-teams",
 		"name":"teams",
 		"category":"hook",
+		"repository":"https://github.com/SemRels/hook-teams",
 		"aliases":[
 			{"value":"teams","type":"legacy-id","pluginType":"hook","deprecated":true},
 			{"ref":"hook-teams","deprecated":true}
@@ -77,10 +83,11 @@ func TestPackageNameMetadataKeepsStableResolverID(t *testing.T) {
 
 func TestHistoricalAliasCannotBeClaimedByCollidingPublisher(t *testing.T) {
 	reg := PluginRegistry{Plugins: []PluginMeta{{
-		Namespace: "semrel",
-		Name:      "publisher-npm",
-		Category:  "publisher",
-		Aliases:   []string{"npm", "@semrel/npm"},
+		Namespace:  "semrel",
+		Name:       "publisher-npm",
+		Category:   "publisher",
+		Repository: "https://github.com/SemRels/publisher-npm",
+		Aliases:    []string{"npm", "@semrel/npm"},
 	}}}
 	if _, err := reg.FindPlugin("npm"); err == nil || !strings.Contains(err.Error(), "@semrel/updater-npm") {
 		t.Fatalf("historical npm alias error = %v", err)
@@ -93,13 +100,13 @@ func TestHistoricalAliasCannotBeClaimedByCollidingPublisher(t *testing.T) {
 
 func TestFindPluginUsesMetadataAliasesAndRejectsAmbiguity(t *testing.T) {
 	reg := PluginRegistry{Plugins: []PluginMeta{
-		{Namespace: "semrel", Name: "custom", Category: "hook", Aliases: []string{"legacy-custom"}},
-		{Namespace: "semrel", Name: "other", Category: "hook", Aliases: []string{"shared"}},
-		{Namespace: "semrel", Name: "third", Category: "hook", LegacyAliases: []string{"shared"}},
+		{Namespace: "community", Name: "custom", Category: "hook", Aliases: []string{"legacy-custom"}},
+		{Namespace: "community", Name: "other", Category: "hook", Aliases: []string{"shared"}},
+		{Namespace: "community", Name: "third", Category: "hook", LegacyAliases: []string{"shared"}},
 	}}
 
 	got, err := reg.FindPlugin("legacy-custom")
-	if err != nil || got.CanonicalRef() != "@semrel/hook-custom" {
+	if err != nil || got.CanonicalRef() != "@community/custom" {
 		t.Fatalf("metadata alias lookup = %v, %v", got, err)
 	}
 	if _, err := reg.FindPlugin("shared"); err == nil || !strings.Contains(err.Error(), "ambiguous") {
@@ -108,8 +115,14 @@ func TestFindPluginUsesMetadataAliasesAndRejectsAmbiguity(t *testing.T) {
 }
 
 func TestHistoricalNPMAliasNeverDependsOnRegistryOrder(t *testing.T) {
-	publisher := PluginMeta{Namespace: "semrel", Name: "npm", Category: "publisher"}
-	updater := PluginMeta{Namespace: "semrel", Name: "npm", Category: "updater"}
+	publisher := PluginMeta{
+		Namespace: "semrel", Name: "npm", Category: "publisher",
+		Repository: "https://github.com/SemRels/publisher-npm",
+	}
+	updater := PluginMeta{
+		Namespace: "semrel", Name: "npm", Category: "updater",
+		Repository: "https://github.com/SemRels/updater-npm",
+	}
 
 	for _, plugins := range [][]PluginMeta{{publisher, updater}, {updater, publisher}} {
 		reg := PluginRegistry{Plugins: plugins}
@@ -130,7 +143,10 @@ func TestHistoricalNPMAliasNeverDependsOnRegistryOrder(t *testing.T) {
 }
 
 func TestExecutableNameRemainsCompatibleAcrossIdentityMigration(t *testing.T) {
-	meta := PluginMeta{Namespace: "semrel", Name: "provider-github", Category: "provider"}
+	meta := PluginMeta{
+		Namespace: "semrel", Name: "provider-github", Category: "provider",
+		Repository: "https://github.com/SemRels/provider-github",
+	}
 	if got := meta.CanonicalRef(); got != "@semrel/provider-github" {
 		t.Fatalf("CanonicalRef() = %q", got)
 	}
@@ -142,12 +158,68 @@ func TestExecutableNameRemainsCompatibleAcrossIdentityMigration(t *testing.T) {
 		t.Fatalf("explicit ExecutableName() = %q", got)
 	}
 
-	publisher := PluginMeta{Namespace: "semrel", Name: "publisher-npm", Category: "publisher"}
+	publisher := PluginMeta{
+		Namespace: "semrel", Name: "publisher-npm", Category: "publisher",
+		Repository: "https://github.com/SemRels/publisher-npm",
+	}
 	if got := publisher.ExecutableName(); got != "publisher-npm" {
 		t.Fatalf("new colliding publisher executable = %q", got)
 	}
-	updater := PluginMeta{Namespace: "semrel", Name: "updater-npm", Category: "updater"}
+	updater := PluginMeta{
+		Namespace: "semrel", Name: "updater-npm", Category: "updater",
+		Repository: "https://github.com/SemRels/updater-npm",
+	}
 	if got := updater.ExecutableName(); got != "npm" {
 		t.Fatalf("historical updater executable = %q", got)
+	}
+}
+
+func TestFirstPartyIdentityRejectsSpoofedMetadata(t *testing.T) {
+	tests := []PluginMeta{
+		{
+			PackageName: "@semrel/provider-github",
+			Repository:  "https://attacker.example/?github.com/semrels/provider-github",
+		},
+		{
+			Namespace:  "semrel",
+			Name:       "github",
+			Category:   "provider",
+			Repository: "https://github.com/attacker/provider-github",
+		},
+		{
+			Namespace:  "semrel",
+			Name:       "github",
+			Category:   "provider",
+			Repository: "https://github.com/SemRels/provider-git",
+		},
+	}
+	for _, meta := range tests {
+		if meta.IsFirstParty() {
+			t.Fatalf("spoofed metadata trusted: %#v", meta)
+		}
+	}
+
+	reg := PluginRegistry{Plugins: []PluginMeta{{
+		PackageName: "@semrel/provider-github",
+		Name:        "provider-github",
+		Repository:  "https://attacker.example/?github.com/semrels/provider-github",
+	}}}
+	if _, err := reg.FindPlugin("github"); err == nil {
+		t.Fatal("spoofed metadata claimed a reserved historical alias")
+	}
+}
+
+func TestValidatedExecutableNameRejectsUnsafeBasenames(t *testing.T) {
+	for _, name := range []string{"../escape", `x\..\escape`, ".", "..", "CON", "LPT1.txt", "trailing."} {
+		meta := PluginMeta{ArtifactName: name}
+		if _, err := meta.ValidatedExecutableName(); err == nil {
+			t.Fatalf("ValidatedExecutableName(%q) succeeded", name)
+		}
+	}
+	for _, name := range []string{"github", "provider-github-v2", "plugin.exe"} {
+		meta := PluginMeta{ArtifactName: name}
+		if got, err := meta.ValidatedExecutableName(); err != nil || got != name {
+			t.Fatalf("ValidatedExecutableName(%q) = %q, %v", name, got, err)
+		}
 	}
 }

@@ -250,7 +250,11 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("creating plugin directory: %w", err)
 	}
 
-	binaryName := pluginBinaryName(meta.ExecutableName())
+	executableName, err := meta.ValidatedExecutableName()
+	if err != nil {
+		return fmt.Errorf("invalid plugin metadata: %w", err)
+	}
+	binaryName := pluginBinaryName(executableName)
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
@@ -490,8 +494,12 @@ func updateLockFile(meta *registry.PluginMeta, version *registry.PluginVersion) 
 		filtered = append(filtered, entry)
 	}
 	lf.Plugins = filtered
+	executableName, err := meta.ValidatedExecutableName()
+	if err != nil {
+		return fmt.Errorf("invalid plugin metadata: %w", err)
+	}
 	lf.Upsert(PluginLockEntry{
-		BinaryName: pluginBinaryName(meta.ExecutableName()),
+		BinaryName: pluginBinaryName(executableName),
 		Ref:        canonical,
 		Version:    version.Version,
 		Checksums:  version.Checksums,

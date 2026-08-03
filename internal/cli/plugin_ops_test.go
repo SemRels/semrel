@@ -87,10 +87,11 @@ func TestRunPluginInstallAndLint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runPluginInstall() error = %v", err)
 	}
-	if stderr != "" {
-		t.Fatalf("stderr = %q, want empty", stderr)
+	if !strings.Contains(stderr, "@semrel/provider-github") {
+		t.Fatalf("stderr = %q, want canonical migration hint", stderr)
 	}
-	if !strings.Contains(stdout, "Installing provider-github@1.0.0") || !strings.Contains(stdout, "Installed provider-github") {
+	if !strings.Contains(stdout, "Installing @semrel/provider-github@1.0.0") ||
+		!strings.Contains(stdout, "Installed @semrel/provider-github") {
 		t.Fatalf("stdout = %q", stdout)
 	}
 
@@ -176,7 +177,7 @@ func newNamespacedRegistryServer(t *testing.T, binary []byte, checksum string) *
 }
 
 func cliRegistryMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub release hooks","category":"hooks","tags":["github","hooks"],"downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}},{"version":"1.1.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub release hooks","category":"provider","repository":"https://github.com/SemRels/provider-github","artifactName":"provider-github","tags":["github","hooks"],"downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}},{"version":"1.1.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
 		serverURL,
 		checksum, checksum, checksum, checksum, checksum,
 		serverURL,
@@ -185,7 +186,7 @@ func cliRegistryMetadataJSON(serverURL, checksum string) string {
 }
 
 func namespacedRegistryMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"namespace":"semrel","name":"github","description":"GitHub releases provider","category":"provider","downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"namespace":"semrel","name":"github","description":"GitHub releases provider","category":"provider","repository":"https://github.com/SemRels/provider-github","downloads":42,"versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/github.exe","checksums":{"windows_amd64":"%s","windows_arm64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s"}}]}]}`,
 		serverURL,
 		checksum, checksum, checksum, checksum, checksum,
 	)

@@ -6,8 +6,12 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 )
+
+var artifactNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // PluginRegistry is the root document returned by the plugin registry.
 type PluginRegistry struct {
@@ -113,10 +117,10 @@ func (r *PluginRegistry) FindPlugin(name string) (*PluginMeta, error) {
 		canonicalName := canonical[strings.LastIndex(canonical, "/")+1:]
 		for i := range r.Plugins {
 			legacyCanonical, legacyKnown := CanonicalLegacyRef(r.Plugins[i].Name)
-			if strings.EqualFold(r.Plugins[i].CanonicalRef(), canonical) ||
+			if r.Plugins[i].IsFirstParty() && (strings.EqualFold(r.Plugins[i].CanonicalRef(), canonical) ||
 				strings.EqualFold(strings.TrimSpace(r.Plugins[i].Name), canonicalName) ||
 				(normalizeCategory(r.Plugins[i].Category) == "" && legacyKnown &&
-					strings.EqualFold(legacyCanonical, canonical)) {
+					strings.EqualFold(legacyCanonical, canonical))) {
 				matches = append(matches, &r.Plugins[i])
 			}
 		}
@@ -179,15 +183,42 @@ func (p *PluginMeta) references() []string {
 }
 
 // IsFirstParty reports whether registry metadata identifies an official plugin.
+// The reserved namespace alone is not trusted because registry metadata may
+// originate from community submissions.
 func (p PluginMeta) IsFirstParty() bool {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(p.PackageName)), firstPartyNamespace+"/") {
-		return true
+	repository, err := url.Parse(strings.TrimSpace(p.Repository))
+	if err != nil || !strings.EqualFold(repository.Scheme, "https") ||
+		!strings.EqualFold(repository.Hostname(), "github.com") ||
+		repository.RawQuery != "" || repository.Fragment != "" {
+		return false
 	}
-	if normalizeNamespace(p.Namespace) == firstPartyNamespace {
-		return true
+	parts := strings.Split(strings.Trim(strings.TrimSuffix(repository.Path, ".git"), "/"), "/")
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "SemRels") {
+		return false
 	}
-	repository := strings.ToLower(strings.TrimSpace(p.Repository))
-	return strings.Contains(repository, "github.com/semrels/")
+
+	repositoryName := strings.ToLower(parts[1])
+	known := false
+	for _, name := range firstPartyCanonicalNames {
+		if repositoryName == name {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return false
+	}
+
+	declaredName := strings.ToLower(strings.TrimSpace(p.PackageName))
+	declaredName = strings.TrimPrefix(declaredName, firstPartyNamespace+"/")
+	if declaredName == "" {
+		declaredName = strings.ToLower(strings.TrimSpace(p.Name))
+		category := normalizeCategory(p.Category)
+		if category != "" && !strings.HasPrefix(declaredName, category+"-") {
+			declaredName = category + "-" + declaredName
+		}
+	}
+	return declaredName == repositoryName
 }
 
 // CanonicalRef returns the registry package identity. Legacy metadata stored
@@ -242,6 +273,34 @@ func (p PluginMeta) ExecutableName() string {
 		return canonicalName
 	}
 	return name
+}
+
+// ValidatedExecutableName returns a filesystem-safe artifact basename.
+func (p PluginMeta) ValidatedExecutableName() (string, error) {
+	name := p.ExecutableName()
+	upper := strings.ToUpper(name)
+	if len(name) > 255 || !artifactNamePattern.MatchString(name) ||
+		name == "." || name == ".." || strings.HasSuffix(name, ".") ||
+		isWindowsReservedName(upper) {
+		return "", newRegistryError(
+			ErrCodeInvalidMetadata,
+			fmt.Sprintf("invalid executable name %q", name),
+			nil,
+		)
+	}
+	return name, nil
+}
+
+func isWindowsReservedName(name string) bool {
+	base := strings.SplitN(name, ".", 2)[0]
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) {
+		return base[3] >= '1' && base[3] <= '9'
+	}
+	return false
 }
 
 // FindVersion returns the requested plugin version. If version is empty, the latest stable version is preferred.

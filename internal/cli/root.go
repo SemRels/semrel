@@ -1045,7 +1045,11 @@ func autoInstallPlugin(ctx context.Context, uses string) error {
 		return fmt.Errorf("creating plugin directory: %w", err)
 	}
 
-	binaryName := pluginBinaryName(meta.ExecutableName())
+	executableName, err := meta.ValidatedExecutableName()
+	if err != nil {
+		return fmt.Errorf("invalid plugin metadata: %w", err)
+	}
+	binaryName := pluginBinaryName(executableName)
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}

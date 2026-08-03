@@ -16,17 +16,39 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 const maxDownloadAttempts = 3
 
+var pluginVersionPattern = regexp.MustCompile(
+	`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)` +
+		`(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?` +
+		`(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`,
+)
+
 // DownloadPlugin resolves a plugin locally and downloads it from the registry when missing.
 func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, goos, goarch string) (string, error) {
+	requestedCachePath, err := validatedPluginRefCachePath(plugin)
+	if err != nil {
+		return "", err
+	}
+	if version != "" {
+		if !pluginVersionPattern.MatchString(version) {
+			return "", newRegistryError(ErrCodeInvalidMetadata, fmt.Sprintf("invalid plugin version %q", version), nil)
+		}
+		if _, err := semver.ParseVersion(strings.TrimPrefix(version, "v")); err != nil {
+			return "", newRegistryError(ErrCodeInvalidMetadata, fmt.Sprintf("invalid plugin version %q", version), err)
+		}
+	}
+
 	// Preserve offline compatibility with cache entries written by older clients.
-	if existingPath, err := findLocalPluginBinary(c.localPluginDir(plugin, version, goos, goarch)); err != nil {
+	if existingPath, err := findLocalPluginBinary(c.localPluginDir(requestedCachePath, version, goos, goarch)); err != nil {
 		return "", err
 	} else if existingPath != "" {
 		return existingPath, nil
@@ -42,8 +64,18 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 		return "", err
 	}
 
-	artifactName := pluginMeta.ExecutableName()
-	cacheNames := uniqueStrings(artifactName, pluginMeta.Name, plugin)
+	artifactName, err := pluginMeta.ValidatedExecutableName()
+	if err != nil {
+		return "", err
+	}
+	resolvedCachePath, err := validatedPluginRefCachePath(pluginMeta.CanonicalRef())
+	if err != nil {
+		return "", err
+	}
+	cacheNames := []string{resolvedCachePath}
+	if pluginMeta.IsFirstParty() || !strings.HasPrefix(pluginMeta.CanonicalRef(), "@") {
+		cacheNames = uniqueStrings(artifactName, pluginMeta.Name, requestedCachePath)
+	}
 	for _, cacheName := range cacheNames {
 		localDir := c.localPluginDir(cacheName, version, goos, goarch)
 		if existingPath, findErr := findLocalPluginBinary(localDir); findErr != nil {
@@ -53,7 +85,7 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 		}
 	}
 
-	localDir := c.localPluginDir(artifactName, version, goos, goarch)
+	localDir := c.localPluginDir(resolvedCachePath, version, goos, goarch)
 	pluginVersion, err := pluginMeta.FindVersion(version)
 	if err != nil {
 		return "", err
@@ -74,6 +106,28 @@ func (c *RegistryClient) DownloadPlugin(ctx context.Context, plugin, version, go
 		return "", err
 	}
 	return targetPath, nil
+}
+
+func validatedPluginRefCachePath(ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "@") {
+		parts := strings.Split(ref, "/")
+		scope := strings.TrimPrefix(parts[0], "@")
+		if len(parts) != 2 || !artifactNamePattern.MatchString(scope) {
+			return "", newRegistryError(ErrCodeInvalidMetadata, fmt.Sprintf("invalid plugin reference %q", ref), nil)
+		}
+		name, err := validatedArtifactName(parts[1])
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join("@"+scope, name), nil
+	}
+	return validatedArtifactName(ref)
+}
+
+func validatedArtifactName(name string) (string, error) {
+	meta := PluginMeta{ArtifactName: strings.TrimSpace(name)}
+	return meta.ValidatedExecutableName()
 }
 
 func uniqueStrings(values ...string) []string {
