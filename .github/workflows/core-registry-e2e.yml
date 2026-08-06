@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-registry-e2e-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

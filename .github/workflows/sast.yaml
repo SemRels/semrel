@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sast-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
