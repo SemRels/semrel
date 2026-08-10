@@ -251,7 +251,7 @@ Pipeline steps:
      — maintenance branches (1.x) allow patch bumps only
   7. Generate changelog / release notes
   8. Run pre-tag plugins (e.g. version file updaters)
-  9. Commit CHANGELOG.md (unless commit_changelog: false)
+  9. Commit all tracked release changes once
  10. Create and push the git tag
  11. Run release-phase plugins (providers, hooks, package publishers)
 
@@ -438,7 +438,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// 6. Build rule list and analyse commits
 	rules := make([]semver.RuleEntry, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump}
+		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump, Hidden: r.Hidden}
 		switch v := r.Scope.(type) {
 		case string:
 			entry.Scope = v
@@ -470,6 +470,10 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	bump := semver.BumpFromRules(commitInfos, rules, hasBreaking)
+	visibleParsed := parsed
+	if len(rules) > 0 {
+		visibleParsed = visibleCommits(parsed, rules)
+	}
 	if bump == "" && !forcePatch {
 		summary := ReleaseSummary{
 			Released:       false,
@@ -603,7 +607,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 8. Generate changelog
 	gen := changelog.NewGenerator()
-	changelogEntry := gen.Generate(nextTag, parsed)
+	changelogEntry := gen.Generate(nextTag, visibleParsed)
 
 	// 8a. Run generator-phase plugins — these can override SEMREL_CHANGELOG
 	//     by printing a custom changelog/release-notes text to stdout.
@@ -779,25 +783,19 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 	}
 
-	// 11. Write CHANGELOG.md (prepend) and optionally commit it before tagging.
+	// 11. Write CHANGELOG.md (prepend). All tracked changes are committed once
+	// after pre-tag plugins have finished so the release has a single commit.
 	//
-	// When commit_changelog is true (default): semrel writes and commits CHANGELOG.md
-	// using its built-in generator. The tag is created on that commit.
+	// When commit_changelog is true (default): semrel writes CHANGELOG.md using
+	// its built-in generator.
 	//
 	// When commit_changelog is false: semrel skips both the write and the commit,
 	// delegating full changelog management to a pre-tag generator plugin
 	// (e.g. @semrel/generator-changelog-md with phase: pre-tag).
-	// The plugin's CHANGELOG.md write is then picked up by the auto-commit in step 11a.
+	// The plugin's CHANGELOG.md write is then picked up by the final auto-commit.
 	if cfg.ShouldCommitChangelog() {
 		if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
-		} else {
-			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
-			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
-			} else if outputFormat != "json" {
-				fmt.Println(colors.Success("Committed CHANGELOG.md"))
-			}
 		}
 	}
 
@@ -813,22 +811,21 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			if err := orch.Run(ctx, preTagSpecs); err != nil {
 				return err
 			}
-			// Auto-commit any tracked files modified by pre-tag plugins (version.go,
-			// CHANGELOG.md when commit_changelog:false with a generator plugin, etc.).
-			// The tag will then point to this commit so `go install @vX.Y.Z` embeds
-			// the correct version and the changelog is part of the tagged commit.
-			msg := fmt.Sprintf("chore(release): set version to %s [skip ci]", summary.NextVersion)
-			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit pre-tag changes: %v", err)))
-			} else if committed && outputFormat != "json" {
-				fmt.Println(colors.Success(fmt.Sprintf("Committed pre-tag version files (%s)", summary.NextVersion)))
-			}
 		} else if outputFormat != "json" {
 			fmt.Println(colors.Warning("[dry-run] skipping pre-tag plugins"))
 		}
 	}
 
-	// 12. Create git tag (on the CHANGELOG/version-bump commit)
+	// 12. Commit all tracked release changes once, including built-in or
+	// plugin-generated changelogs and pre-tag plugin mutations.
+	msg := fmt.Sprintf("chore(release): prepare %s [skip ci]", nextTag)
+	if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
+		return fmt.Errorf("committing release changes: %w", err)
+	} else if committed && outputFormat != "json" {
+		fmt.Println(colors.Success(fmt.Sprintf("Committed release changes (%s)", summary.NextVersion)))
+	}
+
+	// 13. Create git tag (on the combined release commit)
 	if err := repo.CreateTag(ctx, nextTag, "Release "+nextTag); err != nil {
 		return fmt.Errorf("creating tag: %w", err)
 	}
@@ -836,7 +833,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		fmt.Println(colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag))))
 	}
 
-	// 13. Run configured release-phase plugins
+	// 14. Run configured release-phase plugins
 	if len(cfg.Plugins) > 0 {
 		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
 		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
@@ -866,6 +863,7 @@ func pluginSpecsForPhase(plugins []config.PluginConfig, phase string) []pluginin
 		if effective == "" {
 			effective = "release"
 		}
+
 		if effective != phase {
 			continue
 		}
@@ -877,6 +875,24 @@ func pluginSpecsForPhase(plugins []config.PluginConfig, phase string) []pluginin
 		})
 	}
 	return specs
+}
+
+func visibleCommits(parsed []*commits.Commit, rules []semver.RuleEntry) []*commits.Commit {
+	visible := make([]*commits.Commit, 0, len(parsed))
+	for _, commit := range parsed {
+		hidden := false
+		info := semver.CommitInfo{Type: commit.Type, Scope: commit.Scope}
+		for _, rule := range rules {
+			if rule.Hidden && semver.RuleMatches(info, rule) {
+				hidden = true
+				break
+			}
+		}
+		if !hidden {
+			visible = append(visible, commit)
+		}
+	}
+	return visible
 }
 
 func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
@@ -908,17 +924,7 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 		env := os.Environ()
 		env = append(env, releaseContextEnv(rel, dryRun)...)
 		// Plugin-specific config from .semrel.yaml args.
-		// Only append non-empty values: an empty args entry must not shadow a
-		// SEMREL_PLUGIN_* variable that is already set in the process environment.
-		// Go's exec deduplicates env vars keeping the last occurrence, so appending
-		// SEMREL_PLUGIN_TOKEN="" would silently erase a real token from os.Environ().
-		for k, v := range spec.Config {
-			val := fmt.Sprintf("%v", v)
-			if val == "" {
-				continue // leave the env-var from os.Environ() intact
-			}
-			env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
-		}
+		env = append(env, pluginConfigEnv(spec.Config)...)
 		cmd.Env = env
 		return cmd.Run()
 	}
@@ -947,12 +953,7 @@ func runGeneratorPlugin(ctx context.Context, spec plugininstance.PluginSpec, rel
 	cmd.Stderr = os.Stderr
 	env := os.Environ()
 	env = append(env, releaseContextEnv(rel, false)...)
-	for k, v := range spec.Config {
-		val := fmt.Sprintf("%v", v)
-		if val != "" {
-			env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
-		}
-	}
+	env = append(env, pluginConfigEnv(spec.Config)...)
 	cmd.Env = env
 	if err := cmd.Run(); err != nil {
 		return "", err
@@ -1180,6 +1181,49 @@ func pluginEnvKey(key string) string {
 	key = strings.ToUpper(key)
 	replacer := strings.NewReplacer("-", "_", ".", "_", " ", "_")
 	return replacer.Replace(key)
+}
+
+// pluginConfigEnv converts a plugin's ".semrel.yaml" args map into the
+// SEMREL_PLUGIN_* environment variables passed to the plugin process.
+//
+// Scalar values (string, bool, number) are stringified directly into
+// SEMREL_PLUGIN_<KEY>, as before. Complex values (maps and slices) cannot be
+// meaningfully represented by Go's default "%v" formatting (it produces
+// Go-syntax like "map[feat:Features]", which plugins cannot parse), so they
+// are instead JSON-encoded and exposed under SEMREL_PLUGIN_<KEY>_JSON. This
+// matches the convention already used by several official plugins (e.g.
+// SECTIONS_JSON, ARTIFACTS_JSON, HEADERS_JSON), letting config authors write
+// clean, nested YAML instead of hand-written JSON strings.
+//
+// Only non-empty scalar values are appended: an empty args entry must not
+// shadow a SEMREL_PLUGIN_* variable that is already set in the process
+// environment. Go's exec deduplicates env vars keeping the last occurrence,
+// so appending SEMREL_PLUGIN_TOKEN="" would silently erase a real token from
+// os.Environ().
+func pluginConfigEnv(cfg map[string]interface{}) []string {
+	var env []string
+	for k, v := range cfg {
+		name := "SEMREL_PLUGIN_" + pluginEnvKey(k)
+		switch v.(type) {
+		case map[string]interface{}, map[interface{}]interface{}, []interface{}:
+			data, err := json.Marshal(v)
+			if err != nil {
+				// Fall back to the legacy behaviour rather than silently dropping the value.
+				if val := fmt.Sprintf("%v", v); val != "" {
+					env = append(env, name+"="+val)
+				}
+				continue
+			}
+			env = append(env, name+"_JSON="+string(data))
+		default:
+			val := fmt.Sprintf("%v", v)
+			if val == "" {
+				continue // leave the env-var from os.Environ() intact
+			}
+			env = append(env, name+"="+val)
+		}
+	}
+	return env
 }
 
 func resolveConfigFile(configFile string) (string, error) {

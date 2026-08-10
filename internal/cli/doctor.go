@@ -16,8 +16,10 @@ import (
 
 	"github.com/SemRels/semrel/internal/colors"
 	"github.com/SemRels/semrel/internal/registry"
+	buildversion "github.com/SemRels/semrel/internal/version"
 	"github.com/SemRels/semrel/pkg/config"
 	gitpkg "github.com/SemRels/semrel/pkg/git"
+	"github.com/SemRels/semrel/pkg/plugin"
 )
 
 // DoctorCheck represents a single pre-flight check performed by `semrel doctor`.
@@ -59,7 +61,7 @@ It also recommends plugins you might be missing based on your project:
 
 Exit code 0 = all checks pass (no failures). Warnings and suggestions do not affect the exit code.
 
-Use --online to also ping the semrel registry for plugin availability.`,
+Use --online to also ping the semrel registry and report newer CLI or plugin versions.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd.Context(), *configFile, *outputFormat, online)
 		},
@@ -97,6 +99,7 @@ func runDoctor(ctx context.Context, configFile string, outputFormat string, onli
 	// 7. (optional) Online registry ping.
 	if online {
 		checks = append(checks, checkRegistryOnline(ctx)...)
+		checks = append(checks, checkUpdates(ctx)...)
 	}
 
 	healthy := true
@@ -121,6 +124,45 @@ func runDoctor(ctx context.Context, configFile string, outputFormat string, onli
 		return fmt.Errorf("one or more checks failed")
 	}
 	return nil
+}
+
+func checkUpdates(ctx context.Context) []DoctorCheck {
+	checks := make([]DoctorCheck, 0, 2)
+	latest, err := fetchLatestRelease(ctx)
+	if err != nil {
+		return []DoctorCheck{{Name: "semrel-update", Status: "warn", Message: fmt.Sprintf("could not check latest semrel release: %v", err)}}
+	}
+	current := strings.TrimPrefix(buildversion.Version, "v")
+	latestVersion := strings.TrimPrefix(latest.TagName, "v")
+	if current != "dev" && current != latestVersion {
+		checks = append(checks, DoctorCheck{Name: "semrel-update", Status: "warn", Message: fmt.Sprintf("semrel %s is available (current: %s)", latest.TagName, buildversion.Version), Fix: "run `semrel update`"})
+	} else {
+		checks = append(checks, DoctorCheck{Name: "semrel-update", Status: "ok", Message: fmt.Sprintf("semrel is up to date (%s)", latest.TagName)})
+	}
+
+	loader := plugin.NewLoader()
+	reg, err := loader.FetchMetadata(ctx)
+	if err != nil {
+		checks = append(checks, DoctorCheck{Name: "plugin-updates", Status: "warn", Message: fmt.Sprintf("could not check plugin updates: %v", err)})
+		return checks
+	}
+	targets, err := pluginUpdateTargets(reg, "")
+	if err != nil {
+		checks = append(checks, DoctorCheck{Name: "plugin-updates", Status: "warn", Message: fmt.Sprintf("could not check plugin updates: %v", err)})
+		return checks
+	}
+	updates := 0
+	for _, target := range targets {
+		if target.UpdateAvailable {
+			updates++
+		}
+	}
+	if updates > 0 {
+		checks = append(checks, DoctorCheck{Name: "plugin-updates", Status: "warn", Message: fmt.Sprintf("%d plugin update(s) available", updates), Fix: "run `semrel plugin update`"})
+	} else {
+		checks = append(checks, DoctorCheck{Name: "plugin-updates", Status: "ok", Message: "configured plugins are up to date"})
+	}
+	return checks
 }
 
 // checkConfig resolves, loads and validates the .semrel.yaml.

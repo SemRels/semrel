@@ -229,6 +229,7 @@ Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** b
 |-------|------|-------------|
 | `type` | string | Conventional commit type (for example `feat`, `fix`, `docs`) |
 | `bump` | string | One of `major`, `minor`, `patch` |
+| `hidden` | boolean | `false` | Keep matching commits out of generated changelogs while still applying their version bump |
 
 #### Default rules
 

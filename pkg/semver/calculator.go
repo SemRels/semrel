@@ -339,6 +339,22 @@ type RuleEntry struct {
 	Scope     string // exact scope to match (only when ScopeNone is false)
 	ScopeNone bool   // true when the rule was declared with scope: false
 	Bump      string // "major", "minor", "patch"
+	Hidden    bool   // matching commits are omitted from generated changelogs
+}
+
+// RuleMatches reports whether a commit matches a release rule.
+func RuleMatches(c CommitInfo, r RuleEntry) bool {
+	if r.Type != c.Type {
+		return false
+	}
+	switch {
+	case r.ScopeNone:
+		return c.Scope == ""
+	case r.Scope != "":
+		return r.Scope == c.Scope
+	default:
+		return true
+	}
 }
 
 // BumpFromRules analyses commits against release rules and returns the highest bump level.
@@ -354,18 +370,8 @@ func BumpFromRules(commitList []CommitInfo, rules []RuleEntry, hasBreaking bool)
 	order := map[string]int{"major": 3, "minor": 2, "patch": 1}
 	for _, c := range commitList {
 		for _, r := range rules {
-			if r.Type != c.Type {
+			if !RuleMatches(c, r) {
 				continue
-			}
-			switch {
-			case r.ScopeNone:
-				if c.Scope != "" {
-					continue // rule wants scopeless, but commit has a scope
-				}
-			case r.Scope != "":
-				if r.Scope != c.Scope {
-					continue // scope doesn't match
-				}
 			}
 			if order[r.Bump] > order[best] {
 				best = r.Bump

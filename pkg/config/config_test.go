@@ -29,6 +29,7 @@ tagPrefix: "v"
 rules:
   - type: feat
     bump: minor
+    hidden: true
   - type: fix
     bump: patch
 plugins:
@@ -60,6 +61,9 @@ plugins:
 	}
 	if cfg.Rules[0].Type != "feat" || cfg.Rules[0].Bump != "minor" {
 		t.Errorf("unexpected first rule: %+v", cfg.Rules[0])
+	}
+	if !cfg.Rules[0].Hidden {
+		t.Error("expected first rule to be hidden")
 	}
 	if len(cfg.Plugins) != 2 {
 		t.Errorf("expected 2 plugins, got %d", len(cfg.Plugins))

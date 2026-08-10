@@ -282,6 +282,11 @@
             "minor",
             "patch"
           ]
+        },
+        "hidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, matching commits affect the version bump but are omitted from generated changelogs."
         }
       }
     },

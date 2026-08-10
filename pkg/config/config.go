@@ -136,9 +136,10 @@ func (c *Config) FindBranchConfig(branchName string) *BranchConfig {
 //   - Scope is a string:   matches only commits with that exact type AND scope.
 //   - Scope is false:      matches only commits of the given type that carry NO scope.
 type ReleaseRule struct {
-	Type  string      `yaml:"type" toml:"type" json:"type"`
-	Scope interface{} `yaml:"scope,omitempty" toml:"scope,omitempty" json:"scope,omitempty"`
-	Bump  string      `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
+	Type   string      `yaml:"type" toml:"type" json:"type"`
+	Scope  interface{} `yaml:"scope,omitempty" toml:"scope,omitempty" json:"scope,omitempty"`
+	Bump   string      `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
+	Hidden bool        `yaml:"hidden,omitempty" toml:"hidden" json:"hidden,omitempty"`
 }
 
 // PluginConfig configures a plugin.
