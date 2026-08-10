@@ -313,6 +313,19 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Check for newer CLI and plugin versions on the path users invoke most:
+	// the release command. Update checks are advisory and never block releases.
+	if outputFormat != "json" {
+		for _, check := range checkUpdates(ctx) {
+			if check.Status == "warn" && (strings.Contains(check.Message, " is available") || strings.Contains(check.Message, " update(s) available")) {
+				fmt.Fprintf(os.Stderr, "%s %s\n", colors.Warning("update check:"), check.Message)
+				if check.Fix != "" {
+					fmt.Fprintf(os.Stderr, "  %s\n", check.Fix)
+				}
+			}
+		}
+	}
+
 	// 1a. Warn if config schema is outdated.
 	if !config.IsUpToDate(cfg) && outputFormat != "json" {
 		fmt.Fprintf(os.Stderr, "warning: .semrel.yaml is at schema version %d; current version is %d — run `semrel migrate` to upgrade\n",
