@@ -11,7 +11,10 @@ A [JSON Schema](https://registry.semrel.io/schemas/core/v1.json) is published at
 
 `semrel config init` adds the schema directive automatically. For existing files, add this comment at the top of your `.semrel.yaml`:
 
-```yaml
+```
+
+`semrel release` performs the same CLI and configured-plugin update check
+automatically. It is advisory and network failures do not block a release.yaml
 # yaml-language-server: $schema=https://registry.semrel.io/schemas/core/v1.json
 ```
 
@@ -342,12 +345,13 @@ ceiling_strategy: clamp
 
 ### `commit_changelog`
 
-Controls whether semrel writes **and** commits `CHANGELOG.md` before creating the git tag.
-Default: `true`.
+Controls whether semrel writes `CHANGELOG.md` with the built-in generator.
+All tracked changes from the built-in generator and pre-tag plugins are committed
+once together immediately before the git tag is created. Default: `true`.
 
 | Value | Behaviour |
 |-------|-----------|
-| `true` (default) | semrel generates, writes, and commits `CHANGELOG.md` using its built-in changelog generator. |
+| `true` (default) | semrel generates and writes `CHANGELOG.md` using its built-in changelog generator. The file is included in the single release commit. |
 | `false` | semrel skips the built-in `CHANGELOG.md` write entirely. Use this when a pre-tag generator plugin (e.g. `@semrel/generator-changelog-md`) is responsible for writing the changelog. |
 
 ```yaml
@@ -362,7 +366,7 @@ commit_changelog: false
 
 plugins:
   - uses: @semrel/generator-changelog-md
-    phase: pre-tag           # runs before the tag, auto-committed by semrel
+    phase: pre-tag           # runs before the tag; changes are committed with the changelog
     args:
       keep_releases: "10"    # required: without this the plugin only outputs to stdout
 ```
@@ -434,16 +438,17 @@ See the [Monorepo guide](https://semrel.io/guide/monorepo/) for full details and
 
 Runs the full release pipeline:
 1. Load and validate `.semrel.yaml`
-2. Run condition-phase plugins (gates)
-3. Check current branch is configured for release
-4. Find last tag, collect commits since then
-5. Parse commits against Conventional Commits rules
-6. Calculate next SemVer bump
-7. Generate changelog / release notes
-8. Run pre-tag plugins (for example version file updaters)
-9. Commit `CHANGELOG.md` (unless `commit_changelog: false`)
-10. Create and push git tag
-11. Run release-phase plugins (providers, hooks, publishers)
+2. Check for newer CLI and plugin versions (advisory, non-blocking)
+3. Run condition-phase plugins (gates)
+4. Check current branch is configured for release
+5. Find last tag, collect commits since then
+6. Parse commits against Conventional Commits rules
+7. Calculate next SemVer bump
+8. Generate changelog / release notes
+9. Run pre-tag plugins (for example version file updaters)
+10. Commit all tracked release changes once (unless there are no changes)
+11. Create and push git tag
+12. Run release-phase plugins (providers, hooks, publishers)
 
 Release-specific flags:
 

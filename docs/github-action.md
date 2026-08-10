@@ -83,5 +83,5 @@ available options.
 
 | Permission | Level | Reason |
 |-----------|-------|--------|
-| `contents` | `write` | Push git tags, write `CHANGELOG.md` |
+| `contents` | `write` | Commit release files and push git tags |
 | `id-token` | `write` | (optional) OIDC-based Sigstore signing via the cosign plugin |

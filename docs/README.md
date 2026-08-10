@@ -21,19 +21,20 @@ go doc -html github.com/SemRels/semrel/docs | open /dev/stdin
 
 ## Release Pipeline
 
-semrel follows an 11-step release pipeline:
+semrel follows a 12-step release pipeline:
 
 1. **Load Configuration** — Parse `.semrel.yaml` (or `.toml`/`.json`)
-2. **Check Conditions** — Run gate plugins (branches, status checks, etc.)
-3. **Gather Commits** — Collect commits since last release tag
-4. **Parse Commits** — Parse Conventional Commits (feat, fix, breaking changes)
-5. **Calculate Version** — Determine next SemVer using bump rules
-6. **Generate Release Notes** — Build changelog from commits
-7. **Run Pre-Release Plugins** — Execute updaters (version files, etc.)
-8. **Commit Changelog** — Stage and commit CHANGELOG.md (optional)
-9. **Tag Release** — Create annotated Git tag and push
-10. **Run Post-Release Plugins** — Execute providers (GitHub, GitLab, etc.) and hooks (Slack, Teams, etc.)
-11. **Report Results** — Output release summary
+2. **Check Updates** — Advisory check for newer CLI and configured plugin versions
+3. **Check Conditions** — Run gate plugins (branches, status checks, etc.)
+4. **Gather Commits** — Collect commits since last release tag
+5. **Parse Commits** — Parse Conventional Commits (feat, fix, breaking changes)
+6. **Calculate Version** — Determine next SemVer using bump rules
+7. **Generate Release Notes** — Build changelog from commits
+8. **Run Pre-Release Plugins** — Execute updaters (version files, etc.)
+9. **Commit Release Changes** — Commit all tracked changelog and pre-release plugin changes once
+10. **Tag Release** — Create annotated Git tag and push
+11. **Run Post-Release Plugins** — Execute providers (GitHub, GitLab, etc.) and hooks (Slack, Teams, etc.)
+12. **Report Results** — Output release summary
 
 ## Plugin Architecture
 
