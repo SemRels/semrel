@@ -98,12 +98,20 @@ jobs:
       - name: Push tag to GitHub
         if: steps.semrel.outputs.released == 'true'
         run: |
-          # Push only the tag — no pre-tag commit exists (gobinary plugin removed).
-          # Pushing commits to the protected main branch requires admin rights that
-          # GITHUB_TOKEN does not have; the tag push is unaffected by branch protection.
-          git push --force origin "refs/tags/${{ steps.semrel.outputs.tag }}"
+          tag="${{ steps.semrel.outputs.tag }}"
+          # Prefer the authenticated git remote, but fall back to the GitHub
+          # API because hosted runners can lose checkout's credential helper
+          # after tools modify the local repository configuration.
+          if ! git push --verbose origin "refs/tags/${tag}"; then
+            echo "Git push failed; creating the tag reference through the GitHub API."
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${tag}" \
+              -f "sha=$(git rev-list -n 1 "refs/tags/${tag}")"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Save CHANGELOG and clean up before building release assets
         if: steps.semrel.outputs.released == 'true'
