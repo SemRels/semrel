@@ -36,7 +36,12 @@ jobs:
           git add .semrel.lock
           git commit -m "chore(deps): update semrel plugins"
           git push --force-with-lease origin "$branch"
-          gh pr create --base "${{ github.event.repository.default_branch }}" \
-            --head "$branch" \
-            --title "chore(deps): update semrel plugins" \
-            --body "Automated update from the weekly semrel update preflight."
+          existing_pr="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          if [ -z "$existing_pr" ]; then
+            gh pr create --base "${{ github.event.repository.default_branch }}" \
+              --head "$branch" \
+              --title "chore(deps): update semrel plugins" \
+              --body "Automated update from the weekly semrel update preflight."
+          else
+            echo "Update PR #$existing_pr already exists."
+          fi
