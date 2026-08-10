@@ -32,7 +32,7 @@ rules:
     - type: revert
       bump: patch
 plugins:
-    - uses: condition-github-actions
+    - uses: "@semrel/condition-github-actions"
       phase: condition
 version_ceiling: 1.0.0
 ceiling_strategy: clamp

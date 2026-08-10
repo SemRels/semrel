@@ -228,6 +228,19 @@ func TestDownloadPluginErrors(t *testing.T) {
 		_, err := client.DownloadPlugin(context.Background(), "provider-github", "1.0.0", "windows", "amd64")
 		assertRegistryErrorCode(t, err, ErrCodeInvalidChecksum)
 	})
+
+	t.Run("unsafe version", func(t *testing.T) {
+		t.Parallel()
+		client := newTestClient(t, "http://127.0.0.1:1")
+		_, err := client.DownloadPlugin(
+			context.Background(),
+			"provider-github",
+			"1.2.3-x/../../../../escape",
+			"linux",
+			"amd64",
+		)
+		assertRegistryErrorCode(t, err, ErrCodeInvalidMetadata)
+	})
 }
 
 func TestValidateChecksum(t *testing.T) {
@@ -320,7 +333,7 @@ func TestDownloadPluginDoesNotTrackFromDownloadLayer(t *testing.T) {
 const checksumPlaceholder = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func testMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub provider","author":"GoSemantics","license":"Apache-2.0","category":"provider","versions":[{"version":"1.0.0","releaseDate":"2026-05-24T12:00:00Z","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","linux_amd64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","description":"GitHub provider","author":"GoSemantics","license":"Apache-2.0","category":"provider","repository":"https://github.com/SemRels/provider-github","versions":[{"version":"1.0.0","releaseDate":"2026-05-24T12:00:00Z","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","linux_amd64":"%s"}}]}]}`,
 		serverURL,
 		checksum,
 		checksum,

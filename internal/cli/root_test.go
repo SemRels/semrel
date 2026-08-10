@@ -332,6 +332,13 @@ func TestPluginBinaryNames_IncludesLegacyFallback(t *testing.T) {
 	}
 }
 
+func TestPluginBinaryNamesDoesNotCollideNewPublisherWithUpdater(t *testing.T) {
+	got := pluginBinaryNames("@semrel/publisher-npm")
+	if len(got) != 1 || got[0] != "semrel-plugin-publisher-npm" {
+		t.Fatalf("pluginBinaryNames(publisher-npm) = %#v", got)
+	}
+}
+
 func TestPluginEnvKey(t *testing.T) {
 	if got := pluginEnvKey("webhook-url.value"); got != "WEBHOOK_URL_VALUE" {
 		t.Fatalf("pluginEnvKey() = %q", got)

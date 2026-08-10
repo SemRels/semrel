@@ -123,12 +123,16 @@ func TestMetadataLookupHelpers(t *testing.T) {
 			{Version: "0.1.0", DownloadURL: "https://example.com/multi-1", Checksums: map[string]string{"linux_amd64": "v1"}},
 		},
 	}, {
-		Name:     "github-actions",
-		Versions: []PluginVersion{{Version: "0.1.0", DownloadURL: "https://example.com/ga", Checksums: map[string]string{"linux_amd64": "ga"}}},
+		Name:       "github-actions",
+		Category:   "condition",
+		Repository: "https://github.com/SemRels/condition-github-actions",
+		Versions:   []PluginVersion{{Version: "0.1.0", DownloadURL: "https://example.com/ga", Checksums: map[string]string{"linux_amd64": "ga"}}},
 	}, {
-		Name:      "github",
-		Namespace: "@semrel",
-		Versions:  []PluginVersion{{Version: "1.0.0", DownloadURL: "https://example.com/gh", Checksums: map[string]string{"linux_amd64": "gh"}}},
+		Name:       "github",
+		Namespace:  "@semrel",
+		Category:   "provider",
+		Repository: "https://github.com/SemRels/provider-github",
+		Versions:   []PluginVersion{{Version: "1.0.0", DownloadURL: "https://example.com/gh", Checksums: map[string]string{"linux_amd64": "gh"}}},
 	}}}
 
 	pluginMeta, err := registry.FindPlugin("demo")
@@ -256,4 +260,23 @@ func TestDownloadHelpers(t *testing.T) {
 	}
 
 	assertRegistryErrorCode(t, newTestClient(t, DefaultBaseURL).ValidateChecksum(filepath.Join(t.TempDir(), "missing.exe"), strings.Repeat("0", 64)), ErrCodeCacheError)
+}
+
+func TestCachePathValidationPreservesScopeAndRejectsTraversal(t *testing.T) {
+	alice, err := validatedPluginRefCachePath("@alice/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := validatedPluginRefCachePath("@bob/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alice == bob || alice != filepath.Join("@alice", "foo") || bob != filepath.Join("@bob", "foo") {
+		t.Fatalf("scoped cache paths collide: alice=%q bob=%q", alice, bob)
+	}
+	for _, ref := range []string{"../foo", "@alice/../foo", `@alice/x\..\foo`, "@alice/foo/bar"} {
+		if _, err := validatedPluginRefCachePath(ref); err == nil {
+			t.Fatalf("validatedPluginRefCachePath(%q) succeeded", ref)
+		}
+	}
 }

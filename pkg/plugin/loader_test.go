@@ -124,7 +124,7 @@ func loaderTestServer(t *testing.T, binary []byte, checksum string) *httptest.Se
 }
 
 func loaderMetadataJSON(serverURL, checksum string) string {
-	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s","windows_arm64":"%s"}}]}]}`,
+	return fmt.Sprintf(`{"plugins":[{"name":"provider-github","category":"provider","repository":"https://github.com/SemRels/provider-github","artifactName":"provider-github","versions":[{"version":"1.0.0","downloadUrl":"%s/downloads/provider-github.exe","checksums":{"windows_amd64":"%s","linux_amd64":"%s","darwin_amd64":"%s","darwin_arm64":"%s","windows_arm64":"%s"}}]}]}`,
 		serverURL,
 		checksum,
 		checksum,

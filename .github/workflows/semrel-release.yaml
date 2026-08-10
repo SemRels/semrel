@@ -1,14 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The semrel Authors
 #
-# semrel-release — uses semrel to version semrel itself (dogfooding).
-# Flow: push to main → semrel creates tag → build release binaries + checksums,
-#       sign with cosign → publish GitHub release via semrel's own
-#       provider-github plugin → Docker build+push
-#
-# NOTE: All steps are inlined in one workflow because GITHUB_TOKEN-triggered events
-# (tag pushes, release creation) cannot trigger other workflows (GitHub Actions security
-# restriction). Docker build is a separate job that depends on the release job.
+# semrel creates the tag, validation images are scanned by digest and promoted,
+# then semrel's provider-github plugin publishes signed release assets.
 name: Semrel Release
 
 on:
@@ -16,165 +10,555 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Serialise releases so concurrent pushes do not create conflicting CHANGELOG commits.
-# cancel-in-progress: false means later runs queue instead of being cancelled.
-concurrency:
-  group: semrel-release
-  cancel-in-progress: false
-
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   release:
-    name: Run semrel release
+    name: Determine release
     runs-on: ubuntu-latest
+    concurrency:
+      # Only version calculation is serialized. Exact downstream jobs never
+      # enter this replaceable pending slot.
+      group: semrel-orchestrator-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write
-      id-token: write
     outputs:
+      build_date: ${{ steps.tag.outputs.build_date }}
+      changelog: ${{ steps.semrel.outputs.changelog }}
+      exact_key: ${{ steps.tag.outputs.exact_key }}
       released: ${{ steps.semrel.outputs.released }}
+      image_version: ${{ steps.tag.outputs.image_version }}
+      source_sha: ${{ steps.tag.outputs.source_sha }}
+      stable: ${{ steps.tag.outputs.stable }}
       tag: ${{ steps.semrel.outputs.tag }}
       version_short: ${{ steps.semrel.outputs.version }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build semrel from source
-        run: go build -ldflags="-s -w" -o ./semrel-bin ./cmd/semrel
+        run: go build -ldflags="-s -w" -o "${RUNNER_TEMP}/semrel" ./cmd/semrel
 
       - name: Install plugins from source
-        # Plugins have no official releases yet — build them from their main branch.
-        # Once plugins publish tagged releases this step can switch to:
-        #   semrel plugin install condition-github-actions
-        # Binaries are placed in ~/.semrel/plugins/ using the discovery name
-        # that semrel expects: semrel-plugin-<uses>.
         run: |
-          PLUGIN_DIR="$HOME/.semrel/plugins"
-          mkdir -p "$PLUGIN_DIR"
-          go install github.com/SemRels/condition-github-actions/cmd/plugin@main
-          mv "$(go env GOPATH)/bin/plugin" "$PLUGIN_DIR/semrel-plugin-condition-github-actions"
-          go install github.com/SemRels/updater-go/cmd/plugin@main
-          mv "$(go env GOPATH)/bin/plugin" "$PLUGIN_DIR/semrel-plugin-gobinary"
-          echo "Installed plugins:"
-          ls -la "$PLUGIN_DIR"
-
-      - name: Build provider-github plugin binary
-        # Built separately (not into ~/.semrel/plugins) because it is invoked
-        # directly as a standalone subprocess below, after release assets
-        # exist — not orchestrated through `semrel release` itself (see the
-        # "Publish GitHub release" step for why).
-        #
-        # GOPROXY=direct is required here: the default proxy.golang.org
-        # caches "@main" resolutions for several minutes, which can serve a
-        # stale commit right after a fix lands on provider-github's main
-        # branch. Fetching directly from GitHub avoids that staleness.
-        env:
-          GOPROXY: direct
-          GOSUMDB: "off"
-        run: |
-          go install github.com/SemRels/provider-github/cmd/plugin@main
-          mv "$(go env GOPATH)/bin/plugin" /tmp/provider-github-plugin
+          set -euo pipefail
+          plugin_dir="${HOME}/.semrel/plugins"
+          mkdir -p "${plugin_dir}"
+          go install github.com/SemRels/condition-github-actions/cmd/plugin@v0.2.2
+          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-condition-github-actions"
+          go install github.com/SemRels/updater-go/cmd/plugin@v0.3.2
+          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-gobinary"
 
       - name: Configure git identity
         run: |
-          git config user.name  "semrel-bot"
+          git config user.name "semrel-bot"
           git config user.email "semrel-bot@users.noreply.github.com"
 
       - name: Run semrel release
         id: semrel
-        run: ./semrel-bin release --github-output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: "${RUNNER_TEMP}/semrel release --github-output"
 
       - name: Push tag to GitHub
+        id: tag
         if: steps.semrel.outputs.released == 'true'
-        run: |
-          # Push only the tag — no pre-tag commit exists (gobinary plugin removed).
-          # Pushing commits to the protected main branch requires admin rights that
-          # GITHUB_TOKEN does not have; the tag push is unaffected by branch protection.
-          git push --force origin "refs/tags/${{ steps.semrel.outputs.tag }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Save CHANGELOG and clean up before building release assets
-        if: steps.semrel.outputs.released == 'true'
-        run: |
-          # Preserve the updated CHANGELOG.md written by semrel (commit_changelog=false).
-          cp CHANGELOG.md /tmp/CHANGELOG_updated.md
-          rm -f semrel-bin
-
-      - name: Sync working tree to released tag
-        if: steps.semrel.outputs.released == 'true'
-        run: |
-          # The build step below embeds the tag/version into the binaries via
-          # ldflags, so the working tree must point at the exact released commit.
-          # The tag is already on HEAD (no pre-tag commit), so this is effectively
-          # a clean reset that also discards the uncommitted CHANGELOG.md change.
-          git reset --hard "${{ steps.semrel.outputs.tag }}"
-          # Restore the updated CHANGELOG so the release archives contain the new content.
-          cp /tmp/CHANGELOG_updated.md CHANGELOG.md
-
-      - name: Build cross-platform release binaries
-        # Replaces GoReleaser: semrel's own build+archive+checksum step, mirroring
-        # the pattern already used by every plugin repo's release.yml. Combined
-        # with the provider-github plugin's asset-upload support (added after
-        # this workflow was first written), semrel no longer needs an external
-        # release tool for its own dogfooded release pipeline.
-        if: steps.semrel.outputs.released == 'true'
+          TAG: ${{ steps.semrel.outputs.tag }}
         run: |
           set -euo pipefail
+          if [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]]; then
+            printf 'Tag must not contain CR or LF characters.\n' >&2
+            exit 1
+          fi
+          semver_re='^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          [[ "${TAG}" =~ ${semver_re} ]] || {
+            printf 'semrel returned an invalid SemVer tag: %s\n' "${TAG}" >&2
+            exit 1
+          }
+          normalized="${TAG#v}"
+          without_build="${normalized}"
+          without_build="${without_build%%+*}"
+          if [[ "${without_build}" == *-* ]]; then
+            IFS='.' read -r -a identifiers <<< "${without_build#*-}"
+            for identifier in "${identifiers[@]}"; do
+              [[ ! "${identifier}" =~ ^0[0-9]+$ ]] || exit 1
+            done
+          fi
+          stable=true
+          [[ "${without_build}" != *-* ]] || stable=false
+          source_sha=$(git rev-list -n 1 "refs/tags/${TAG}")
+          source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          {
+            printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+            # Actions concurrency groups are case-insensitive; hash the case-sensitive exact SemVer.
+            printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
+            printf 'image_version=%s\n' "${normalized//+/_}"
+            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'stable=%s\n' "${stable}"
+          } >> "${GITHUB_OUTPUT}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on remote; skipping."
+          else
+            git push origin "refs/tags/${TAG}"
+          fi
+
+      - name: Preserve generated changelog
+        if: steps.semrel.outputs.released == 'true'
+        run: cp CHANGELOG.md "${RUNNER_TEMP}/CHANGELOG.md"
+
+      - name: Upload generated changelog
+        if: steps.semrel.outputs.released == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-changelog
+          path: ${{ runner.temp }}/CHANGELOG.md
+          if-no-files-found: error
+
+      - name: Summary
+        env:
+          BUMP: ${{ steps.semrel.outputs.bump }}
+          RELEASED: ${{ steps.semrel.outputs.released }}
+          TAG: ${{ steps.semrel.outputs.tag }}
+        run: |
+          if [[ "${RELEASED}" == "true" ]]; then
+            printf '### Prepared %s\n**Bump:** %s\n' "${TAG}" "${BUMP}" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "### No release — no releasable commits found." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+  docker-validate:
+    name: Validate ${{ matrix.target }} (${{ matrix.platform.arch }})
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [release, alpine, action]
+        platform:
+          - name: linux/amd64
+            arch: amd64
+          - name: linux/arm64
+            arch: arm64
+    steps:
+      - name: Check out released tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.release.outputs.source_sha }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build immutable OCI validation archive
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform.name }}
+          outputs: type=oci,dest=${{ runner.temp }}/semrel-image-${{ matrix.target }}-${{ matrix.platform.arch }}.tar
+          tags: validation:${{ matrix.target }}-${{ matrix.platform.arch }}
+          build-args: |
+            VERSION=${{ needs.release.outputs.tag }}
+            BUILD_DATE=${{ needs.release.outputs.build_date }}
+            VCS_REF=${{ needs.release.outputs.source_sha }}
+          cache-from: type=gha,scope=validation-${{ matrix.target }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=validation-${{ matrix.target }}-${{ matrix.platform.arch }}
+          provenance: true
+          sbom: true
+
+      - name: Record validation archive checksum
+        shell: bash
+        env:
+          ARCH: ${{ matrix.platform.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          sha256sum "semrel-image-${TARGET}-${ARCH}.tar" > "semrel-image-${TARGET}-${ARCH}.tar.sha256"
+
+      - name: Extract immutable OCI layout for scanning
+        id: extract
+        shell: bash
+        env:
+          ARCH: ${{ matrix.platform.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          scan_dir=$(mktemp -d "${RUNNER_TEMP}/semrel-image-${TARGET}-${ARCH}-layout.XXXXXX")
+          tar -xf "${RUNNER_TEMP}/semrel-image-${TARGET}-${ARCH}.tar" -C "${scan_dir}"
+          test -f "${scan_dir}/index.json"
+          test -f "${scan_dir}/oci-layout"
+          printf 'path=%s\n' "${scan_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Scan immutable extracted OCI layout
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: ${{ matrix.platform.name }}
+        with:
+          input: ${{ steps.extract.outputs.path }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Upload scanned OCI validation archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: semrel-image-${{ matrix.target }}-${{ matrix.platform.arch }}
+          path: |
+            ${{ runner.temp }}/semrel-image-${{ matrix.target }}-${{ matrix.platform.arch }}.tar
+            ${{ runner.temp }}/semrel-image-${{ matrix.target }}-${{ matrix.platform.arch }}.tar.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  docker:
+    name: Publish validated Docker images
+    needs: [release, docker-validate]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: exact-image-${{ needs.release.outputs.exact_key }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download scanned OCI validation archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: semrel-image-*
+          path: ${{ runner.temp }}/docker-images
+          merge-multiple: true
+
+      - name: Set version metadata
+        id: version
+        shell: bash
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION_SHORT: ${{ needs.release.outputs.version_short }}
+        run: |
+          set -euo pipefail
+          if [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]]; then
+            exit 1
+          fi
+          semver_re='^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          [[ "${TAG}" =~ ${semver_re} ]] || exit 1
+          normalized="${TAG#v}"
+          [[ "${normalized}" == "${VERSION_SHORT#v}" ]] || exit 1
+          without_build="${normalized%%+*}"
+          if [[ "${without_build}" == *-* ]]; then
+            IFS='.' read -r -a identifiers <<< "${without_build#*-}"
+            for identifier in "${identifiers[@]}"; do
+              [[ ! "${identifier}" =~ ^0[0-9]+$ ]] || exit 1
+            done
+          fi
+          stable=true
+          if [[ "${without_build}" == *-* ]]; then
+            stable=false
+          fi
+          {
+            printf 'version=v%s\n' "${normalized}"
+            # SemVer forbids underscores, so replacing '+' is collision-free and Docker-safe.
+            printf 'image_version=%s\n' "${normalized//+/_}"
+            printf 'stable=%s\n' "${stable}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate final distroless tags
+        id: meta
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        with:
+          images: ghcr.io/semrels/semrel
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ steps.version.outputs.image_version }}
+
+      - name: Calculate final alpine tags
+        id: meta-alpine
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        with:
+          images: ghcr.io/semrels/semrel
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ steps.version.outputs.image_version }}-alpine
+
+      - name: Calculate final action tags
+        id: meta-action
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        with:
+          images: ghcr.io/semrels/semrel
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ steps.version.outputs.image_version }}-action
+
+      - name: Promote scanned platform images
+        id: promote
+        shell: bash
+        env:
+          ARCHIVE_DIR: ${{ runner.temp }}/docker-images
+          IMAGE: ghcr.io/semrels/semrel
+        run: |
+          set -euo pipefail
+          cd "${ARCHIVE_DIR}"
+          test "$(find . -maxdepth 1 -type f -name 'semrel-image-*.tar' | wc -l)" -eq 6
+          test "$(find . -maxdepth 1 -type f -name 'semrel-image-*.tar.sha256' | wc -l)" -eq 6
+          sha256sum --check -- semrel-image-*.tar.sha256
+          for target in release alpine action; do
+            for arch in amd64 arm64; do
+              archive="semrel-image-${target}-${arch}.tar"
+              source_digest=$(oras resolve --oci-layout "${archive}:${target}-${arch}")
+              platform_digest=$(oras resolve --platform "linux/${arch}" --oci-layout "${archive}:${target}-${arch}")
+              [[ "${source_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+              [[ "${platform_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+              # Registry deletion is manifest-scoped, so retain this run-scoped tag to protect the final index children.
+              staging_tag="scan-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${target}-${arch}"
+              oras cp --from-oci-layout "${archive}:${target}-${arch}" "${IMAGE}:${staging_tag}"
+              pushed_digest=$(oras resolve "${IMAGE}:${staging_tag}")
+              pushed_platform_digest=$(oras resolve --platform "linux/${arch}" "${IMAGE}:${staging_tag}")
+              [[ "${pushed_digest}" == "${source_digest}" ]]
+              [[ "${pushed_platform_digest}" == "${platform_digest}" ]]
+              printf '%s_%s=%s\n' "${target}" "${arch}" "${pushed_digest}" >> "${GITHUB_OUTPUT}"
+              printf '%s_%s_image=%s\n' "${target}" "${arch}" "${platform_digest}" >> "${GITHUB_OUTPUT}"
+            done
+          done
+
+      - name: Create final multiarch manifests from scanned digests
+        id: manifests
+        shell: bash
+        env:
+          ACTION_AMD64: ${{ steps.promote.outputs.action_amd64 }}
+          ACTION_AMD64_IMAGE: ${{ steps.promote.outputs.action_amd64_image }}
+          ACTION_ARM64: ${{ steps.promote.outputs.action_arm64 }}
+          ACTION_ARM64_IMAGE: ${{ steps.promote.outputs.action_arm64_image }}
+          ACTION_TAGS: ${{ steps.meta-action.outputs.tags }}
+          ALPINE_AMD64: ${{ steps.promote.outputs.alpine_amd64 }}
+          ALPINE_AMD64_IMAGE: ${{ steps.promote.outputs.alpine_amd64_image }}
+          ALPINE_ARM64: ${{ steps.promote.outputs.alpine_arm64 }}
+          ALPINE_ARM64_IMAGE: ${{ steps.promote.outputs.alpine_arm64_image }}
+          ALPINE_TAGS: ${{ steps.meta-alpine.outputs.tags }}
+          DISTROLESS_AMD64: ${{ steps.promote.outputs.release_amd64 }}
+          DISTROLESS_AMD64_IMAGE: ${{ steps.promote.outputs.release_amd64_image }}
+          DISTROLESS_ARM64: ${{ steps.promote.outputs.release_arm64 }}
+          DISTROLESS_ARM64_IMAGE: ${{ steps.promote.outputs.release_arm64_image }}
+          DISTROLESS_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE: ghcr.io/semrels/semrel
+        run: |
+          set -euo pipefail
+          resolve_registry_ref() {
+            local ref=$1
+            local attempts=4
+            local attempt output status
+            for ((attempt = 1; attempt <= attempts; attempt++)); do
+              if output=$(oras resolve "${ref}" 2>&1); then
+                if [[ ! "${output}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                  printf 'Registry returned an invalid digest for %s: %s\n' "${ref}" "${output}" >&2
+                  return 1
+                fi
+                printf '%s\n' "${output}"
+                return 0
+              else
+                status=$?
+              fi
+              if ((attempt < attempts)); then
+                sleep "$((attempt * 2))"
+              fi
+            done
+            if grep -Eiq '(^|[^0-9])(401|403|408|409|425|429|5[0-9][0-9])([^0-9]|$)|unauthorized|denied|forbidden|too many requests|timed? out|connection|tls|eof|server error|service unavailable|temporar' <<< "${output}"; then
+              printf 'Registry authorization or transient failure resolving %s after %d attempts (exit %d): %s\n' \
+                "${ref}" "${attempts}" "${status}" "${output}" >&2
+              return 1
+            fi
+            if grep -Eiq '(^|[^0-9])404([^0-9]|$)|manifest[ _]unknown|name[ _]unknown|(^|[^[:alpha:]])not found([^[:alpha:]]|$)' <<< "${output}"; then
+              return 4
+            fi
+            printf 'Non-definitive registry failure resolving %s after %d attempts (exit %d): %s\n' \
+              "${ref}" "${attempts}" "${status}" "${output}" >&2
+            return 1
+          }
+          create_manifest() {
+            local output_name=$1
+            local tags_text=$2
+            local amd64_digest=$3
+            local arm64_digest=$4
+            local amd64_image_digest=$5
+            local arm64_image_digest=$6
+            local candidate_tag digest exact_tag existing_digest
+            local -a final_tags
+            [[ "${amd64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${arm64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${amd64_image_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${arm64_image_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            mapfile -t final_tags < <(printf '%s\n' "${tags_text}" | sed '/^[[:space:]]*$/d')
+            ((${#final_tags[@]} == 1))
+            exact_tag="${final_tags[0]}"
+            [[ "${exact_tag}" == "${IMAGE}:"* ]]
+            [[ "${output_name}" =~ ^(distroless|alpine|action)$ ]]
+            candidate_tag="${IMAGE}:manifest-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${output_name}"
+            docker buildx imagetools create \
+              --tag "${candidate_tag}" \
+              "${IMAGE}@${amd64_digest}" \
+              "${IMAGE}@${arm64_digest}"
+            if ! digest=$(resolve_registry_ref "${candidate_tag}"); then
+              printf 'Candidate manifest %s could not be resolved; refusing publication.\n' "${candidate_tag}" >&2
+              return 1
+            fi
+            if existing_digest=$(resolve_registry_ref "${exact_tag}"); then
+              if [[ "${existing_digest}" != "${digest}" ]]; then
+                printf 'Refusing to mutate immutable exact tag %s (%s != %s).\n' \
+                  "${exact_tag}" "${existing_digest}" "${digest}" >&2
+                return 1
+              fi
+            else
+              resolve_status=$?
+              if ((resolve_status != 4)); then
+                return "${resolve_status}"
+              fi
+              oras tag "${IMAGE}@${digest}" "${exact_tag#"${IMAGE}:"}"
+            fi
+            if ! published_digest=$(resolve_registry_ref "${exact_tag}"); then
+              printf 'Exact tag %s could not be verified after publication.\n' "${exact_tag}" >&2
+              return 1
+            fi
+            if [[ "${published_digest}" != "${digest}" ]]; then
+              printf 'Refusing exact-tag conflict for %s (%s != %s).\n' \
+                "${exact_tag}" "${published_digest}" "${digest}" >&2
+              return 1
+            fi
+            docker buildx imagetools inspect --raw "${exact_tag}" |
+              jq -e \
+                --arg amd64 "${amd64_image_digest}" \
+                --arg arm64 "${arm64_image_digest}" \
+                'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
+                 any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
+                >/dev/null
+            printf '%s=%s\n' "${output_name}" "${digest}" >> "${GITHUB_OUTPUT}"
+          }
+          create_manifest distroless "${DISTROLESS_TAGS}" "${DISTROLESS_AMD64}" "${DISTROLESS_ARM64}" "${DISTROLESS_AMD64_IMAGE}" "${DISTROLESS_ARM64_IMAGE}"
+          create_manifest alpine "${ALPINE_TAGS}" "${ALPINE_AMD64}" "${ALPINE_ARM64}" "${ALPINE_AMD64_IMAGE}" "${ALPINE_ARM64_IMAGE}"
+          create_manifest action "${ACTION_TAGS}" "${ACTION_AMD64}" "${ACTION_ARM64}" "${ACTION_AMD64_IMAGE}" "${ACTION_ARM64_IMAGE}"
+
+      - name: Sign published image digests
+        shell: bash
+        env:
+          ACTION_DIGEST: ${{ steps.manifests.outputs.action }}
+          ALPINE_DIGEST: ${{ steps.manifests.outputs.alpine }}
+          COSIGN_EXPERIMENTAL: '1'
+          DISTROLESS_DIGEST: ${{ steps.manifests.outputs.distroless }}
+        run: |
+          set -euo pipefail
+          for digest in "${DISTROLESS_DIGEST}" "${ALPINE_DIGEST}" "${ACTION_DIGEST}"; do
+            cosign sign --yes "ghcr.io/semrels/semrel@${digest}"
+          done
+  publish:
+    name: Publish GitHub release
+    needs: [release, docker]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out released tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.release.outputs.source_sha }}
+
+      - name: Restore generated changelog
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: generated-changelog
+          path: .
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build cross-platform release archives
+        env:
+          BUILD_DATE: ${{ needs.release.outputs.build_date }}
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          VERSION: ${{ needs.release.outputs.version_short }}
+        run: |
+          set -euo pipefail
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          [[ "${VERSION}" =~ ${semver_re} ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${BUILD_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+
           mkdir -p dist
-          version="${{ steps.semrel.outputs.version }}"
-          commit="${{ github.sha }}"
-          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          ldflags="-s -w -X github.com/SemRels/semrel/internal/version.Version=${version} -X main.commit=${commit} -X main.date=${build_date}"
+          stage_root="${RUNNER_TEMP}/release-assets"
+          rm -rf "${stage_root}"
+          mkdir -p "${stage_root}"
+          ldflags="-s -w -X github.com/SemRels/semrel/internal/version.Version=${VERSION}"
 
           for goos in linux darwin windows; do
             for goarch in amd64 arm64; do
               ext=""
-              [ "$goos" = "windows" ] && ext=".exe"
-              stage="$(mktemp -d)"
-              echo "Building ${goos}/${goarch}..."
-              CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              [[ "${goos}" != windows ]] || ext=".exe"
+              stage="${stage_root}/${goos}_${goarch}"
+              mkdir -p "${stage}"
+              CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
                 go build -trimpath -ldflags="${ldflags}" -o "${stage}/semrel${ext}" ./cmd/semrel
-              cp LICENSE README.md CHANGELOG.md "$stage/"
-              name="semrel_${version}_${goos}_${goarch}"
-              if [ "$goos" = "windows" ]; then
-                (cd "$stage" && zip -q -r "${GITHUB_WORKSPACE}/dist/${name}.zip" .)
+              cp LICENSE README.md CHANGELOG.md "${stage}/"
+              name="semrel_${VERSION}_${goos}_${goarch}"
+              if [[ "${goos}" == windows ]]; then
+                (cd "${stage}" && zip -q -r "${GITHUB_WORKSPACE}/dist/${name}.zip" .)
               else
-                tar -C "$stage" -czf "dist/${name}.tar.gz" .
+                tar -C "${stage}" -czf "dist/${name}.tar.gz" .
               fi
-              rm -rf "$stage"
             done
           done
-          ls -la dist
 
       - name: Generate checksums
-        if: steps.semrel.outputs.released == 'true'
         working-directory: dist
         run: sha256sum -- *.tar.gz *.zip > checksums.txt
 
       - name: Install cosign
-        if: steps.semrel.outputs.released == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign checksums with cosign
-        # Keyless (OIDC) signing, same scheme previously configured in GoReleaser's
-        # `signs:` block. Verify with:
-        #   cosign verify-blob --certificate-identity-regexp \
-        #     'https://github.com/SemRels/semrel/.github/workflows/semrel-release.yaml.*' \
-        #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-        #     --certificate checksums.txt.pem --signature checksums.txt.sig checksums.txt
-        if: steps.semrel.outputs.released == 'true'
         working-directory: dist
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -186,153 +570,264 @@ jobs:
             --output-certificate=checksums.txt.pem \
             checksums.txt
 
-      - name: Publish GitHub release
-        # Invoked directly as a plugin subprocess (not via `semrel release`
-        # itself) because the release assets above must exist first, and
-        # `semrel release` is what determines/creates the tag and version in
-        # the first place. Provider plugins follow a simple env-var contract,
-        # so it is safe to run standalone.
-        if: steps.semrel.outputs.released == 'true'
-        run: /tmp/provider-github-plugin
+      - name: Build provider-github plugin
+        # Pinned to the release-asset Content-Length fix.
         env:
-          SEMREL_VERSION: ${{ steps.semrel.outputs.version }}
-          SEMREL_NEXT_VERSION: ${{ steps.semrel.outputs.tag }}
-          SEMREL_TAG_NAME: ${{ steps.semrel.outputs.tag }}
-          SEMREL_CHANGELOG: ${{ steps.semrel.outputs.changelog }}
+          GOPROXY: direct
+          GOSUMDB: "off"
+        run: |
+          set -euo pipefail
+          go install github.com/SemRels/provider-github/cmd/plugin@3c974fff4ad24d8c4dc45b169d2727607472ab08
+          mv "$(go env GOPATH)/bin/plugin" "${RUNNER_TEMP}/provider-github-plugin"
+
+      - name: Publish GitHub release
+        env:
+          PROVIDER_BIN: ${{ runner.temp }}/provider-github-plugin
+          SEMREL_CHANGELOG: ${{ needs.release.outputs.changelog }}
           SEMREL_DRY_RUN: "false"
-          SEMREL_PLUGIN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMREL_NEXT_VERSION: ${{ needs.release.outputs.tag }}
+          SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.sig,dist/checksums.txt.pem"
           SEMREL_PLUGIN_OWNER: SemRels
           SEMREL_PLUGIN_REPO: semrel
-          SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.sig,dist/checksums.txt.pem"
+          SEMREL_PLUGIN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMREL_TAG_NAME: ${{ needs.release.outputs.tag }}
+          SEMREL_VERSION: ${{ needs.release.outputs.version_short }}
+        run: '"${PROVIDER_BIN}"'
 
-      - name: Summary
+      - name: Release summary
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION_SHORT: ${{ needs.release.outputs.version_short }}
         run: |
-          if [ "${{ steps.semrel.outputs.released }}" = "true" ]; then
-            {
-              echo "### Released ${{ steps.semrel.outputs.tag }} 🚀"
-              echo "**Bump:** ${{ steps.semrel.outputs.bump }}"
-              echo "**Previous:** ${{ steps.semrel.outputs.previous_version }}"
-            } >> "$GITHUB_STEP_SUMMARY"
-            if [ "${{ steps.semrel.outputs.ceiling_applied }}" = "true" ]; then
-              echo "> ⚠️ version ceiling applied — bump was clamped" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "### No release — no releasable commits found." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          {
+            printf '### Released %s 🚀\n' "${TAG}"
+            printf '**Docker image:** `ghcr.io/semrels/semrel:%s`\n' "${VERSION_SHORT//+/_}"
+            echo "**Variants:** distroless, alpine, GitHub Actions"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
-  docker:
-    name: Build and push Docker image
-    needs: release
-    if: needs.release.outputs.released == 'true'
+  reconcile:
+    name: Reconcile mutable image tags
+    needs: [release, docker, publish]
+    if: needs.release.outputs.released == 'true' && needs.release.outputs.stable == 'true'
     runs-on: ubuntu-latest
+    concurrency:
+      group: mutable-image-tags
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
-      id-token: write
-      attestations: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Install ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
         with:
-          ref: ${{ needs.release.outputs.tag }}
-
-      - name: Set version metadata
-        id: version
-        run: |
-          {
-            echo "version=${{ needs.release.outputs.tag }}"
-            echo "version_short=${{ needs.release.outputs.version_short }}"
-            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "vcs_ref=${{ github.sha }}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+          version: 1.3.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c # v4.5.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (distroless)
-        id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
-        with:
-          images: ghcr.io/semrels/semrel
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.release.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.tag }}
-            type=semver,pattern={{major}},value=${{ needs.release.outputs.tag }}
-            type=raw,value=latest
-
-      - name: Build and push distroless image
-        id: build-distroless
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          target: release
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-            BUILD_DATE=${{ steps.version.outputs.build_date }}
-            VCS_REF=${{ steps.version.outputs.vcs_ref }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
-
-      - name: Sign distroless image with cosign
-        run: cosign sign --yes ghcr.io/semrels/semrel@${{ steps.build-distroless.outputs.digest }}
+      - name: Select globally greatest published stable versions
+        shell: bash
         env:
-          COSIGN_EXPERIMENTAL: "1"
-
-      - name: Build and push alpine image
-        id: build-alpine
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
-        with:
-          context: .
-          target: alpine
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}-alpine
-            ghcr.io/semrels/semrel:latest-alpine
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-            BUILD_DATE=${{ steps.version.outputs.build_date }}
-            VCS_REF=${{ steps.version.outputs.vcs_ref }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
-
-      - name: Sign alpine image with cosign
-        run: cosign sign --yes ghcr.io/semrels/semrel@${{ steps.build-alpine.outputs.digest }}
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}-alpine
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-
-      - name: Docker summary
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/semrels/semrel
         run: |
-          {
-            echo "### Docker image published 🐳"
-            echo "**Image:** \`ghcr.io/semrels/semrel:${{ steps.version.outputs.version_short }}\`"
-            echo "**Variants:** distroless, alpine"
-            echo "**Platforms:** linux/amd64, linux/arm64"
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          release_tags="${RUNNER_TEMP}/published-release-tags.txt"
+          resolved_images="${RUNNER_TEMP}/resolved-exact-images.tsv"
+          desired="${RUNNER_TEMP}/desired-mutable-tags.tsv"
+          gh api --paginate --jq \
+            '.[] | select(.draft == false and .published_at != null) | .tag_name' \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > "${release_tags}"
+          : > "${resolved_images}"
+          resolve_registry_ref() {
+            local ref=$1
+            local attempts=4
+            local attempt output status
+            for ((attempt = 1; attempt <= attempts; attempt++)); do
+              if output=$(oras resolve "${ref}" 2>&1); then
+                if [[ ! "${output}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                  printf 'Registry returned an invalid digest for %s: %s\n' "${ref}" "${output}" >&2
+                  return 1
+                fi
+                printf '%s\n' "${output}"
+                return 0
+              else
+                status=$?
+              fi
+              if ((attempt < attempts)); then
+                sleep "$((attempt * 2))"
+              fi
+            done
+            if grep -Eiq '(^|[^0-9])(401|403|408|409|425|429|5[0-9][0-9])([^0-9]|$)|unauthorized|denied|forbidden|too many requests|timed? out|connection|tls|eof|server error|service unavailable|temporar' <<< "${output}"; then
+              printf 'Registry authorization or transient failure resolving %s after %d attempts (exit %d): %s\n' \
+                "${ref}" "${attempts}" "${status}" "${output}" >&2
+              return 1
+            fi
+            if grep -Eiq '(^|[^0-9])404([^0-9]|$)|manifest[ _]unknown|name[ _]unknown|(^|[^[:alpha:]])not found([^[:alpha:]]|$)' <<< "${output}"; then
+              return 4
+            fi
+            printf 'Non-definitive registry failure resolving %s after %d attempts (exit %d): %s\n' \
+              "${ref}" "${attempts}" "${status}" "${output}" >&2
+            return 1
+          }
+          semver_re='^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          while IFS= read -r published_tag; do
+            [[ "${published_tag}" != *$'\r'* && "${published_tag}" != *$'\n'* ]] || continue
+            [[ "${published_tag}" =~ ${semver_re} ]] || continue
+            normalized="${published_tag#v}"
+            without_build="${normalized%%+*}"
+            [[ "${without_build}" != *-* ]] || continue
+            exact="${normalized//+/_}"
+            available=true
+            digests=()
+            for suffix in '' -alpine -action; do
+              if digest=$(resolve_registry_ref "${IMAGE}:${exact}${suffix}"); then
+                digests+=("${digest}")
+              else
+                resolve_status=$?
+                if ((resolve_status == 4)); then
+                  available=false
+                  break
+                fi
+                printf 'Aborting reconcile before alias mutation because %s:%s%s was not definitively absent.\n' \
+                  "${IMAGE}" "${exact}" "${suffix}" >&2
+                exit "${resolve_status}"
+              fi
+            done
+            if [[ "${available}" == "true" ]]; then
+              ((${#digests[@]} == 3))
+              printf '%s\t%s\t%s\t%s\n' \
+                "${exact}" "${digests[0]}" "${digests[1]}" "${digests[2]}" >> "${resolved_images}"
+            fi
+          done < "${release_tags}"
+          python3 - "${release_tags}" "${resolved_images}" "${desired}" <<'PY'
+          import re
+          import sys
+          from collections import defaultdict
+
+          release_path, resolved_path, output_path = sys.argv[1:]
+          semver = re.compile(
+              r"^v?(?P<major>0|[1-9][0-9]*)\."
+              r"(?P<minor>0|[1-9][0-9]*)\."
+              r"(?P<patch>0|[1-9][0-9]*)"
+              r"(?:-(?P<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+              r"(?:\+(?P<build>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+          )
+          image_digests = {}
+          for raw in open(resolved_path, encoding="utf-8"):
+              exact, base, alpine, action = raw.rstrip("\n").split("\t")
+              if not all(re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                         for digest in (base, alpine, action)):
+                  raise SystemExit(f"invalid resolved digest for {exact}")
+              image_digests[exact] = (base, alpine, action)
+          candidates = {}
+          for raw in open(release_path, encoding="utf-8"):
+              raw = raw.rstrip("\n")
+              match = semver.fullmatch(raw)
+              if not match:
+                  continue
+              prerelease = match.group("pre")
+              if prerelease:
+                  if any(part.isdigit() and len(part) > 1 and part[0] == "0"
+                         for part in prerelease.split(".")):
+                      continue
+                  continue
+              normalized = raw[1:] if raw.startswith("v") else raw
+              exact = normalized.replace("+", "_")
+              if exact not in image_digests:
+                  continue
+              candidates[normalized] = (
+                  int(match.group("major")),
+                  int(match.group("minor")),
+                  int(match.group("patch")),
+                  normalized,
+                  exact,
+                  *image_digests[exact],
+              )
+
+          if not candidates:
+              raise SystemExit("no published stable SemVer release has all exact image variants")
+
+          # Build metadata is absent from the precedence tuple. The normalized
+          # full version is the stable ASCII tie-break for equal precedence.
+          def winner(values):
+              return max(values, key=lambda item: (item[0], item[1], item[2], item[3]))
+
+          values = list(candidates.values())
+          by_major = defaultdict(list)
+          by_minor = defaultdict(list)
+          for item in values:
+              by_major[item[0]].append(item)
+              by_minor[(item[0], item[1])].append(item)
+
+          desired = [("latest", winner(values))]
+          desired.extend(
+              (str(major), winner(group))
+              for major, group in sorted(by_major.items())
+          )
+          desired.extend(
+              (f"{major}.{minor}", winner(group))
+              for (major, minor), group in sorted(by_minor.items())
+          )
+          with open(output_path, "w", encoding="utf-8", newline="\n") as output:
+              for alias, item in desired:
+                  output.write(
+                      f"{alias}\t{item[4]}\t{item[3]}\t"
+                      f"{item[5]}\t{item[6]}\t{item[7]}\n"
+                  )
+          PY
+          test -s "${desired}"
+
+      - name: Point mutable tags at selected immutable digests
+        shell: bash
+        env:
+          IMAGE: ghcr.io/semrels/semrel
+        run: |
+          set -euo pipefail
+          resolve_registry_ref() {
+            local ref=$1
+            local attempts=4
+            local attempt output status
+            for ((attempt = 1; attempt <= attempts; attempt++)); do
+              if output=$(oras resolve "${ref}" 2>&1); then
+                if [[ ! "${output}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                  printf 'Registry returned an invalid digest for %s: %s\n' "${ref}" "${output}" >&2
+                  return 1
+                fi
+                printf '%s\n' "${output}"
+                return 0
+              else
+                status=$?
+              fi
+              if ((attempt < attempts)); then
+                sleep "$((attempt * 2))"
+              fi
+            done
+            printf 'Unable to verify mutable tag %s after %d attempts (exit %d): %s\n' \
+              "${ref}" "${attempts}" "${status}" "${output}" >&2
+            return 1
+          }
+          desired="${RUNNER_TEMP}/desired-mutable-tags.tsv"
+          while IFS=$'\t' read -r alias exact version digest alpine_digest action_digest; do
+            [[ "${alias}" == "latest" || "${alias}" =~ ^(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*))?$ ]]
+            [[ "${exact}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(_[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
+            [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${alpine_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            [[ "${action_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            oras tag "${IMAGE}@${digest}" "${alias}"
+            if ! alias_digest=$(resolve_registry_ref "${IMAGE}:${alias}"); then
+              exit 1
+            fi
+            [[ "${alias_digest}" == "${digest}" ]]
+            if [[ "${alias}" == "latest" ]]; then
+              oras tag "${IMAGE}@${alpine_digest}" latest-alpine
+              oras tag "${IMAGE}@${action_digest}" latest-action
+              [[ "$(resolve_registry_ref "${IMAGE}:latest-alpine")" == "${alpine_digest}" ]]
+              [[ "$(resolve_registry_ref "${IMAGE}:latest-action")" == "${action_digest}" ]]
+            fi
+            printf '%s -> %s (%s)\n' "${alias}" "${exact}" "${version}" >> "${GITHUB_STEP_SUMMARY}"
+          done < "${desired}"

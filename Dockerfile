@@ -99,3 +99,17 @@ USER semrel
 WORKDIR /workspace
 
 ENTRYPOINT ["semrel"]
+
+# ── GitHub Actions container variant ──────────────────────────────────────────
+# GitHub bind-mounts its workspace with the runner's uid and requires Docker
+# container actions to run as root. Keep this isolated from the normal non-root
+# Alpine image: users must explicitly select the action target/tag.
+FROM alpine AS action
+
+LABEL org.opencontainers.image.description="Automated semantic releases for GitHub Actions container steps"
+
+USER root
+WORKDIR /github/workspace
+
+# Keep an explicitly non-root default when no build target is supplied.
+FROM release AS default

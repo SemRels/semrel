@@ -171,7 +171,14 @@ func checkPlugins(cfg *config.Config) []DoctorCheck {
 		if label == "" {
 			label = spec.Path
 		}
-		name := "plugin:" + label
+		identity := strings.ToLower(strings.TrimSpace(label))
+		if canonical, ok := registry.CanonicalLegacyRef(identity); ok {
+			identity = canonical
+			if spec.Uses != "" {
+				label = canonical
+			}
+		}
+		name := "plugin:" + identity
 		if seen[name] {
 			continue
 		}
@@ -425,36 +432,16 @@ func printDoctorResult(result DoctorResult) {
 // and suggests plugins that would improve the release pipeline.
 // Results use status "info" and never affect the healthy flag.
 func checkRecommendations(cfg *config.Config) []DoctorCheck {
-	// Build a set of already-configured plugin names (lower-case for comparison).
-	// Register both the literal name and the name without any category prefix
-	// (e.g. "provider-gitlab" registers as both "provider-gitlab" and "gitlab")
-	// so that suggestions are suppressed regardless of whether the user's config
-	// uses the short or prefixed plugin name.
 	configured := map[string]bool{}
-	categoryPrefixes := []string{"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-"}
 	registerName := func(raw string) {
 		name := strings.ToLower(strings.TrimSpace(raw))
 		if name == "" {
 			return
 		}
+		if canonical, ok := registry.CanonicalLegacyRef(name); ok {
+			name = canonical
+		}
 		configured[name] = true
-		// Strip namespace prefix (e.g. "@semrel/gitlab" → "gitlab").
-		if idx := strings.LastIndex(name, "/"); idx >= 0 {
-			short := name[idx+1:]
-			configured[short] = true
-			// Also strip category prefix from the short name.
-			for _, prefix := range categoryPrefixes {
-				if strings.HasPrefix(short, prefix) {
-					configured[strings.TrimPrefix(short, prefix)] = true
-				}
-			}
-		}
-		// Strip category prefix directly (e.g. "condition-gitlab-ci" → "gitlab-ci").
-		for _, prefix := range categoryPrefixes {
-			if strings.HasPrefix(name, prefix) {
-				configured[strings.TrimPrefix(name, prefix)] = true
-			}
-		}
 	}
 	if cfg != nil {
 		for _, p := range cfg.Plugins {
@@ -464,26 +451,14 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	}
 
 	already := func(uses string) bool {
-		name := strings.ToLower(uses)
-		// Strip leading "@namespace/" for comparison so that
-		// already("@semrel/gitlab") matches configured["gitlab"] and vice-versa.
-		if idx := strings.LastIndex(name, "/"); idx >= 0 {
-			name = name[idx+1:]
+		name := strings.ToLower(strings.TrimSpace(uses))
+		if canonical, ok := registry.CanonicalLegacyRef(name); ok {
+			name = canonical
 		}
-		if configured[name] {
-			return true
-		}
-		for _, prefix := range categoryPrefixes {
-			if configured[prefix+name] {
-				return true
-			}
-		}
-		return false
+		return configured[name]
 	}
 
 	var checks []DoctorCheck
-	// suggest records a recommendation. nsRef must be the full install reference
-	// (e.g. "@semrel/gitlab") so that the hint points to the correct command.
 	suggest := func(nsRef, reason string) {
 		if already(nsRef) {
 			return
@@ -581,17 +556,17 @@ func checkRecommendations(cfg *config.Config) []DoctorCheck {
 	remote := gitRemoteURL()
 	switch {
 	case strings.Contains(remote, "github.com"):
-		suggest("@semrel/github", "GitHub remote detected — github publishes GitHub Releases")
+		suggest("@semrel/provider-github", "GitHub remote detected — provider-github publishes GitHub Releases")
 		if fileExists(".github/workflows") {
 			suggest("@semrel/condition-github-actions", "GitHub Actions workflows detected — condition-github-actions gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitlab.com") || (remote != "" && strings.Contains(remote, "gitlab")):
-		suggest("@semrel/gitlab", "GitLab remote detected — gitlab publishes GitLab Releases")
+		suggest("@semrel/provider-gitlab", "GitLab remote detected — provider-gitlab publishes GitLab Releases")
 		if fileExists(".gitlab-ci.yml") {
 			suggest("@semrel/condition-gitlab-ci", ".gitlab-ci.yml detected — condition-gitlab-ci gates releases to CI only")
 		}
 	case strings.Contains(remote, "gitea.") || strings.Contains(remote, "/gitea"):
-		suggest("@semrel/gitea", "Gitea remote detected — gitea publishes Gitea Releases")
+		suggest("@semrel/provider-gitea", "Gitea remote detected — provider-gitea publishes Gitea Releases")
 		if fileExists(".gitea/workflows") {
 			suggest("@semrel/condition-gitea-actions", "Gitea Actions workflows detected — condition-gitea-actions gates releases to CI only")
 		}

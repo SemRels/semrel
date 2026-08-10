@@ -4,29 +4,82 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 )
 
+var artifactNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
 // PluginRegistry is the root document returned by the plugin registry.
 type PluginRegistry struct {
-	Plugins []PluginMeta `json:"plugins"`
+	SchemaVersion int          `json:"schemaVersion,omitempty"`
+	GeneratedAt   string       `json:"generatedAt,omitempty"`
+	Plugins       []PluginMeta `json:"plugins"`
 }
 
 // PluginMeta contains discovery metadata for a single plugin.
 type PluginMeta struct {
+	// ID is the stable resolver/schema/cache identifier used by transitional
+	// registry documents. PackageName is the external canonical identity.
+	ID          string `json:"id,omitempty"`
+	PackageName string `json:"packageName,omitempty"`
 	// Namespace groups plugins by origin, e.g. "@semrel" for the official org.
 	// Omitted for community plugins that do not carry a namespace.
-	Namespace   string          `json:"namespace,omitempty"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Author      string          `json:"author"`
-	License     string          `json:"license"`
-	Category    string          `json:"category"`
-	Repository  string          `json:"repository,omitempty"`
-	Tags        []string        `json:"tags,omitempty"`
-	Downloads   int64           `json:"downloads,omitempty"`
-	Versions    []PluginVersion `json:"versions"`
+	Namespace   string `json:"namespace,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Author      string `json:"author"`
+	License     string `json:"license"`
+	Category    string `json:"category"`
+	Repository  string `json:"repository,omitempty"`
+	// Aliases contains explicit legacy references accepted for this plugin.
+	Aliases       PluginAliases `json:"aliases,omitempty"`
+	LegacyAliases []string      `json:"legacyAliases,omitempty"`
+	// ArtifactName is the stable cache and executable basename. It is separate
+	// from the registry package identity so package renames do not break caches.
+	ArtifactName string          `json:"artifactName,omitempty"`
+	BinaryName   string          `json:"binaryName,omitempty"`
+	Tags         []string        `json:"tags,omitempty"`
+	Downloads    int64           `json:"downloads,omitempty"`
+	Versions     []PluginVersion `json:"versions"`
+}
+
+// PluginAliases accepts both the legacy string form and transition metadata
+// objects such as {"value":"teams","type":"legacy-id","pluginType":"hook"}.
+type PluginAliases []string
+
+// UnmarshalJSON accepts aliases encoded as strings or transition metadata objects.
+func (a *PluginAliases) UnmarshalJSON(data []byte) error {
+	var values []json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	*a = (*a)[:0]
+	for _, raw := range values {
+		var value string
+		if err := json.Unmarshal(raw, &value); err == nil {
+			*a = append(*a, value)
+			continue
+		}
+		var alias struct {
+			Value string `json:"value"`
+			Ref   string `json:"ref"`
+		}
+		if err := json.Unmarshal(raw, &alias); err != nil {
+			return fmt.Errorf("parse plugin alias: %w", err)
+		}
+		value = alias.Value
+		if strings.TrimSpace(value) == "" {
+			value = alias.Ref
+		}
+		if strings.TrimSpace(value) != "" {
+			*a = append(*a, value)
+		}
+	}
+	return nil
 }
 
 // PluginVersion describes one downloadable plugin release.
@@ -50,83 +103,204 @@ type Compatibility struct {
 	GRPCVersion      string `json:"gRPCVersion,omitempty"`
 }
 
-// categoryPrefixes lists the category prefixes that .semrel.yaml configs may
-// include in a plugin's "uses" field (e.g. "condition-github-actions",
-// "provider-github", "updater-go"). The registry stores only the short name
-// ("github-actions", "github", "go"), so FindPlugin strips these prefixes as a
-// fallback when no exact match is found.
-var categoryPrefixes = []string{
-	"provider-", "condition-", "analyzer-", "generator-", "updater-", "hook-",
-}
-
 // FindPlugin returns the registry entry for the named plugin.
-//
-// The name argument may be:
-//   - a bare name: "github" or "condition-github-actions"
-//   - a category-prefixed name: "provider-github" (prefix is stripped on fallback)
-//   - a namespaced ref: "@semrel/github"
-//
-// Lookup order:
-//  1. Exact name match (respecting namespace when given).
-//  2. Name with each category prefix stripped, in order.
-//
-// When a bare name is used, the first matching entry is returned regardless of
-// namespace, which preserves backward compatibility with older plugins.json files
-// that have no namespace field.
 func (r *PluginRegistry) FindPlugin(name string) (*PluginMeta, error) {
-	inputNS, bareName := splitPluginRef(name)
-
-	if p := r.findByBareName(inputNS, bareName); p != nil {
-		return p, nil
+	requested := strings.ToLower(strings.TrimSpace(name))
+	if requested == "" {
+		return nil, newRegistryError(ErrCodeNotFound, "plugin name is empty", nil)
 	}
 
-	// Fallback: strip a single category prefix and try again.
-	// This allows config entries like "provider-github" or "condition-github-actions"
-	// to resolve registry entries stored under their short names ("github", "github-actions").
-	for _, prefix := range categoryPrefixes {
-		if strings.HasPrefix(strings.ToLower(bareName), prefix) {
-			short := bareName[len(prefix):]
-			if p := r.findByBareName(inputNS, short); p != nil {
-				return p, nil
+	// Historical aliases are resolved to a fixed canonical target before
+	// inspecting metadata. This prevents collisions from becoming first-match.
+	if canonical, ok := CanonicalLegacyRef(requested); ok {
+		var matches []*PluginMeta
+		canonicalName := canonical[strings.LastIndex(canonical, "/")+1:]
+		for i := range r.Plugins {
+			legacyCanonical, legacyKnown := CanonicalLegacyRef(r.Plugins[i].Name)
+			if r.Plugins[i].IsFirstParty() && (strings.EqualFold(r.Plugins[i].CanonicalRef(), canonical) ||
+				strings.EqualFold(strings.TrimSpace(r.Plugins[i].Name), canonicalName) ||
+				(normalizeCategory(r.Plugins[i].Category) == "" && legacyKnown &&
+					strings.EqualFold(legacyCanonical, canonical))) {
+				matches = append(matches, &r.Plugins[i])
 			}
 		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+		if len(matches) > 1 {
+			return nil, newRegistryError(ErrCodeInvalidMetadata,
+				fmt.Sprintf("canonical target %q is duplicated in registry metadata", canonical), nil)
+		}
+		return nil, newRegistryError(ErrCodeNotFound,
+			fmt.Sprintf("historical alias %q targets unavailable plugin %q", name, canonical), nil)
 	}
 
+	var matches []*PluginMeta
+	for i := range r.Plugins {
+		p := &r.Plugins[i]
+		if p.matchesRef(requested) {
+			matches = append(matches, p)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return nil, newRegistryError(ErrCodeInvalidMetadata,
+			fmt.Sprintf("plugin alias %q is ambiguous; use a canonical reference", name), nil)
+	}
 	return nil, newRegistryError(ErrCodeNotFound, fmt.Sprintf("plugin %q not found", name), nil)
 }
 
-// findByBareName returns the first plugin whose Name matches bareName (case-insensitive).
-// When inputNS is non-empty, the plugin namespace must also match.
-// (see below)"
-// matches a registry entry that stores the namespace as "SemRels" (and vice-versa).
-func (r *PluginRegistry) findByBareName(inputNS, bareName string) *PluginMeta {
-	for i := range r.Plugins {
-		p := &r.Plugins[i]
-		if !strings.EqualFold(p.Name, bareName) {
-			continue
+func (p *PluginMeta) matchesRef(requested string) bool {
+	for _, ref := range p.references() {
+		if strings.EqualFold(strings.TrimSpace(ref), requested) {
+			return true
 		}
-		if inputNS != "" {
-			// Normalize both sides: strip leading "@" before comparing.
-			pNS := strings.TrimPrefix(p.Namespace, "@")
-			reqNS := strings.TrimPrefix(inputNS, "@")
-			if !strings.EqualFold(pNS, reqNS) {
-				continue
-			}
-		}
-		return p
 	}
-	return nil
+	return false
 }
 
-// splitPluginRef splits "@namespace/name" into (namespace, name).
-// For bare names without a leading "@", it returns ("", name).
-func splitPluginRef(ref string) (namespace, name string) {
-	if strings.HasPrefix(ref, "@") {
-		if slash := strings.Index(ref, "/"); slash > 0 {
-			return ref[:slash], ref[slash+1:]
+func (p *PluginMeta) references() []string {
+	refs := []string{p.CanonicalRef()}
+	if p.IsFirstParty() {
+		canonical := p.CanonicalRef()
+		if slash := strings.LastIndex(canonical, "/"); slash >= 0 {
+			refs = append(refs, canonical[slash+1:])
+		}
+		short := strings.ToLower(strings.TrimSpace(p.Name))
+		refs = append(refs, short, firstPartyNamespace+"/"+short)
+	}
+	ns := normalizeNamespace(p.Namespace)
+	if ns != "" {
+		refs = append(refs, ns+"/"+p.Name)
+	} else if !p.IsFirstParty() {
+		refs = append(refs, p.Name)
+	}
+	refs = append(refs, p.Aliases...)
+	refs = append(refs, p.LegacyAliases...)
+	return refs
+}
+
+// IsFirstParty reports whether registry metadata identifies an official plugin.
+// The reserved namespace alone is not trusted because registry metadata may
+// originate from community submissions.
+func (p PluginMeta) IsFirstParty() bool {
+	repository, err := url.Parse(strings.TrimSpace(p.Repository))
+	if err != nil || !strings.EqualFold(repository.Scheme, "https") ||
+		!strings.EqualFold(repository.Hostname(), "github.com") ||
+		repository.RawQuery != "" || repository.Fragment != "" {
+		return false
+	}
+	parts := strings.Split(strings.Trim(strings.TrimSuffix(repository.Path, ".git"), "/"), "/")
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "SemRels") {
+		return false
+	}
+
+	repositoryName := strings.ToLower(parts[1])
+	known := false
+	for _, name := range firstPartyCanonicalNames {
+		if repositoryName == name {
+			known = true
+			break
 		}
 	}
-	return "", ref
+	if !known {
+		return false
+	}
+
+	declaredName := strings.ToLower(strings.TrimSpace(p.PackageName))
+	declaredName = strings.TrimPrefix(declaredName, firstPartyNamespace+"/")
+	if declaredName == "" {
+		declaredName = strings.ToLower(strings.TrimSpace(p.Name))
+		category := normalizeCategory(p.Category)
+		if category != "" && !strings.HasPrefix(declaredName, category+"-") {
+			declaredName = category + "-" + declaredName
+		}
+	}
+	return declaredName == repositoryName
+}
+
+// CanonicalRef returns the registry package identity. Legacy metadata stored
+// first-party short names, so category is used to produce the typed identity.
+func (p PluginMeta) CanonicalRef() string {
+	if packageName := strings.ToLower(strings.TrimSpace(p.PackageName)); packageName != "" {
+		if strings.HasPrefix(packageName, "@") {
+			return packageName
+		}
+		if ns := normalizeNamespace(p.Namespace); ns != "" {
+			return ns + "/" + packageName
+		}
+		return packageName
+	}
+	ns := normalizeNamespace(p.Namespace)
+	name := strings.ToLower(strings.TrimSpace(p.Name))
+	if p.IsFirstParty() {
+		ns = firstPartyNamespace
+		category := normalizeCategory(p.Category)
+		if category != "" && !strings.HasPrefix(name, category+"-") {
+			name = category + "-" + name
+		}
+	}
+	if ns != "" {
+		return ns + "/" + name
+	}
+	return name
+}
+
+// ExecutableName returns the stable artifact/cache basename, independently of
+// the canonical package reference.
+func (p PluginMeta) ExecutableName() string {
+	name := strings.TrimSpace(p.ArtifactName)
+	if name == "" {
+		name = strings.TrimSpace(p.BinaryName)
+	}
+	name = strings.TrimPrefix(name, "semrel-plugin-")
+	if name != "" {
+		return name
+	}
+	if id := strings.TrimSpace(p.ID); id != "" {
+		return id
+	}
+
+	name = strings.ToLower(strings.TrimSpace(p.Name))
+	if p.IsFirstParty() {
+		canonicalName := p.CanonicalRef()
+		canonicalName = canonicalName[strings.LastIndex(canonicalName, "/")+1:]
+		if legacy, ok := legacyArtifactNames[canonicalName]; ok {
+			return legacy
+		}
+		return canonicalName
+	}
+	return name
+}
+
+// ValidatedExecutableName returns a filesystem-safe artifact basename.
+func (p PluginMeta) ValidatedExecutableName() (string, error) {
+	name := p.ExecutableName()
+	upper := strings.ToUpper(name)
+	if len(name) > 255 || !artifactNamePattern.MatchString(name) ||
+		name == "." || name == ".." || strings.HasSuffix(name, ".") ||
+		isWindowsReservedName(upper) {
+		return "", newRegistryError(
+			ErrCodeInvalidMetadata,
+			fmt.Sprintf("invalid executable name %q", name),
+			nil,
+		)
+	}
+	return name, nil
+}
+
+func isWindowsReservedName(name string) bool {
+	base := strings.SplitN(name, ".", 2)[0]
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) {
+		return base[3] >= '1' && base[3] <= '9'
+	}
+	return false
 }
 
 // FindVersion returns the requested plugin version. If version is empty, the latest stable version is preferred.
