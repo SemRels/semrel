@@ -113,7 +113,8 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
           if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists on remote; skipping."
-          elif ! git push origin "refs/tags/${TAG}"; then
+          elif ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "refs/tags/${TAG}"; then
             echo "Git tag push failed; creating the tag through the GitHub API."
             if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f "ref=refs/tags/${TAG}" \
