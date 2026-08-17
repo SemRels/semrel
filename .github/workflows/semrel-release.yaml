@@ -76,6 +76,7 @@ jobs:
         if: steps.semrel.outputs.released == 'true'
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]]; then
