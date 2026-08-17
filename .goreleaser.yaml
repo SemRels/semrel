@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 The semrel Authors
+#
+# GoReleaser configuration for semrel
+# https://goreleaser.com/customization/
 version: 2
+
+# No before hooks — go mod tidy is enforced as a separate CI step
+# (see release.yaml) to avoid marking the build dirty.
 
 builds:
   - id: semrel
     main: ./cmd/semrel
     binary: semrel
-    flags:
-      - -trimpath
-    ldflags:
-      - -X github.com/SemRels/semrel/internal/version.Version={{.Version}}
     env:
       - CGO_ENABLED=0
     goos:
@@ -19,21 +21,60 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/SemRels/semrel/internal/version.Version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
 archives:
-  - id: semrel
-    builds: [semrel]
-    name_template: "semrel-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+  - id: default
+    format: tar.gz
     format_overrides:
       - goos: windows
-        formats: [zip]
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
-      - NOTICE
       - README.md
+      - CHANGELOG.md
 
 checksum:
-  name_template: "semrel-{{ .Version }}-checksums.txt"
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Keyless (OIDC) signing of the checksums file via cosign. Verifies with:
+#   cosign verify-blob --certificate-identity-regexp \
+#     'https://github.com/SemRels/semrel/.github/workflows/semrel-release.yaml.*' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     --certificate checksums.txt.pem --signature checksums.txt.sig checksums.txt
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
 
 changelog:
-  disable: true
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: SemRels
+    name: semrel
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  footer: |
+    **Full Changelog**: https://github.com/SemRels/semrel/compare/{{ .PreviousTag }}...{{ .Tag }}
