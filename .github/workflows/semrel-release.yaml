@@ -111,25 +111,19 @@ jobs:
             printf 'source_sha=%s\n' "${source_sha}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
-          if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists on remote; skipping."
-          elif ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          if ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "refs/tags/${TAG}"; then
-            echo "Git tag push failed; creating the tag through the GitHub API."
-            set +e
-            api_error="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f "ref=refs/tags/${TAG}" -f "sha=${source_sha}" 2>&1)"
-            api_status=$?
-            set -e
-            if (( api_status != 0 )); then
-              printf 'GitHub API tag creation failed (status %s): %s\n' "${api_status}" "${api_error}" >&2
-              if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
-                echo "Tag ${TAG} was created concurrently; continuing."
-              else
-                echo "Unable to publish tag ${TAG} through Git or the GitHub API." >&2
-                exit 1
-              fi
-            fi
+            echo "Git tag push failed; creating the tag through the GitHub REST API."
+            response="$(curl --fail-with-body --silent --show-error \
+              -X POST "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${source_sha}\"}")" || {
+              printf 'Unable to publish tag %s: %s\n' "${TAG}" "${response}" >&2
+              exit 1
+            }
+            printf 'Tag publication response: %s\n' "${response}"
           fi
 
       - name: Preserve generated changelog
