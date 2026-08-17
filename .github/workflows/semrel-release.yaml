@@ -74,6 +74,7 @@ jobs:
       - name: Push tag to GitHub
         id: tag
         if: steps.semrel.outputs.released == 'true'
+        continue-on-error: true
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
