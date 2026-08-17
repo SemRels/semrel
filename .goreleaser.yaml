@@ -46,14 +46,18 @@ checksum:
 #   cosign verify-blob --certificate-identity-regexp \
 #     'https://github.com/SemRels/semrel/.github/workflows/semrel-release.yaml.*' \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-#     --certificate checksums.txt.pem --signature checksums.txt.sig checksums.txt
+#     --bundle checksums.txt.bundle checksums.txt
+#
+# cosign v3 removed the separate --output-signature/--output-certificate
+# flags in favor of a single --bundle FILE containing both, so the
+# verification command above differs from cosign v2's --certificate/--signature
+# pair used previously.
 signs:
   - cmd: cosign
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.bundle"
     args:
       - sign-blob
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - --yes
     artifacts: checksum
