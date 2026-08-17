@@ -116,16 +116,19 @@ jobs:
           elif ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "refs/tags/${TAG}"; then
             echo "Git tag push failed; creating the tag through the GitHub API."
-            if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            api_error="$(
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f "ref=refs/tags/${TAG}" \
-              -f "sha=${source_sha}"; then
+              -f "sha=${source_sha}" 2>&1
+            )" || {
+              printf 'GitHub API tag creation failed: %s\n' "${api_error}" >&2
               if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
                 echo "Tag ${TAG} was created concurrently; continuing."
               else
                 echo "Unable to publish tag ${TAG} through Git or the GitHub API." >&2
                 exit 1
               fi
-            fi
+            }
           fi
 
       - name: Preserve generated changelog
