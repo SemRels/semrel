@@ -6,8 +6,9 @@ builds:
   - id: semrel
     main: ./cmd/semrel
     binary: semrel
-    ldflags:
+    flags:
       - -trimpath
+    ldflags:
       - -X github.com/SemRels/semrel/internal/version.Version={{.Version}}
     env:
       - CGO_ENABLED=0
