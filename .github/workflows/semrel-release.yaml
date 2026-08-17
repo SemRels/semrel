@@ -111,14 +111,14 @@ jobs:
             printf 'source_sha=%s\n' "${source_sha}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+          if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists on remote; skipping."
           elif ! git push origin "refs/tags/${TAG}"; then
             echo "Git tag push failed; creating the tag through the GitHub API."
             if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f "ref=refs/tags/${TAG}" \
               -f "sha=${source_sha}"; then
-              if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+              if gh api --silent "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
                 echo "Tag ${TAG} was created concurrently; continuing."
               else
                 echo "Unable to publish tag ${TAG} through Git or the GitHub API." >&2
