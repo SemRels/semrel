@@ -18,6 +18,8 @@ import (
 	"github.com/SemRels/semrel/pkg/config"
 )
 
+func stringPtr(value string) *string { return &value }
+
 func newConfigCommand(configFile *string, outputFormat *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
@@ -128,7 +130,7 @@ func defaultConfig() *config.Config {
 	return &config.Config{
 		SchemaVersion: 1,
 		Branches:      []config.BranchConfig{{Name: "main"}},
-		TagPrefix:     "v",
+		TagPrefix:     stringPtr("v"),
 		Rules: []config.ReleaseRule{
 			{Type: "feat", Bump: "minor"},
 			{Type: "fix", Bump: "patch"},
@@ -200,7 +202,8 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 
 	// Tag prefix.
-	cfg.TagPrefix = prompt("Tag prefix", "v")
+	tagPrefix := prompt("Tag prefix", "v")
+	cfg.TagPrefix = &tagPrefix
 
 	// Rules — use semrel defaults; they can be customised later.
 	cfg.Rules = []config.ReleaseRule{
@@ -291,7 +294,7 @@ func marshalConfigYAML(cfg *config.Config) ([]byte, error) {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\ntagPrefix: %q\n", cfg.TagPrefix))
+	sb.WriteString(fmt.Sprintf("\ntagPrefix: %q\n", cfg.TagPrefixValue()))
 
 	// Rules
 	sb.WriteString("\n# Commit type → SemVer bump. Breaking changes (feat! / BREAKING CHANGE:) always → major.\n")
@@ -470,7 +473,7 @@ func applyConfigKey(cfg *config.Config, key, value string) error {
 	parts := strings.SplitN(key, ".", 3)
 	switch parts[0] {
 	case "tagPrefix", "tag_prefix":
-		cfg.TagPrefix = value
+		cfg.TagPrefix = &value
 	case "version_ceiling":
 		cfg.VersionCeiling = value
 	case "ceiling_strategy":

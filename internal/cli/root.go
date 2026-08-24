@@ -313,6 +313,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	tagPrefix := cfg.TagPrefixValue()
 
 	// 1a. Warn if config schema is outdated.
 	if !config.IsUpToDate(cfg) && outputFormat != "json" {
@@ -375,7 +376,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// Check if the current branch is configured for release
 	if !isBranchConfigured(branch, cfg.Branches) {
-		summary := ReleaseSummary{Released: false, DryRun: dryRun, Branch: branch, TagPrefix: cfg.TagPrefix}
+		summary := ReleaseSummary{Released: false, DryRun: dryRun, Branch: branch, TagPrefix: tagPrefix}
 		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
 			return err
 		}
@@ -408,11 +409,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 	contributors := buildContributorMetadata(releaseCommits, contributorHistory)
 
-	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, cfg.TagPrefix))
+	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, tagPrefix))
 	if err != nil {
 		currentVersion = &semver.Version{}
 	}
-	currentTag := cfg.TagPrefix + currentVersion.String()
+	currentTag := tagPrefix + currentVersion.String()
 
 	if len(rawMessages) == 0 && !forcePatch {
 		summary := ReleaseSummary{
@@ -420,7 +421,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			DryRun:         dryRun,
 			CurrentVersion: currentTag,
 			Branch:         branch,
-			TagPrefix:      cfg.TagPrefix,
+			TagPrefix:      tagPrefix,
 		}
 		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
 			return err
@@ -478,7 +479,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			CurrentVersion: currentTag,
 			Commits:        len(parsed),
 			Branch:         branch,
-			TagPrefix:      cfg.TagPrefix,
+			TagPrefix:      tagPrefix,
 		}
 		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
 			return err
@@ -543,7 +544,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				CurrentVersion: currentTag,
 				Commits:        len(parsed),
 				Branch:         branch,
-				TagPrefix:      cfg.TagPrefix,
+				TagPrefix:      tagPrefix,
 			}
 			if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
 				return err
@@ -556,7 +557,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		}
 	}
 
-	nextTag := cfg.TagPrefix + nextVer.String()
+	nextTag := tagPrefix + nextVer.String()
 	ceilingApplied := false
 
 	// 7b. Apply version ceiling if configured
@@ -580,7 +581,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				CurrentVersion: currentTag,
 				Commits:        len(parsed),
 				Branch:         branch,
-				TagPrefix:      cfg.TagPrefix,
+				TagPrefix:      tagPrefix,
 				VersionCeiling: cfg.VersionCeiling,
 			}
 			if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
@@ -597,7 +598,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			fmt.Fprintf(os.Stderr, "warning: version ceiling %s applied — bump clamped from %s to %s\n", cfg.VersionCeiling, nextVer.String(), clamped.String())
 			ceilingApplied = true
 			nextVer = clamped
-			nextTag = cfg.TagPrefix + nextVer.String()
+			nextTag = tagPrefix + nextVer.String()
 			bump = releaseBumpLabel(currentVersion, nextVer)
 		}
 	}
@@ -622,7 +623,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				NextVersion:    nextTag,
 				Bump:           bump,
 				Branch:         branch,
-				TagPrefix:      cfg.TagPrefix,
+				TagPrefix:      tagPrefix,
 				Changelog:      changelogEntry,
 				CommitMessages: rawMessages,
 				contributors:   contributors,
@@ -680,7 +681,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		Changelog:      changelogEntry,
 		CommitMessages: rawMessages,
 		Branch:         branch,
-		TagPrefix:      cfg.TagPrefix,
+		TagPrefix:      tagPrefix,
 		CeilingApplied: ceilingApplied,
 		VersionCeiling: cfg.VersionCeiling,
 		contributors:   contributors,

@@ -140,8 +140,8 @@ tagPrefix: v
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.TagPrefix != "release/" {
-		t.Errorf("expected release/, got %q", cfg.TagPrefix)
+	if cfg.TagPrefixValue() != "release/" {
+		t.Errorf("expected release/, got %q", cfg.TagPrefixValue())
 	}
 }
 
