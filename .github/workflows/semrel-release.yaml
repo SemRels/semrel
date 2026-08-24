@@ -24,6 +24,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      id-token: write
+      pull-requests: write
     outputs:
       build_date: ${{ steps.tag.outputs.build_date }}
       changelog: ${{ steps.semrel.outputs.changelog }}
@@ -104,6 +106,19 @@ jobs:
           source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
           [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          branch="automation/release-${TAG}"
+          # CHANGELOG.md is part of the release commit. Protected main cannot
+          # accept that commit directly, so publish it on a PR branch first.
+          git switch -c "${branch}"
+          git push origin "HEAD:refs/heads/${branch}"
+          existing_pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')"
+          if [[ -z "${existing_pr}" ]]; then
+            gh pr create --base main --head "${branch}" \
+              --title "chore(release): prepare ${TAG}" \
+              --body "Automated release preparation for ${TAG}. Merge this PR to bring the generated CHANGELOG.md commit into protected main."
+          else
+            echo "Release PR #${existing_pr} already exists."
+          fi
           {
             printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
             # Actions concurrency groups are case-insensitive; hash the case-sensitive exact SemVer.
