@@ -264,6 +264,39 @@ func TestLoadConfig_EnvVarExpansion_Undefined(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_SproutEnvTemplate(t *testing.T) {
+	t.Setenv("SEMREL_TEMPLATE_TAG_PREFIX", "release-")
+	cases := []struct {
+		name, file, data string
+	}{
+		{"yaml", ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: '{{ env \"SEMREL_TEMPLATE_TAG_PREFIX\" }}'\n"},
+		{"toml", ".semrel.toml", "tag_prefix = '{{ env \"SEMREL_TEMPLATE_TAG_PREFIX\" }}'\n\n[[branches]]\nname = \"main\"\n"},
+		{"json", ".semrel.json", `{"branches":[{"name":"main"}],"tag_prefix":"{{ env ` + "`SEMREL_TEMPLATE_TAG_PREFIX`" + ` }}"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeConfigFile(t, dir, tc.file, tc.data)
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig(): %v", err)
+			}
+			if got := cfg.TagPrefixValue(); got != "release-" {
+				t.Fatalf("expected templated tagPrefix=release-, got %q", got)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_SproutTemplateRejectsUnknownFunction(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: '{{ shell \"echo unsafe\" }}'\n")
+
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected unknown template function to be rejected")
+	}
+}
+
 func TestIsMaintenance_PatternDetection(t *testing.T) {
 	tests := []struct {
 		branch string

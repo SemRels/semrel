@@ -6,14 +6,18 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/BurntSushi/toml"
+	"github.com/go-sprout/sprout"
+	sproutenv "github.com/go-sprout/sprout/registry/env"
 	"gopkg.in/yaml.v3"
 
 	"github.com/SemRels/semrel/pkg/semver"
@@ -283,6 +287,7 @@ func expandEnvVars(data []byte) ([]byte, error) {
 				missing = append(missing, name)
 				seen[name] = true
 			}
+
 			return match
 		}
 		return []byte(val)
@@ -291,6 +296,27 @@ func expandEnvVars(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return expanded, nil
+}
+
+// expandTemplates evaluates configuration templates with only Sprout's env
+// function exposed. No filesystem, shell, network, or other side-effecting
+// functions are made available to configuration authors.
+func expandTemplates(data []byte) ([]byte, error) {
+	if !bytes.Contains(data, []byte("{{")) {
+		return data, nil
+	}
+
+	handler := sprout.New(sprout.WithRegistries(sproutenv.NewRegistry()))
+	functions := template.FuncMap{"env": handler.Build()["env"]}
+	tmpl, err := template.New("config").Option("missingkey=error").Funcs(functions).Parse(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parsing config template: %w", err)
+	}
+	var expanded bytes.Buffer
+	if err := tmpl.Execute(&expanded, nil); err != nil {
+		return nil, fmt.Errorf("executing config template: %w", err)
+	}
+	return expanded.Bytes(), nil
 }
 
 // LoadConfig loads configuration from the given file path.
@@ -309,6 +335,10 @@ func LoadConfig(path string) (*Config, error) {
 	data, err = expandEnvVars(data)
 	if err != nil {
 		return nil, fmt.Errorf("expanding env vars in config %s: %w", path, err)
+	}
+	data, err = expandTemplates(data)
+	if err != nil {
+		return nil, fmt.Errorf("expanding templates in config %s: %w", path, err)
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))

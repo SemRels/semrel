@@ -22,6 +22,8 @@ branches:
   - name: main              # stable releases
 
 tagPrefix: "v"
+# Template values may read environment variables safely:
+# tagPrefix: '{{ env "RELEASE_TAG_PREFIX" }}'
 
 rules:
   - type: feat
