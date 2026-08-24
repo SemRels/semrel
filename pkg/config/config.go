@@ -287,8 +287,10 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
-	// Apply defaults
-	if cfg.TagPrefix == "" {
+	// Apply defaults. TagPrefix only defaults to "v" when the key is absent
+	// from the config entirely — an explicit empty string (tagPrefix: "")
+	// must be honored so users can opt out of prefixed tags.
+	if cfg.TagPrefix == "" && !hasExplicitTagPrefix(data, ext) {
 		cfg.TagPrefix = "v"
 	}
 	if len(cfg.Rules) == 0 {
@@ -300,6 +302,37 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// hasExplicitTagPrefix reports whether the raw config data contains a
+// tagPrefix/tag_prefix key at all, regardless of its value. Config structs
+// unmarshal a missing key and an explicit empty string identically (both
+// become the zero value ""), so the raw data must be inspected separately
+// to distinguish "not set" from "set to empty".
+func hasExplicitTagPrefix(data []byte, ext string) bool {
+	switch ext {
+	case ".toml":
+		var raw map[string]any
+		if _, err := toml.Decode(string(data), &raw); err != nil {
+			return false
+		}
+		_, ok := raw["tag_prefix"]
+		return ok
+	case ".json":
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return false
+		}
+		_, ok := raw["tag_prefix"]
+		return ok
+	default:
+		var raw map[string]any
+		if err := yaml.Unmarshal(data, &raw); err != nil {
+			return false
+		}
+		_, ok := raw["tagPrefix"]
+		return ok
+	}
 }
 
 // FindConfigFile returns the first semrel config file found in dir.

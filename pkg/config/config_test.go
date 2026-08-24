@@ -197,6 +197,37 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_ExplicitEmptyTagPrefix(t *testing.T) {
+	cases := []struct {
+		name string
+		ext  string
+		data string
+	}{
+		{"yaml", "*.yaml", "branches:\n  - name: main\ntagPrefix: \"\"\n"},
+		{"toml", "*.toml", "tag_prefix = \"\"\n\n[[branches]]\nname = \"main\"\n"},
+		{"json", "*.json", `{"branches":[{"name":"main"}],"tag_prefix":""}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.CreateTemp("", "semrel-"+tc.ext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(f.Name())
+			f.WriteString(tc.data)
+			f.Close()
+
+			cfg, err := LoadConfig(f.Name())
+			if err != nil {
+				t.Fatalf("LoadConfig: %v", err)
+			}
+			if cfg.TagPrefix != "" {
+				t.Errorf("expected explicit empty tagPrefix to be honored, got %q", cfg.TagPrefix)
+			}
+		})
+	}
+}
+
 func TestIsMaintenance_PatternDetection(t *testing.T) {
 	tests := []struct {
 		branch string
