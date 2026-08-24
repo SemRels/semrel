@@ -1390,6 +1390,7 @@ type CommitlintSummary struct {
 func newCommitlintCommand(outputFormat *string) *cobra.Command {
 	var fromRef, toRef string
 	var stdin bool
+	var commitMsgFile string
 
 	cmd := &cobra.Command{
 		Use:   "commitlint [message...]",
@@ -1415,20 +1416,25 @@ Examples:
   # Pipe a message from stdin
   echo "fix: typo" | semrel commitlint --stdin
 
+  # Validate a message from a file, e.g. in a git commit-msg hook (.git/hooks/commit-msg "$1")
+  semrel commitlint --commit-msg-file .git/COMMIT_EDITMSG
+
 Exit code 0 means all messages are valid; non-zero means at least one is invalid.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommitlint(cmd.Context(), args, fromRef, toRef, stdin, *outputFormat)
+			return runCommitlint(cmd.Context(), args, fromRef, toRef, stdin, commitMsgFile, *outputFormat)
 		},
 	}
 
 	cmd.Flags().StringVar(&fromRef, "from", "", "Start ref (exclusive) for commit range")
 	cmd.Flags().StringVar(&toRef, "to", "HEAD", "End ref (inclusive) for commit range (default: HEAD)")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "Read a single commit message from stdin")
+	cmd.Flags().StringVar(&commitMsgFile, "commit-msg-file", "", "Read a single commit message from a file (e.g. for a git commit-msg hook)")
+	cmd.MarkFlagsMutuallyExclusive("stdin", "commit-msg-file")
 
 	return cmd
 }
 
-func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, stdinMode bool, outputFormat string) error {
+func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, stdinMode bool, commitMsgFile string, outputFormat string) error {
 	parser := commits.NewParser()
 
 	var messages []string
@@ -1439,6 +1445,16 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return fmt.Errorf("reading stdin: %w", err)
+		}
+		msg := strings.TrimSpace(string(data))
+		if msg != "" {
+			messages = append(messages, msg)
+		}
+	case commitMsgFile != "":
+		// Read from a commit-msg-hook-style file (e.g. .git/COMMIT_EDITMSG).
+		data, err := os.ReadFile(commitMsgFile)
+		if err != nil {
+			return fmt.Errorf("reading commit message file %s: %w", commitMsgFile, err)
 		}
 		msg := strings.TrimSpace(string(data))
 		if msg != "" {

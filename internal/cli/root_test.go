@@ -198,14 +198,14 @@ func TestRunCommitlint_ValidMessages(t *testing.T) {
 		"feat: add feature",
 		"fix(auth): patch login bug",
 		"chore!: drop support",
-	}, "", "HEAD", false, "text")
+	}, "", "HEAD", false, "", "text")
 	if err != nil {
 		t.Errorf("expected no error for valid messages, got: %v", err)
 	}
 }
 
 func TestRunCommitlint_InvalidMessage(t *testing.T) {
-	err := runCommitlint(context.TODO(), []string{"not a conventional commit"}, "", "HEAD", false, "text")
+	err := runCommitlint(context.TODO(), []string{"not a conventional commit"}, "", "HEAD", false, "", "text")
 	if err == nil {
 		t.Fatal("expected error for invalid message")
 	}
@@ -218,7 +218,7 @@ func TestRunCommitlint_MixedMessages(t *testing.T) {
 	err := runCommitlint(context.TODO(), []string{
 		"feat: valid",
 		"bad message without type",
-	}, "", "HEAD", false, "text")
+	}, "", "HEAD", false, "", "text")
 	if err == nil {
 		t.Fatal("expected error for mixed messages")
 	}
@@ -227,9 +227,35 @@ func TestRunCommitlint_MixedMessages(t *testing.T) {
 	}
 }
 
+func TestRunCommitlint_CommitMsgFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "COMMIT_EDITMSG")
+	if err := os.WriteFile(path, []byte("feat(auth): add OAuth2 support\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runCommitlint(context.TODO(), nil, "", "HEAD", false, path, "text")
+	if err != nil {
+		t.Errorf("expected no error for valid commit-msg-file, got: %v", err)
+	}
+}
+
+func TestRunCommitlint_CommitMsgFile_Invalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "COMMIT_EDITMSG")
+	if err := os.WriteFile(path, []byte("not a conventional commit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runCommitlint(context.TODO(), nil, "", "HEAD", false, path, "text")
+	if err == nil {
+		t.Fatal("expected error for invalid commit-msg-file content")
+	}
+}
+
 func TestRunCommitlint_JSONOutput(t *testing.T) {
 	// JSON output for valid messages should not error
-	err := runCommitlint(context.TODO(), []string{"feat: valid"}, "", "HEAD", false, "json")
+	err := runCommitlint(context.TODO(), []string{"feat: valid"}, "", "HEAD", false, "", "json")
 	if err != nil {
 		t.Errorf("expected no error for valid JSON output, got: %v", err)
 	}
@@ -241,7 +267,7 @@ func TestRunCommitlint_JSONOutput(t *testing.T) {
 // It must not panic and may return nil or a non-nil error depending on whether a
 // valid git repository with tags is present in the working directory.
 func TestRunCommitlint_NoArgs_DefaultsToGitRange(t *testing.T) {
-	err := runCommitlint(context.TODO(), []string{}, "", "HEAD", false, "text")
+	err := runCommitlint(context.TODO(), []string{}, "", "HEAD", false, "", "text")
 	// Any outcome (nil or error) is acceptable; the important invariant is no panic.
 	t.Logf("runCommitlint (no args) returned: %v", err)
 }
