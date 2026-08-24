@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+
+name: Go version monitoring
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-version-monitoring
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Check stable Go release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Add a missing Go release line
+        run: python3 .github/scripts/update-go-version.py
+
+      - name: Create or update Go version pull request
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/go-version-monitoring
+          delete-branch: true
+          title: "ci: test against the latest stable Go release"
+          commit-message: |
+            ci: test against the latest stable Go release
+
+            Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          body: |
+            This automated PR adds the latest stable Go release line to the CI test matrix.
+
+            The monitor fetches and validates stable releases from the official Go download API.
+            Existing supported versions and prerelease coverage are preserved.

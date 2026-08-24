@@ -4,6 +4,10 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/SemRels/semrel)](https://goreportcard.com/report/github.com/SemRels/semrel)
 [![CI](https://github.com/SemRels/semrel/actions/workflows/ci.yaml/badge.svg)](https://github.com/SemRels/semrel/actions/workflows/ci.yaml)
+
+Go CI version updates are monitored weekly; see
+[Go version monitoring](docs/GO-VERSION-MONITORING.md) for details and manual
+trigger instructions.
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SemRels/semrel/badge)](https://scorecard.dev/viewer/?uri=github.com/SemRels/semrel)
 [![JSON Schema](https://img.shields.io/badge/schema-registry.semrel.io%2Fschemas%2Fcore%2Fv1.json-blue)](https://registry.semrel.io/schemas/core/v1.json)
 
