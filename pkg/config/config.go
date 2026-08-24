@@ -262,12 +262,51 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// envVarPattern matches ${env.VAR_NAME} placeholders in raw config data.
+var envVarPattern = regexp.MustCompile(`\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expandEnvVars replaces ${env.VAR_NAME} placeholders with the value of the
+// named environment variable. It returns an error naming every undefined
+// variable referenced, rather than silently substituting an empty string,
+// since a missing token (e.g. a GitHub vs. GitLab CI token) is almost always
+// a configuration mistake rather than an intentional empty value.
+func expandEnvVars(data []byte) ([]byte, error) {
+	var missing []string
+	seen := make(map[string]bool)
+	expanded := envVarPattern.ReplaceAllFunc(data, func(match []byte) []byte {
+		name := string(envVarPattern.FindSubmatch(match)[1])
+		val, ok := os.LookupEnv(name)
+		if !ok {
+			if !seen[name] {
+				missing = append(missing, name)
+				seen[name] = true
+			}
+			return match
+		}
+		return []byte(val)
+	})
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
+	}
+	return expanded, nil
+}
+
 // LoadConfig loads configuration from the given file path.
 // Issue: https://github.com/SemRels/semrel/issues/4
+//
+// Values may reference environment variables with ${env.VAR_NAME}, which are
+// expanded before the file is parsed. This lets different CI providers (e.g.
+// GitHub vs. GitLab) supply their own token env var without colliding.
+// Issue: https://github.com/SemRels/semrel/issues/243
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+
+	data, err = expandEnvVars(data)
+	if err != nil {
+		return nil, fmt.Errorf("expanding env vars in config %s: %w", path, err)
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))

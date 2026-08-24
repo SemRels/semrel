@@ -3,6 +3,15 @@
 #
 # Run `semrel config init` to generate this file interactively.
 # Run `semrel config validate` to check for errors.
+#
+# Any value may reference an environment variable with ${env.VAR_NAME},
+# expanded before the file is parsed. Useful when different plugins need
+# different tokens (e.g. GITHUB_TOKEN vs. GITLAB_TOKEN) that would otherwise
+# collide if a plugin only reads a single hardcoded env var name:
+#   plugins:
+#     - uses: "@semrel/provider-gitlab"
+#       args:
+#         token: "${env.GITLAB_RELEASE_TOKEN}"
 
 # ─────────────────────────────────────────────────────────────
 #  MVP — minimal config for a GitHub project on GitHub Actions

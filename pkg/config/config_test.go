@@ -228,6 +228,33 @@ func TestLoadConfig_ExplicitEmptyTagPrefix(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_EnvVarExpansion(t *testing.T) {
+	t.Setenv("SEMREL_TEST_TAG_PREFIX", "rel-")
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: \"${env.SEMREL_TEST_TAG_PREFIX}\"\n")
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig(): %v", err)
+	}
+	if cfg.TagPrefix != "rel-" {
+		t.Fatalf("expected tagPrefix=rel-, got %q", cfg.TagPrefix)
+	}
+}
+
+func TestLoadConfig_EnvVarExpansion_Undefined(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: \"${env.SEMREL_TEST_DOES_NOT_EXIST}\"\n")
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for undefined environment variable")
+	}
+	if !strings.Contains(err.Error(), "SEMREL_TEST_DOES_NOT_EXIST") {
+		t.Errorf("expected error to name the missing variable, got: %v", err)
+	}
+}
+
 func TestIsMaintenance_PatternDetection(t *testing.T) {
 	tests := []struct {
 		branch string
