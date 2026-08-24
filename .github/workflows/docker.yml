@@ -225,7 +225,7 @@ jobs:
 
       - name: Calculate final distroless tags
         id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/semrels/semrel
           flavor: latest=false
@@ -234,7 +234,7 @@ jobs:
 
       - name: Calculate final alpine tags
         id: meta-alpine
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/semrels/semrel
           flavor: latest=false
@@ -243,7 +243,7 @@ jobs:
 
       - name: Calculate final action tags
         id: meta-action
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/semrels/semrel
           flavor: latest=false
