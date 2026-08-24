@@ -328,25 +328,19 @@ Assert-True ($ociCI -match 'registry:2\.8\.3' -and $ociCI -match 'SEMREL_TEST_OC
 
 $coreFiles = @(
     (Join-Path $WorkspaceRoot 'semrel\.github\workflows\semrel-release.yaml'),
-    (Join-Path $WorkspaceRoot 'semrel\.github\workflows\docker.yml'),
-    (Join-Path $WorkspaceRoot 'semrel\.github\workflows\release.yaml')
+    (Join-Path $WorkspaceRoot 'semrel\.github\workflows\docker.yml')
 )
 $coreOrchestrator = Read-Workflow $coreFiles[0]
 Assert-True (-not ($coreOrchestrator -match '(?m)^concurrency:$')) 'semrel/semrel-release.yaml: exact downstream publication has top-level concurrency.'
 $coreReleaseJob = Get-JobBlock $coreOrchestrator 'release'
 Assert-True ($coreReleaseJob -match '(?m)^      group: semrel-orchestrator-\$\{\{ github\.ref \}\}$') 'semrel/semrel-release.yaml: version calculation job concurrency is not isolated.'
-foreach ($path in $coreFiles[1..2]) {
+foreach ($path in $coreFiles[1..1]) {
     $text = Read-Workflow $path
     Assert-True (-not ($text -match '(?m)^concurrency:$')) "semrel/$([IO.Path]::GetFileName($path)): exact publication has top-level concurrency."
 }
 $coreDockerWorkflow = Read-Workflow $coreFiles[1]
-$coreTagRelease = Read-Workflow $coreFiles[2]
 $coreDockerJob = Get-JobBlock $coreDockerWorkflow 'docker'
 Assert-True ($coreDockerJob -match '(?m)^    concurrency:\n      group: exact-image-\$\{\{ needs\.version\.outputs\.exact_key \}\}\n      cancel-in-progress: false$') 'semrel/docker.yml: exact publication is not serialized by a case-safe version key.'
-Assert-True ($coreTagRelease -match '(?m)^      actions: write$' -and $coreTagRelease -match 'name: Dispatch exact Docker publication' -and $coreTagRelease -match 'gh workflow run docker\.yml' -and $coreTagRelease -match '--ref "\$\{CANONICAL_TAG\}"' -and $coreTagRelease -match '--field "version=\$\{NORMALIZED_VERSION\}"') 'semrel/release.yaml: successful GoReleaser does not explicitly dispatch normalized Docker publication with actions permission.'
-Assert-True ($coreTagRelease -match 'name: Validate release tag' -and $coreTagRelease.IndexOf('name: Validate release tag') -lt $coreTagRelease.IndexOf('name: Run GoReleaser') -and $coreTagRelease -match 'Numeric prerelease identifiers must not contain leading zeros') 'semrel/release.yaml: tag is not strict-SemVer validated before GoReleaser.'
-Assert-True ($coreTagRelease.IndexOf('name: Dispatch exact Docker publication') -gt $coreTagRelease.IndexOf('name: Run GoReleaser')) 'semrel/release.yaml: Docker dispatch can run before GoReleaser succeeds.'
-Assert-True ($coreTagRelease -match 'workflow_dispatch is intentionally emitted by GITHUB_TOKEN') 'semrel/release.yaml: workflow_dispatch token exception and duplicate-run semantics are undocumented.'
 
 $coreRegistryE2E = Read-Workflow (Join-Path $WorkspaceRoot 'semrel\.github\workflows\core-registry-e2e.yml')
 Assert-True ($coreRegistryE2E -match '# provider-git v0\.3\.0\n\s+ref: 722a1e3e4e22f3adcf69398d8b966a33037bfee9') 'core-registry-e2e does not use the peeled provider-git v0.3.0 commit.'

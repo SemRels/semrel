@@ -71,7 +71,7 @@ jobs:
         id: semrel
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: "${RUNNER_TEMP}/semrel release --github-output"
+        run: '"${RUNNER_TEMP}/semrel" release --github-output'
 
       - name: Push tag to GitHub
         id: tag
@@ -589,11 +589,26 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign sign-blob --yes \
-            --new-bundle-format=false \
-            --use-signing-config=false \
-            --output-signature=checksums.txt.sig \
-            --output-certificate=checksums.txt.pem \
+            --bundle=checksums.txt.bundle \
             checksums.txt
+
+      - name: Add release footer
+        env:
+          CHANGELOG: ${{ needs.release.outputs.changelog }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          previous_tag="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          delimiter="SEMREL_CHANGELOG_${GITHUB_RUN_ID}"
+          {
+            printf 'SEMREL_CHANGELOG<<%s\n' "${delimiter}"
+            printf '%s\n' "${CHANGELOG}"
+            if [[ -n "${previous_tag}" ]]; then
+              printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "${GITHUB_REPOSITORY}" "${previous_tag}" "${TAG}"
+            fi
+            printf '%s\n' "${delimiter}"
+          } >> "${GITHUB_ENV}"
 
       - name: Build provider-github plugin
         # Pinned to the release-asset Content-Length fix.
@@ -608,10 +623,9 @@ jobs:
       - name: Publish GitHub release
         env:
           PROVIDER_BIN: ${{ runner.temp }}/provider-github-plugin
-          SEMREL_CHANGELOG: ${{ needs.release.outputs.changelog }}
           SEMREL_DRY_RUN: "false"
           SEMREL_NEXT_VERSION: ${{ needs.release.outputs.tag }}
-          SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.sig,dist/checksums.txt.pem"
+          SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.bundle"
           SEMREL_PLUGIN_OWNER: SemRels
           SEMREL_PLUGIN_REPO: semrel
           SEMREL_PLUGIN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -626,7 +640,7 @@ jobs:
         run: |
           {
             printf '### Released %s 🚀\n' "${TAG}"
-            printf '**Docker image:** `ghcr.io/semrels/semrel:%s`\n' "${VERSION_SHORT//+/_}"
+            printf '%s\n' "**Docker image:** \`ghcr.io/semrels/semrel:${VERSION_SHORT//+/_}\`"
             echo "**Variants:** distroless, alpine, GitHub Actions"
           } >> "${GITHUB_STEP_SUMMARY}"
 
