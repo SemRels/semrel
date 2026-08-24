@@ -49,16 +49,20 @@ Starting from `v0.1.0`, semrel release artifacts are signed using
 ### Verifying a release artifact
 
 ```bash
-# Download the artifact and its bundle sidecar
+# Download the release checksums and its bundle sidecar
 curl -LO https://github.com/SemRels/semrel/releases/download/v1.0.0/semrel_linux_amd64.tar.gz
-curl -LO https://github.com/SemRels/semrel/releases/download/v1.0.0/semrel_linux_amd64.tar.gz.bundle
+curl -LO https://github.com/SemRels/semrel/releases/download/v1.0.0/checksums.txt
+curl -LO https://github.com/SemRels/semrel/releases/download/v1.0.0/checksums.txt.bundle
 
 # Verify the signature (requires cosign v2+)
 cosign verify-blob \
-  --bundle semrel_linux_amd64.tar.gz.bundle \
+  --bundle checksums.txt.bundle \
   --certificate-identity-regexp "https://github.com/SemRels/semrel/.github/workflows/" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  semrel_linux_amd64.tar.gz
+  checksums.txt
+
+# Verify the downloaded archive against the signed checksums
+grep 'semrel_linux_amd64.tar.gz$' checksums.txt | sha256sum --check -
 ```
 
 ### SBOM
@@ -75,5 +79,4 @@ build inputs and artifact digests.
 
 Keyless Cosign signing uses the GitHub Actions OIDC identity:
 - **Issuer:** `https://token.actions.githubusercontent.com`
-- **Subject pattern:** `https://github.com/SemRels/semrel/.github/workflows/release.yml@refs/tags/v*`
-
+- **Subject pattern:** `https://github.com/SemRels/semrel/.github/workflows/semrel-release.yml@refs/heads/main`
