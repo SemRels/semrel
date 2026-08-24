@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 The semrel Authors
+
 """Add the latest stable Go release line to the CI test matrix."""
 
 from __future__ import annotations
