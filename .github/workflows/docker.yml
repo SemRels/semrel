@@ -363,9 +363,18 @@ jobs:
             fi
             if existing_digest=$(resolve_registry_ref "${exact_tag}"); then
               if [[ "${existing_digest}" != "${digest}" ]]; then
-                printf 'Refusing to mutate immutable exact tag %s (%s != %s).\n' \
-                  "${exact_tag}" "${existing_digest}" "${digest}" >&2
-                return 1
+                if ! docker buildx imagetools inspect --raw "${exact_tag}" |
+                  jq -e \
+                    --arg amd64 "${amd64_image_digest}" \
+                    --arg arm64 "${arm64_image_digest}" \
+                    'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
+                     any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
+                    >/dev/null; then
+                  printf 'Refusing to mutate immutable exact tag %s (%s != %s).\n' \
+                    "${exact_tag}" "${existing_digest}" "${digest}" >&2
+                  return 1
+                fi
+                digest="${existing_digest}"
               fi
             else
               resolve_status=$?
