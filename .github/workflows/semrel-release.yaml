@@ -27,13 +27,13 @@ jobs:
       id-token: write
       pull-requests: write
     outputs:
-      build_date: ${{ steps.tag.outputs.build_date }}
+      build_date: ${{ steps.metadata.outputs.build_date }}
       changelog: ${{ steps.semrel.outputs.changelog }}
-      exact_key: ${{ steps.tag.outputs.exact_key }}
+      exact_key: ${{ steps.metadata.outputs.exact_key }}
       released: ${{ steps.semrel.outputs.released }}
-      image_version: ${{ steps.tag.outputs.image_version }}
-      source_sha: ${{ steps.tag.outputs.source_sha }}
-      stable: ${{ steps.tag.outputs.stable }}
+      image_version: ${{ steps.metadata.outputs.image_version }}
+      source_sha: ${{ steps.metadata.outputs.source_sha }}
+      stable: ${{ steps.metadata.outputs.stable }}
       tag: ${{ steps.semrel.outputs.tag }}
       version_short: ${{ steps.semrel.outputs.version }}
     steps:
@@ -73,12 +73,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: '"${RUNNER_TEMP}/semrel" release --github-output'
 
+      - name: Capture release source
+        id: source
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          source_epoch=$(git show -s --format=%ct HEAD)
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          {
+            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'source_epoch=%s\n' "${source_epoch}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Push tag to GitHub
         id: tag
         if: steps.semrel.outputs.released == 'true'
         continue-on-error: true
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -102,10 +118,8 @@ jobs:
           fi
           stable=true
           [[ "${without_build}" != *-* ]] || stable=false
-          source_sha=$(git rev-list -n 1 "refs/tags/${TAG}")
-          source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
-          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
           branch="automation/release-${TAG}"
           # CHANGELOG.md is part of the release commit. Protected main cannot
           # accept that commit directly, so publish it on a PR branch first.
@@ -120,11 +134,11 @@ jobs:
             echo "Release PR #${existing_pr} already exists."
           fi
           {
-            printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'build_date=%s\n' "$(date -u -d "@${SOURCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
             # Actions concurrency groups are case-insensitive; hash the case-sensitive exact SemVer.
             printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
             printf 'image_version=%s\n' "${normalized//+/_}"
-            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
           if ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
@@ -135,11 +149,35 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${source_sha}\"}")" || {
+              --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${SOURCE_SHA}\"}")" || {
                 printf 'Warning: unable to publish tag %s: %s\n' "${TAG}" "${response}" >&2
               }
             printf 'Tag publication response: %s\n' "${response}"
           fi
+
+      - name: Resolve release metadata
+        id: metadata
+        if: always() && steps.semrel.outputs.released == 'true'
+        env:
+          TAG: ${{ steps.semrel.outputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
+        run: |
+          set -euo pipefail
+          [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]] && exit 1
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
+          normalized="${TAG#v}"
+          without_build="${normalized%%+*}"
+          stable=true
+          [[ "${without_build}" != *-* ]] || stable=false
+          {
+            printf 'build_date=%s\n' "$(date -u -d "@${SOURCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
+            printf 'image_version=%s\n' "${normalized//+/_}"
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
+            printf 'stable=%s\n' "${stable}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Preserve generated changelog
         if: steps.semrel.outputs.released == 'true'
@@ -260,6 +298,8 @@ jobs:
     name: Publish validated Docker images
     needs: [release, docker-validate]
     if: needs.release.outputs.released == 'true'
+    outputs:
+      exact_tag_conflict: ${{ steps.manifests.outputs.exact_tag_conflict }}
     runs-on: ubuntu-latest
     concurrency:
       group: exact-image-${{ needs.release.outputs.exact_key }}
@@ -447,6 +487,7 @@ jobs:
             local amd64_image_digest=$5
             local arm64_image_digest=$6
             local candidate_tag digest exact_tag existing_digest
+            local exact_tag_skipped=false
             local -a final_tags
             [[ "${amd64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
             [[ "${arm64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -475,11 +516,13 @@ jobs:
                     'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
                      any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
                     >/dev/null; then
-                  printf 'Refusing to mutate immutable exact tag %s (%s != %s).\n' \
-                    "${exact_tag}" "${existing_digest}" "${digest}" >&2
-                  return 1
+                  printf '::warning::Immutable exact tag %s already points to %s; skipping it (new safe manifest is %s).\n' \
+                    "${exact_tag}" "${existing_digest}" "${candidate_tag}"
+                  exact_tag_skipped=true
+                  any_exact_tag_conflict=true
+                else
+                  digest="${existing_digest}"
                 fi
-                digest="${existing_digest}"
               fi
             else
               resolve_status=$?
@@ -488,27 +531,35 @@ jobs:
               fi
               oras tag "${IMAGE}@${digest}" "${exact_tag#"${IMAGE}:"}"
             fi
-            if ! published_digest=$(resolve_registry_ref "${exact_tag}"); then
-              printf 'Exact tag %s could not be verified after publication.\n' "${exact_tag}" >&2
-              return 1
+            if [[ "${exact_tag_skipped}" != true ]]; then
+              if ! published_digest=$(resolve_registry_ref "${exact_tag}"); then
+                printf 'Exact tag %s could not be verified after publication.\n' "${exact_tag}" >&2
+                return 1
+              fi
+              if [[ "${published_digest}" != "${digest}" ]]; then
+                printf 'Refusing exact-tag conflict for %s (%s != %s).\n' \
+                  "${exact_tag}" "${published_digest}" "${digest}" >&2
+                return 1
+              fi
+              docker buildx imagetools inspect --raw "${exact_tag}" |
+                jq -e \
+                  --arg amd64 "${amd64_image_digest}" \
+                  --arg arm64 "${arm64_image_digest}" \
+                  'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
+                   any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
+                  >/dev/null
             fi
-            if [[ "${published_digest}" != "${digest}" ]]; then
-              printf 'Refusing exact-tag conflict for %s (%s != %s).\n' \
-                "${exact_tag}" "${published_digest}" "${digest}" >&2
-              return 1
-            fi
-            docker buildx imagetools inspect --raw "${exact_tag}" |
-              jq -e \
-                --arg amd64 "${amd64_image_digest}" \
-                --arg arm64 "${arm64_image_digest}" \
-                'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
-                 any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
-                >/dev/null
-            printf '%s=%s\n' "${output_name}" "${digest}" >> "${GITHUB_OUTPUT}"
+            {
+              printf '%s=%s\n' "${output_name}" "${digest}"
+              printf '%s_exact_tag=%s\n' "${output_name}" "${exact_tag}"
+              printf '%s_exact_tag_skipped=%s\n' "${output_name}" "${exact_tag_skipped}"
+            } >> "${GITHUB_OUTPUT}"
           }
+          any_exact_tag_conflict=false
           create_manifest distroless "${DISTROLESS_TAGS}" "${DISTROLESS_AMD64}" "${DISTROLESS_ARM64}" "${DISTROLESS_AMD64_IMAGE}" "${DISTROLESS_ARM64_IMAGE}"
           create_manifest alpine "${ALPINE_TAGS}" "${ALPINE_AMD64}" "${ALPINE_ARM64}" "${ALPINE_AMD64_IMAGE}" "${ALPINE_ARM64_IMAGE}"
           create_manifest action "${ACTION_TAGS}" "${ACTION_AMD64}" "${ACTION_ARM64}" "${ACTION_AMD64_IMAGE}" "${ACTION_ARM64_IMAGE}"
+          printf 'exact_tag_conflict=%s\n' "${any_exact_tag_conflict}" >> "${GITHUB_OUTPUT}"
 
       - name: Sign published image digests
         shell: bash
@@ -522,9 +573,44 @@ jobs:
           for digest in "${DISTROLESS_DIGEST}" "${ALPINE_DIGEST}" "${ACTION_DIGEST}"; do
             cosign sign --yes "ghcr.io/semrels/semrel@${digest}"
           done
+
+      - name: Docker publication summary
+        if: always()
+        env:
+          EXACT_TAG_CONFLICT: ${{ steps.manifests.outputs.exact_tag_conflict }}
+          DISTROLESS_SKIPPED: ${{ steps.manifests.outputs.distroless_exact_tag_skipped }}
+          DISTROLESS_TAG: ${{ steps.manifests.outputs.distroless_exact_tag }}
+          ALPINE_SKIPPED: ${{ steps.manifests.outputs.alpine_exact_tag_skipped }}
+          ALPINE_TAG: ${{ steps.manifests.outputs.alpine_exact_tag }}
+          ACTION_SKIPPED: ${{ steps.manifests.outputs.action_exact_tag_skipped }}
+          ACTION_TAG: ${{ steps.manifests.outputs.action_exact_tag }}
+        run: |
+          if [[ "${{ job.status }}" == "success" ]]; then
+            if [[ "${EXACT_TAG_CONFLICT:-false}" == "true" ]]; then
+              echo "::warning::Immutable exact Docker tag was skipped; safe suffixed and platform tags were published."
+              {
+                echo "### Docker images published with warnings ⚠️"
+                [[ "${DISTROLESS_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${DISTROLESS_TAG}\`"
+                [[ "${ALPINE_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${ALPINE_TAG}\`"
+                [[ "${ACTION_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${ACTION_TAG}\`"
+                echo "Safe run-scoped manifest and platform tags were preserved and published."
+              } >> "${GITHUB_STEP_SUMMARY}"
+            else
+              echo "### Docker images published ✅" >> "${GITHUB_STEP_SUMMARY}"
+            fi
+          else
+            echo "::warning::Docker publication failed; no immutable GHCR exact tag was overwritten."
+            {
+              echo "### Docker publication failed ⚠️"
+              echo "The GitHub release job is allowed to continue. Any pre-existing immutable exact tag was preserved."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
   publish:
     name: Publish GitHub release
     needs: [release, docker]
+    # The Docker job remains successful for an immutable exact-tag conflict;
+    # unexpected publication failures must still fail the release pipeline.
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -548,6 +634,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Validate release metadata
+        env:
+          RELEASE_BUILD_DATE: ${{ needs.release.outputs.build_date }}
+          RELEASE_SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.release.outputs.version_short }}
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
+          [[ "${RELEASE_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${RELEASE_BUILD_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
 
       - name: Build cross-platform release archives
         env:
@@ -643,20 +740,36 @@ jobs:
         run: '"${PROVIDER_BIN}"'
 
       - name: Release summary
+        if: always()
         env:
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          JOB_STATUS: ${{ job.status }}
           TAG: ${{ needs.release.outputs.tag }}
           VERSION_SHORT: ${{ needs.release.outputs.version_short }}
         run: |
           {
-            printf '### Released %s 🚀\n' "${TAG}"
-            printf '%s\n' "**Docker image:** \`ghcr.io/semrels/semrel:${VERSION_SHORT//+/_}\`"
-            echo "**Variants:** distroless, alpine, GitHub Actions"
+            if [[ "${JOB_STATUS}" != "success" ]]; then
+              printf '### GitHub release publication failed for %s ❌\n' "${TAG}"
+            elif [[ "${DOCKER_RESULT}" == "success" ]]; then
+              printf '### Released %s 🚀\n' "${TAG}"
+              printf '%s\n' "**Docker image:** \`ghcr.io/semrels/semrel:${VERSION_SHORT//+/_}\`"
+              echo "**Variants:** distroless, alpine, GitHub Actions"
+            else
+              printf '### Released %s 🚀 (Docker publication failed)\n' "${TAG}"
+              echo "::warning::Docker publication failed; the immutable GHCR exact tag was not overwritten. The GitHub release and Go artifacts were published."
+              echo "**Docker:** ⚠️ failed (immutable exact-tag conflict or another publication error; no conflicting tag was overwritten)"
+              echo "**Go artifacts:** ✅ published"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
   reconcile:
     name: Reconcile mutable image tags
     needs: [release, docker, publish]
-    if: needs.release.outputs.released == 'true' && needs.release.outputs.stable == 'true'
+    if: >-
+      needs.release.outputs.released == 'true' &&
+      needs.release.outputs.stable == 'true' &&
+      needs.docker.result == 'success' &&
+      needs.publish.result == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: mutable-image-tags

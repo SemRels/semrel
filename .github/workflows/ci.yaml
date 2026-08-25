@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  matrix-test:
     name: Test (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
     continue-on-error: ${{ matrix.go == '1.27.0-rc.1' }}
@@ -61,6 +61,22 @@ jobs:
           path: coverage.txt
           retention-days: 30
           if-no-files-found: error
+
+  test:
+    name: test
+    needs: matrix-test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required Go test matrix
+        env:
+          MATRIX_RESULT: ${{ needs.matrix-test.result }}
+        run: |
+          if [[ "${MATRIX_RESULT}" != "success" ]]; then
+            echo "Required Go test matrix result: ${MATRIX_RESULT}"
+            exit 1
+          fi
+          echo "Required Go test matrix passed (the allowed Go release-candidate failure remains tolerated)."
 
   lint:
     name: Lint
