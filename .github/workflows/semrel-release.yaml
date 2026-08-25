@@ -522,10 +522,30 @@ jobs:
           for digest in "${DISTROLESS_DIGEST}" "${ALPINE_DIGEST}" "${ACTION_DIGEST}"; do
             cosign sign --yes "ghcr.io/semrels/semrel@${digest}"
           done
+
+      - name: Docker publication summary
+        if: always()
+        run: |
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo "### Docker images published ✅" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "::warning::Docker publication failed; no immutable GHCR exact tag was overwritten."
+            {
+              echo "### Docker publication failed ⚠️"
+              echo "The GitHub release job is allowed to continue. Any pre-existing immutable exact tag was preserved."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
   publish:
     name: Publish GitHub release
     needs: [release, docker]
-    if: needs.release.outputs.released == 'true'
+    # Docker publication is deliberately independent of release assets: an
+    # immutable exact-tag conflict must leave Docker failed without blocking
+    # the validated Go artifacts or GitHub release.
+    if: >-
+      always() &&
+      needs.release.outputs.released == 'true' &&
+      (needs.docker.result == 'success' || needs.docker.result == 'failure')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -643,20 +663,36 @@ jobs:
         run: '"${PROVIDER_BIN}"'
 
       - name: Release summary
+        if: always()
         env:
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          JOB_STATUS: ${{ job.status }}
           TAG: ${{ needs.release.outputs.tag }}
           VERSION_SHORT: ${{ needs.release.outputs.version_short }}
         run: |
           {
-            printf '### Released %s 🚀\n' "${TAG}"
-            printf '%s\n' "**Docker image:** \`ghcr.io/semrels/semrel:${VERSION_SHORT//+/_}\`"
-            echo "**Variants:** distroless, alpine, GitHub Actions"
+            if [[ "${JOB_STATUS}" != "success" ]]; then
+              printf '### GitHub release publication failed for %s ❌\n' "${TAG}"
+            elif [[ "${DOCKER_RESULT}" == "success" ]]; then
+              printf '### Released %s 🚀\n' "${TAG}"
+              printf '%s\n' "**Docker image:** \`ghcr.io/semrels/semrel:${VERSION_SHORT//+/_}\`"
+              echo "**Variants:** distroless, alpine, GitHub Actions"
+            else
+              printf '### Released %s 🚀 (Docker publication failed)\n' "${TAG}"
+              echo "::warning::Docker publication failed; the immutable GHCR exact tag was not overwritten. The GitHub release and Go artifacts were published."
+              echo "**Docker:** ⚠️ failed (immutable exact-tag conflict or another publication error; no conflicting tag was overwritten)"
+              echo "**Go artifacts:** ✅ published"
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
   reconcile:
     name: Reconcile mutable image tags
     needs: [release, docker, publish]
-    if: needs.release.outputs.released == 'true' && needs.release.outputs.stable == 'true'
+    if: >-
+      needs.release.outputs.released == 'true' &&
+      needs.release.outputs.stable == 'true' &&
+      needs.docker.result == 'success' &&
+      needs.publish.result == 'success'
     runs-on: ubuntu-latest
     concurrency:
       group: mutable-image-tags
