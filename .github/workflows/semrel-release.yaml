@@ -73,12 +73,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: '"${RUNNER_TEMP}/semrel" release --github-output'
 
+      - name: Capture release source
+        id: source
+        if: steps.semrel.outputs.released == 'true'
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          source_epoch=$(git show -s --format=%ct HEAD)
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          {
+            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'source_epoch=%s\n' "${source_epoch}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Push tag to GitHub
         id: tag
         if: steps.semrel.outputs.released == 'true'
         continue-on-error: true
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -102,10 +118,8 @@ jobs:
           fi
           stable=true
           [[ "${without_build}" != *-* ]] || stable=false
-          source_sha=$(git rev-list -n 1 "refs/tags/${TAG}")
-          source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
-          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
           branch="automation/release-${TAG}"
           # CHANGELOG.md is part of the release commit. Protected main cannot
           # accept that commit directly, so publish it on a PR branch first.
@@ -120,11 +134,11 @@ jobs:
             echo "Release PR #${existing_pr} already exists."
           fi
           {
-            printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'build_date=%s\n' "$(date -u -d "@${SOURCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
             # Actions concurrency groups are case-insensitive; hash the case-sensitive exact SemVer.
             printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
             printf 'image_version=%s\n' "${normalized//+/_}"
-            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
           if ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
@@ -135,7 +149,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${source_sha}\"}")" || {
+              --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${SOURCE_SHA}\"}")" || {
                 printf 'Warning: unable to publish tag %s: %s\n' "${TAG}" "${response}" >&2
               }
             printf 'Tag publication response: %s\n' "${response}"
@@ -146,22 +160,22 @@ jobs:
         if: always() && steps.semrel.outputs.released == 'true'
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
         run: |
           set -euo pipefail
           [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]] && exit 1
-          source_sha=$(git rev-list -n 1 "refs/tags/${TAG}")
-          source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
-          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
-          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
           normalized="${TAG#v}"
           without_build="${normalized%%+*}"
           stable=true
           [[ "${without_build}" != *-* ]] || stable=false
           {
-            printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'build_date=%s\n' "$(date -u -d "@${SOURCE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
             printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
             printf 'image_version=%s\n' "${normalized//+/_}"
-            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'source_sha=%s\n' "${SOURCE_SHA}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
 
