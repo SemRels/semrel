@@ -298,6 +298,8 @@ jobs:
     name: Publish validated Docker images
     needs: [release, docker-validate]
     if: needs.release.outputs.released == 'true'
+    outputs:
+      exact_tag_conflict: ${{ steps.manifests.outputs.exact_tag_conflict }}
     runs-on: ubuntu-latest
     concurrency:
       group: exact-image-${{ needs.release.outputs.exact_key }}
@@ -485,6 +487,7 @@ jobs:
             local amd64_image_digest=$5
             local arm64_image_digest=$6
             local candidate_tag digest exact_tag existing_digest
+            local exact_tag_skipped=false
             local -a final_tags
             [[ "${amd64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
             [[ "${arm64_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -513,11 +516,13 @@ jobs:
                     'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
                      any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
                     >/dev/null; then
-                  printf 'Refusing to mutate immutable exact tag %s (%s != %s).\n' \
-                    "${exact_tag}" "${existing_digest}" "${digest}" >&2
-                  return 1
+                  printf '::warning::Immutable exact tag %s already points to %s; skipping it (new safe manifest is %s).\n' \
+                    "${exact_tag}" "${existing_digest}" "${candidate_tag}"
+                  exact_tag_skipped=true
+                  any_exact_tag_conflict=true
+                else
+                  digest="${existing_digest}"
                 fi
-                digest="${existing_digest}"
               fi
             else
               resolve_status=$?
@@ -526,27 +531,35 @@ jobs:
               fi
               oras tag "${IMAGE}@${digest}" "${exact_tag#"${IMAGE}:"}"
             fi
-            if ! published_digest=$(resolve_registry_ref "${exact_tag}"); then
-              printf 'Exact tag %s could not be verified after publication.\n' "${exact_tag}" >&2
-              return 1
+            if [[ "${exact_tag_skipped}" != true ]]; then
+              if ! published_digest=$(resolve_registry_ref "${exact_tag}"); then
+                printf 'Exact tag %s could not be verified after publication.\n' "${exact_tag}" >&2
+                return 1
+              fi
+              if [[ "${published_digest}" != "${digest}" ]]; then
+                printf 'Refusing exact-tag conflict for %s (%s != %s).\n' \
+                  "${exact_tag}" "${published_digest}" "${digest}" >&2
+                return 1
+              fi
+              docker buildx imagetools inspect --raw "${exact_tag}" |
+                jq -e \
+                  --arg amd64 "${amd64_image_digest}" \
+                  --arg arm64 "${arm64_image_digest}" \
+                  'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
+                   any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
+                  >/dev/null
             fi
-            if [[ "${published_digest}" != "${digest}" ]]; then
-              printf 'Refusing exact-tag conflict for %s (%s != %s).\n' \
-                "${exact_tag}" "${published_digest}" "${digest}" >&2
-              return 1
-            fi
-            docker buildx imagetools inspect --raw "${exact_tag}" |
-              jq -e \
-                --arg amd64 "${amd64_image_digest}" \
-                --arg arm64 "${arm64_image_digest}" \
-                'any(.manifests[]; .digest == $amd64 and .platform.os == "linux" and .platform.architecture == "amd64") and
-                 any(.manifests[]; .digest == $arm64 and .platform.os == "linux" and .platform.architecture == "arm64")' \
-                >/dev/null
-            printf '%s=%s\n' "${output_name}" "${digest}" >> "${GITHUB_OUTPUT}"
+            {
+              printf '%s=%s\n' "${output_name}" "${digest}"
+              printf '%s_exact_tag=%s\n' "${output_name}" "${exact_tag}"
+              printf '%s_exact_tag_skipped=%s\n' "${output_name}" "${exact_tag_skipped}"
+            } >> "${GITHUB_OUTPUT}"
           }
+          any_exact_tag_conflict=false
           create_manifest distroless "${DISTROLESS_TAGS}" "${DISTROLESS_AMD64}" "${DISTROLESS_ARM64}" "${DISTROLESS_AMD64_IMAGE}" "${DISTROLESS_ARM64_IMAGE}"
           create_manifest alpine "${ALPINE_TAGS}" "${ALPINE_AMD64}" "${ALPINE_ARM64}" "${ALPINE_AMD64_IMAGE}" "${ALPINE_ARM64_IMAGE}"
           create_manifest action "${ACTION_TAGS}" "${ACTION_AMD64}" "${ACTION_ARM64}" "${ACTION_AMD64_IMAGE}" "${ACTION_ARM64_IMAGE}"
+          printf 'exact_tag_conflict=%s\n' "${any_exact_tag_conflict}" >> "${GITHUB_OUTPUT}"
 
       - name: Sign published image digests
         shell: bash
@@ -563,9 +576,28 @@ jobs:
 
       - name: Docker publication summary
         if: always()
+        env:
+          EXACT_TAG_CONFLICT: ${{ steps.manifests.outputs.exact_tag_conflict }}
+          DISTROLESS_SKIPPED: ${{ steps.manifests.outputs.distroless_exact_tag_skipped }}
+          DISTROLESS_TAG: ${{ steps.manifests.outputs.distroless_exact_tag }}
+          ALPINE_SKIPPED: ${{ steps.manifests.outputs.alpine_exact_tag_skipped }}
+          ALPINE_TAG: ${{ steps.manifests.outputs.alpine_exact_tag }}
+          ACTION_SKIPPED: ${{ steps.manifests.outputs.action_exact_tag_skipped }}
+          ACTION_TAG: ${{ steps.manifests.outputs.action_exact_tag }}
         run: |
           if [[ "${{ job.status }}" == "success" ]]; then
-            echo "### Docker images published ✅" >> "${GITHUB_STEP_SUMMARY}"
+            if [[ "${EXACT_TAG_CONFLICT:-false}" == "true" ]]; then
+              echo "::warning::Immutable exact Docker tag was skipped; safe suffixed and platform tags were published."
+              {
+                echo "### Docker images published with warnings ⚠️"
+                [[ "${DISTROLESS_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${DISTROLESS_TAG}\`"
+                [[ "${ALPINE_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${ALPINE_TAG}\`"
+                [[ "${ACTION_SKIPPED:-false}" == "true" ]] && echo "- Skipped immutable exact tag \`${ACTION_TAG}\`"
+                echo "Safe run-scoped manifest and platform tags were preserved and published."
+              } >> "${GITHUB_STEP_SUMMARY}"
+            else
+              echo "### Docker images published ✅" >> "${GITHUB_STEP_SUMMARY}"
+            fi
           else
             echo "::warning::Docker publication failed; no immutable GHCR exact tag was overwritten."
             {
@@ -577,13 +609,9 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: [release, docker]
-    # Docker publication is deliberately independent of release assets: an
-    # immutable exact-tag conflict must leave Docker failed without blocking
-    # the validated Go artifacts or GitHub release.
-    if: >-
-      always() &&
-      needs.release.outputs.released == 'true' &&
-      (needs.docker.result == 'success' || needs.docker.result == 'failure')
+    # The Docker job remains successful for an immutable exact-tag conflict;
+    # unexpected publication failures must still fail the release pipeline.
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
