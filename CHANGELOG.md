@@ -1,3 +1,9 @@
+## v0.26.1 (2026-08-25)
+
+### Bug Fixes
+
+* keep immutable Docker tag conflicts non-blocking
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
