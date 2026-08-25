@@ -1,3 +1,29 @@
+## v0.26.0 (2026-08-25)
+
+### Features
+
+* **config:** support env var interpolation in config files
+* **cli:** add --commit-msg-file flag to commitlint (#264)
+
+### Bug Fixes
+
+* resolve release metadata without local tags
+* preserve release metadata when Docker publication fails (#278)
+* let releases proceed past Docker tag conflicts (#277)
+* tolerate idempotent image manifest retries (#269)
+* **ci:** publish release changelog through pull request (#266)
+* **config:** honor explicit empty tagPrefix
+
+### Other Changes
+
+* **ci:** bump docker/metadata-action from 5.9.0 to 6.2.0 (#275)
+* **ci:** bump reviewdog/action-actionlint from 1.73.1 to 1.73.2 (#274)
+* **ci:** bump github/codeql-action/upload-sarif from 4.36.3 to 4.37.8 (#273)
+* **ci:** bump renovatebot/github-action from 46.1.18 to 46.2.2 (#272)
+* **deps:** bump github.com/stretchr/testify from 1.12.0 to 1.12.1 (#270)
+* **ci:** bump ossf/scorecard-action from 2.4.3 to 2.4.4 (#271)
+* **ci:** remove GoReleaser release pipeline (#267)
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
