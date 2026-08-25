@@ -27,13 +27,13 @@ jobs:
       id-token: write
       pull-requests: write
     outputs:
-      build_date: ${{ steps.tag.outputs.build_date }}
+      build_date: ${{ steps.metadata.outputs.build_date }}
       changelog: ${{ steps.semrel.outputs.changelog }}
-      exact_key: ${{ steps.tag.outputs.exact_key }}
+      exact_key: ${{ steps.metadata.outputs.exact_key }}
       released: ${{ steps.semrel.outputs.released }}
-      image_version: ${{ steps.tag.outputs.image_version }}
-      source_sha: ${{ steps.tag.outputs.source_sha }}
-      stable: ${{ steps.tag.outputs.stable }}
+      image_version: ${{ steps.metadata.outputs.image_version }}
+      source_sha: ${{ steps.metadata.outputs.source_sha }}
+      stable: ${{ steps.metadata.outputs.stable }}
       tag: ${{ steps.semrel.outputs.tag }}
       version_short: ${{ steps.semrel.outputs.version }}
     steps:
@@ -140,6 +140,30 @@ jobs:
               }
             printf 'Tag publication response: %s\n' "${response}"
           fi
+
+      - name: Resolve release metadata
+        id: metadata
+        if: always() && steps.semrel.outputs.released == 'true'
+        env:
+          TAG: ${{ steps.semrel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "${TAG}" == *$'\r'* || "${TAG}" == *$'\n'* ]] && exit 1
+          source_sha=$(git rev-list -n 1 "refs/tags/${TAG}")
+          source_epoch=$(git show -s --format=%ct "refs/tags/${TAG}")
+          [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${source_epoch}" =~ ^[0-9]+$ ]]
+          normalized="${TAG#v}"
+          without_build="${normalized%%+*}"
+          stable=true
+          [[ "${without_build}" != *-* ]] || stable=false
+          {
+            printf 'build_date=%s\n' "$(date -u -d "@${source_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'exact_key=%s\n' "$(printf '%s' "${normalized}" | sha256sum | cut -d' ' -f1)"
+            printf 'image_version=%s\n' "${normalized//+/_}"
+            printf 'source_sha=%s\n' "${source_sha}"
+            printf 'stable=%s\n' "${stable}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Preserve generated changelog
         if: steps.semrel.outputs.released == 'true'
@@ -568,6 +592,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Validate release metadata
+        env:
+          RELEASE_BUILD_DATE: ${{ needs.release.outputs.build_date }}
+          RELEASE_SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.release.outputs.version_short }}
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]
+          [[ "${RELEASE_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${RELEASE_BUILD_DATE}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
 
       - name: Build cross-platform release archives
         env:
