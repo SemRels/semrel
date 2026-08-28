@@ -202,8 +202,12 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 
 	// Tag prefix.
-	tagPrefix := prompt("Tag prefix", "v")
-	cfg.TagPrefix = &tagPrefix
+	tagPrefix := prompt("Tag prefix", "")
+	if tagPrefix == "" {
+		cfg.TagPrefix = nil
+	} else {
+		cfg.TagPrefix = &tagPrefix
+	}
 
 	// Rules — use semrel defaults; they can be customised later.
 	cfg.Rules = []config.ReleaseRule{

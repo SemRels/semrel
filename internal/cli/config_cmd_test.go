@@ -136,12 +136,24 @@ tagPrefix: v
 	if err := runConfigSet(cfgPath, "tagPrefix", "release/"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.TagPrefixValue() != "release/" {
 		t.Errorf("expected release/, got %q", cfg.TagPrefixValue())
+	}
+}
+
+func TestDefaultConfig_UsesDefaultTagPrefix(t *testing.T) {
+	cfg := defaultConfig()
+
+	if cfg.TagPrefix == nil {
+		t.Fatal("expected default config to contain the default tag prefix")
+	}
+	if cfg.TagPrefixValue() != "v" {
+		t.Fatalf("expected default tag prefix v, got %q", cfg.TagPrefixValue())
 	}
 }
 
