@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+func stringPtr(value string) *string { return &value }
+
 func writeConfigFile(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -52,8 +54,8 @@ plugins:
 	if len(cfg.Branches) != 2 {
 		t.Errorf("expected 2 branches, got %d", len(cfg.Branches))
 	}
-	if cfg.TagPrefix != "v" {
-		t.Errorf("expected tagPrefix=v, got %q", cfg.TagPrefix)
+	if cfg.TagPrefixValue() != "v" {
+		t.Errorf("expected tagPrefix=v, got %q", cfg.TagPrefixValue())
 	}
 	if len(cfg.Rules) != 2 {
 		t.Errorf("expected 2 rules, got %d", len(cfg.Rules))
@@ -97,8 +99,8 @@ uses = "git"
 	if len(cfg.Branches) != 2 {
 		t.Fatalf("expected 2 branches, got %d", len(cfg.Branches))
 	}
-	if cfg.TagPrefix != "v" {
-		t.Fatalf("expected tagPrefix=v, got %q", cfg.TagPrefix)
+	if cfg.TagPrefixValue() != "v" {
+		t.Fatalf("expected tagPrefix=v, got %q", cfg.TagPrefixValue())
 	}
 	if len(cfg.Plugins) != 1 || cfg.Plugins[0].Uses != "git" {
 		t.Fatalf("unexpected plugins: %+v", cfg.Plugins)
@@ -189,11 +191,18 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.TagPrefix != "v" {
-		t.Errorf("expected default tagPrefix=v, got %q", cfg.TagPrefix)
+	if cfg.TagPrefixValue() != "v" {
+		t.Errorf("expected default tagPrefix=v, got %q", cfg.TagPrefixValue())
 	}
 	if len(cfg.Rules) == 0 {
 		t.Error("expected default rules to be applied")
+	}
+}
+
+func TestConfig_TagPrefixValueNilDefaults(t *testing.T) {
+	cfg := &Config{}
+	if got := cfg.TagPrefixValue(); got != "v" {
+		t.Fatalf("expected nil tagPrefix default v, got %q", got)
 	}
 }
 
@@ -221,8 +230,8 @@ func TestLoadConfig_ExplicitEmptyTagPrefix(t *testing.T) {
 			if err != nil {
 				t.Fatalf("LoadConfig: %v", err)
 			}
-			if cfg.TagPrefix != "" {
-				t.Errorf("expected explicit empty tagPrefix to be honored, got %q", cfg.TagPrefix)
+			if cfg.TagPrefixValue() != "" {
+				t.Errorf("expected explicit empty tagPrefix to be honored, got %q", cfg.TagPrefixValue())
 			}
 		})
 	}
@@ -237,8 +246,8 @@ func TestLoadConfig_EnvVarExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig(): %v", err)
 	}
-	if cfg.TagPrefix != "rel-" {
-		t.Fatalf("expected tagPrefix=rel-, got %q", cfg.TagPrefix)
+	if cfg.TagPrefixValue() != "rel-" {
+		t.Fatalf("expected tagPrefix=rel-, got %q", cfg.TagPrefixValue())
 	}
 }
 
@@ -252,6 +261,39 @@ func TestLoadConfig_EnvVarExpansion_Undefined(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "SEMREL_TEST_DOES_NOT_EXIST") {
 		t.Errorf("expected error to name the missing variable, got: %v", err)
+	}
+}
+
+func TestLoadConfig_SproutEnvTemplate(t *testing.T) {
+	t.Setenv("SEMREL_TEMPLATE_TAG_PREFIX", "release-")
+	cases := []struct {
+		name, file, data string
+	}{
+		{"yaml", ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: '{{ env \"SEMREL_TEMPLATE_TAG_PREFIX\" }}'\n"},
+		{"toml", ".semrel.toml", "tag_prefix = '{{ env \"SEMREL_TEMPLATE_TAG_PREFIX\" }}'\n\n[[branches]]\nname = \"main\"\n"},
+		{"json", ".semrel.json", `{"branches":[{"name":"main"}],"tag_prefix":"{{ env ` + "`SEMREL_TEMPLATE_TAG_PREFIX`" + ` }}"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeConfigFile(t, dir, tc.file, tc.data)
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig(): %v", err)
+			}
+			if got := cfg.TagPrefixValue(); got != "release-" {
+				t.Fatalf("expected templated tagPrefix=release-, got %q", got)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_SproutTemplateRejectsUnknownFunction(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfigFile(t, dir, ".semrel.yaml", "branches:\n  - name: main\ntagPrefix: '{{ shell \"echo unsafe\" }}'\n")
+
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected unknown template function to be rejected")
 	}
 }
 
@@ -338,7 +380,7 @@ func TestFindBranchConfig(t *testing.T) {
 
 func TestValidate_Valid(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Branches:  []BranchConfig{{Name: "main"}},
 		Rules: []ReleaseRule{
 			{Type: "feat", Bump: "minor"},
@@ -353,7 +395,7 @@ func TestValidate_Valid(t *testing.T) {
 
 func TestValidate_EmptyBranchName(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Branches:  []BranchConfig{{Name: ""}},
 		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
 	}
@@ -364,7 +406,7 @@ func TestValidate_EmptyBranchName(t *testing.T) {
 
 func TestValidate_DuplicateBranch(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Branches:  []BranchConfig{{Name: "main"}, {Name: "main"}},
 		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
 	}
@@ -375,7 +417,7 @@ func TestValidate_DuplicateBranch(t *testing.T) {
 
 func TestValidate_InvalidBump(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules:     []ReleaseRule{{Type: "feat", Bump: "invalid"}},
 	}
 	if err := cfg.Validate(); err == nil {
@@ -385,7 +427,7 @@ func TestValidate_InvalidBump(t *testing.T) {
 
 func TestValidate_DuplicateRuleType(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "feat", Bump: "minor"},
 			{Type: "feat", Bump: "major"},
@@ -398,7 +440,7 @@ func TestValidate_DuplicateRuleType(t *testing.T) {
 
 func TestValidate_DuplicateRuleTypeAndScope(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "deps", Scope: "major", Bump: "major"},
 			{Type: "deps", Scope: "major", Bump: "minor"}, // duplicate (type+scope)
@@ -411,7 +453,7 @@ func TestValidate_DuplicateRuleTypeAndScope(t *testing.T) {
 
 func TestValidate_SameTypeWithDifferentScopesIsValid(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "deps", Scope: "major", Bump: "major"},
 			{Type: "deps", Scope: "minor", Bump: "minor"},
@@ -425,7 +467,7 @@ func TestValidate_SameTypeWithDifferentScopesIsValid(t *testing.T) {
 
 func TestValidate_ScopeFalseIsValid(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "chore", Scope: false, Bump: "patch"},
 			{Type: "feat", Bump: "minor"},
@@ -438,7 +480,7 @@ func TestValidate_ScopeFalseIsValid(t *testing.T) {
 
 func TestValidate_ScopeFalseDuplicateIsError(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "chore", Scope: false, Bump: "patch"},
 			{Type: "chore", Scope: false, Bump: "minor"}, // duplicate
@@ -451,7 +493,7 @@ func TestValidate_ScopeFalseDuplicateIsError(t *testing.T) {
 
 func TestValidate_ScopeFalseAndScopeStringAreDistinct(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "chore", Scope: false, Bump: "patch"},  // scopeless commits
 			{Type: "chore", Scope: "deps", Bump: "minor"}, // scoped commits
@@ -465,7 +507,7 @@ func TestValidate_ScopeFalseAndScopeStringAreDistinct(t *testing.T) {
 
 func TestValidate_ScopeInvalidTypeIsError(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules: []ReleaseRule{
 			{Type: "feat", Scope: true, Bump: "minor"}, // scope:true is invalid
 		},
@@ -477,7 +519,7 @@ func TestValidate_ScopeInvalidTypeIsError(t *testing.T) {
 
 func TestValidate_PluginMissingUsesAndPath(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v",
+		TagPrefix: stringPtr("v"),
 		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
 		Plugins:   []PluginConfig{{Args: map[string]interface{}{"key": "value"}}},
 	}
@@ -488,7 +530,7 @@ func TestValidate_PluginMissingUsesAndPath(t *testing.T) {
 
 func TestValidate_TagPrefixWithSpace(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v ",
+		TagPrefix: stringPtr("v "),
 		Rules:     []ReleaseRule{{Type: "feat", Bump: "minor"}},
 	}
 	if err := cfg.Validate(); err == nil {
@@ -498,7 +540,7 @@ func TestValidate_TagPrefixWithSpace(t *testing.T) {
 
 func TestValidate_MultipleErrors(t *testing.T) {
 	cfg := &Config{
-		TagPrefix: "v\t",
+		TagPrefix: stringPtr("v\t"),
 		Branches:  []BranchConfig{{Name: ""}},
 		Rules: []ReleaseRule{
 			{Type: "", Bump: "badvalue"},

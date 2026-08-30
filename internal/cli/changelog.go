@@ -103,11 +103,12 @@ func runChangelog(ctx context.Context, configFile string, outputFormat string, w
 		return fmt.Errorf("getting commits: %w", err)
 	}
 
-	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, cfg.TagPrefix))
+	tagPrefix := cfg.TagPrefixValue()
+	currentVersion, err := semver.ParseVersion(strings.TrimPrefix(lastTag, tagPrefix))
 	if err != nil {
 		currentVersion = &semver.Version{}
 	}
-	currentTag := cfg.TagPrefix + currentVersion.String()
+	currentTag := tagPrefix + currentVersion.String()
 
 	if len(rawMessages) == 0 {
 		return emitNoChangelog(outputFormat, currentTag, 0, 2)
@@ -158,7 +159,7 @@ func runChangelog(ctx context.Context, configFile string, outputFormat string, w
 	if nextVer == nil {
 		return emitNoChangelog(outputFormat, currentTag, len(parsed), 2)
 	}
-	nextTag := cfg.TagPrefix + nextVer.String()
+	nextTag := tagPrefix + nextVer.String()
 
 	gen := changelog.NewGenerator()
 	entry := gen.Generate(nextTag, parsed)

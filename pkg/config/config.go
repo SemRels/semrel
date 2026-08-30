@@ -6,14 +6,18 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/BurntSushi/toml"
+	"github.com/go-sprout/sprout"
+	sproutenv "github.com/go-sprout/sprout/registry/env"
 	"gopkg.in/yaml.v3"
 
 	"github.com/SemRels/semrel/pkg/semver"
@@ -29,8 +33,10 @@ type Config struct {
 	// Use `semrel migrate` to stamp and upgrade the config to the current schema.
 	SchemaVersion int `yaml:"schemaVersion,omitempty" toml:"schema_version" json:"schema_version,omitempty"`
 
-	Branches        []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
-	TagPrefix       string         `yaml:"tagPrefix" toml:"tag_prefix" json:"tag_prefix"`
+	Branches []BranchConfig `yaml:"branches" toml:"branches" json:"branches"`
+	// TagPrefix is the prefix prepended to release tags. A nil value uses the
+	// default "v"; a non-nil empty value intentionally disables the prefix.
+	TagPrefix       *string        `yaml:"tagPrefix,omitempty" toml:"tag_prefix" json:"tag_prefix,omitempty"`
 	Rules           []ReleaseRule  `yaml:"rules" toml:"rules" json:"rules"`
 	Plugins         []PluginConfig `yaml:"plugins,omitempty" toml:"plugins" json:"plugins,omitempty"`
 	VersionCeiling  string         `yaml:"version_ceiling,omitempty" toml:"version_ceiling" json:"version_ceiling,omitempty"`
@@ -160,7 +166,7 @@ func (c *Config) Validate() error {
 	var errs []string
 
 	// Tag prefix must not contain spaces or look like a semver component
-	if strings.ContainsAny(c.TagPrefix, " \t\n") {
+	if c.TagPrefix != nil && strings.ContainsAny(*c.TagPrefix, " \t\n") {
 		errs = append(errs, "tagPrefix must not contain whitespace")
 	}
 
@@ -281,6 +287,7 @@ func expandEnvVars(data []byte) ([]byte, error) {
 				missing = append(missing, name)
 				seen[name] = true
 			}
+
 			return match
 		}
 		return []byte(val)
@@ -289,6 +296,27 @@ func expandEnvVars(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return expanded, nil
+}
+
+// expandTemplates evaluates configuration templates with only Sprout's env
+// function exposed. No filesystem, shell, network, or other side-effecting
+// functions are made available to configuration authors.
+func expandTemplates(data []byte) ([]byte, error) {
+	if !bytes.Contains(data, []byte("{{")) {
+		return data, nil
+	}
+
+	handler := sprout.New(sprout.WithRegistries(sproutenv.NewRegistry()))
+	functions := template.FuncMap{"env": handler.Build()["env"]}
+	tmpl, err := template.New("config").Option("missingkey=error").Funcs(functions).Parse(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("parsing config template: %w", err)
+	}
+	var expanded bytes.Buffer
+	if err := tmpl.Execute(&expanded, nil); err != nil {
+		return nil, fmt.Errorf("executing config template: %w", err)
+	}
+	return expanded.Bytes(), nil
 }
 
 // LoadConfig loads configuration from the given file path.
@@ -308,6 +336,10 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expanding env vars in config %s: %w", path, err)
 	}
+	data, err = expandTemplates(data)
+	if err != nil {
+		return nil, fmt.Errorf("expanding templates in config %s: %w", path, err)
+	}
 
 	ext := strings.ToLower(filepath.Ext(path))
 	var cfg Config
@@ -326,11 +358,11 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
-	// Apply defaults. TagPrefix only defaults to "v" when the key is absent
-	// from the config entirely — an explicit empty string (tagPrefix: "")
-	// must be honored so users can opt out of prefixed tags.
-	if cfg.TagPrefix == "" && !hasExplicitTagPrefix(data, ext) {
-		cfg.TagPrefix = "v"
+	// Apply defaults. An explicit empty string must be honored so users can
+	// opt out of prefixed tags.
+	if cfg.TagPrefix == nil {
+		defaultTagPrefix := "v"
+		cfg.TagPrefix = &defaultTagPrefix
 	}
 	if len(cfg.Rules) == 0 {
 		cfg.Rules = defaultRules()
@@ -343,35 +375,13 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// hasExplicitTagPrefix reports whether the raw config data contains a
-// tagPrefix/tag_prefix key at all, regardless of its value. Config structs
-// unmarshal a missing key and an explicit empty string identically (both
-// become the zero value ""), so the raw data must be inspected separately
-// to distinguish "not set" from "set to empty".
-func hasExplicitTagPrefix(data []byte, ext string) bool {
-	switch ext {
-	case ".toml":
-		var raw map[string]any
-		if _, err := toml.Decode(string(data), &raw); err != nil {
-			return false
-		}
-		_, ok := raw["tag_prefix"]
-		return ok
-	case ".json":
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return false
-		}
-		_, ok := raw["tag_prefix"]
-		return ok
-	default:
-		var raw map[string]any
-		if err := yaml.Unmarshal(data, &raw); err != nil {
-			return false
-		}
-		_, ok := raw["tagPrefix"]
-		return ok
+// TagPrefixValue returns the configured tag prefix, defaulting to "v" when
+// TagPrefix is nil.
+func (c *Config) TagPrefixValue() string {
+	if c.TagPrefix == nil {
+		return "v"
 	}
+	return *c.TagPrefix
 }
 
 // FindConfigFile returns the first semrel config file found in dir.

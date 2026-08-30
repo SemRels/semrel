@@ -186,7 +186,7 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 		if cfgFile != "" {
 			if cfg, cerr := config.LoadConfig(cfgFile); cerr == nil {
 				if currentVersionStr == "" {
-					currentTagPrefix = cfg.TagPrefix
+					currentTagPrefix = cfg.TagPrefixValue()
 				}
 				_ = cfg
 			}

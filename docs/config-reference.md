@@ -176,6 +176,19 @@ tagPrefix = "v"
 { "tagPrefix": "v" }
 ```
 
+### Configuration templates
+
+Values may use Go templates with Sprout's restricted `env` function:
+
+```yaml
+tagPrefix: '{{ env "RELEASE_TAG_PREFIX" }}'
+```
+
+Only environment access is available; shell, filesystem, network, and other
+side-effecting functions are intentionally not registered. The existing
+`${env.VAR_NAME}` syntax remains supported and reports an error for undefined
+variables.
+
 ### `branches`
 
 Defines which branches trigger releases and their behavior.
