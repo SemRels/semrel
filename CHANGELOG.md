@@ -1,3 +1,9 @@
+## v0.26.2 (2026-08-30)
+
+### Bug Fixes
+
+* **config:** preserve explicit empty tag prefix (#268)
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
