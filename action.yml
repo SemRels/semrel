@@ -46,7 +46,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Go toolchain
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version-file: ${{ inputs.go-version-file != '' && inputs.go-version-file || format('{0}/go.mod', github.action_path) }}
         cache-dependency-path: ${{ github.action_path }}/go.sum
