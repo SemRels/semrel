@@ -19,3 +19,10 @@ updates:
       - "type: chore"
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      # init/analyze/upload-sarif must stay on the same version or CodeQL
+      # fails with "Loaded a configuration file for version X, but running
+      # version Y" — bumping them one PR at a time broke CI repeatedly.
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
