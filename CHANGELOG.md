@@ -1,3 +1,21 @@
+## v0.26.3 (2026-09-21)
+
+### Bug Fixes
+
+* **ci:** bump codeql-action init+analyze together to v4.38.1
+
+### Other Changes
+
+* **ci:** bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.1 (#294)
+* **ci:** bump docker/setup-buildx-action from 4.3.0 to 4.4.1 (#295)
+* **ci:** bump reviewdog/action-actionlint from 1.73.4 to 1.76.0 (#296)
+* **ci:** bump docker/setup-qemu-action from 4.2.0 to 4.3.0 (#286)
+* **ci:** bump docker/setup-buildx-action from 4.2.0 to 4.3.0 (#287)
+* **ci:** bump reviewdog/action-actionlint from 1.73.2 to 1.73.4 (#288)
+* **ci:** bump renovatebot/github-action from 46.2.2 to 46.2.4 (#284)
+* **ci:** bump github/codeql-action/upload-sarif from 4.37.8 to 4.37.9 (#282)
+* **ci:** bump actions/setup-go from 6 to 7 (#281)
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
