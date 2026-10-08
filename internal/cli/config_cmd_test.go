@@ -6,6 +6,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -287,5 +288,77 @@ func TestApplyConfigKey_BranchMaintenance(t *testing.T) {
 	}
 	if !cfg.Branches[0].Maintenance {
 		t.Error("expected maintenance=true")
+	}
+}
+
+func TestRunConfigWizard_ReplacesDefaultGitHubPlugins(t *testing.T) {
+	// gitlab-ci + git forge + skip changelog/notification must not keep the
+	// GitHub plugins baked into defaultConfig. Empty answers accept prompt defaults.
+	input := "\nn\n\ngitlab-ci\ngit\nskip\nskip\n"
+	restore := stubStdin(t, input)
+	defer restore()
+
+	cfg, err := runConfigWizard(defaultConfig())
+	if err != nil {
+		t.Fatalf("runConfigWizard: %v", err)
+	}
+
+	var uses []string
+	for _, plugin := range cfg.Plugins {
+		uses = append(uses, plugin.Uses)
+	}
+	want := []string{"@semrel/condition-gitlab-ci", "@semrel/provider-git"}
+	if len(uses) != len(want) {
+		t.Fatalf("plugins = %v, want %v", uses, want)
+	}
+	for i := range want {
+		if uses[i] != want[i] {
+			t.Fatalf("plugins = %v, want %v", uses, want)
+		}
+	}
+	for _, plugin := range uses {
+		if strings.Contains(plugin, "github") {
+			t.Fatalf("unselected GitHub plugin remained: %s", plugin)
+		}
+	}
+}
+
+func TestRunConfigInit_NoInteractiveKeepsGitHubDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+	if err := runConfigInit(cfgPath, true, false); err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var uses []string
+	for _, plugin := range cfg.Plugins {
+		uses = append(uses, plugin.Uses)
+	}
+	joined := strings.Join(uses, ",")
+	if !strings.Contains(joined, "condition-github-actions") || !strings.Contains(joined, "@semrel/github") {
+		t.Fatalf("non-interactive default should keep GitHub plugins, got %v", uses)
+	}
+}
+
+func stubStdin(t *testing.T, input string) func() {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(w, input); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdin
+	os.Stdin = r
+	return func() {
+		os.Stdin = old
+		r.Close()
 	}
 }

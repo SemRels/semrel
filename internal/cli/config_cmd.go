@@ -217,6 +217,10 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		{Type: "revert", Bump: "patch"},
 	}
 
+	// Interactive selections replace the GitHub-oriented plugins from
+	// defaultConfig. Those defaults remain for --no-interactive / non-TTY init.
+	cfg.Plugins = nil
+
 	// CI condition plugin.
 	fmt.Fprintf(os.Stderr, "? CI environment [github-actions/gitlab-ci/gitea-actions/generic/skip]: ")
 	if scanner.Scan() {
