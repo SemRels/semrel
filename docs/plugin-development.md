@@ -52,6 +52,7 @@ When a plugin is invoked, semrel:
 | `SEMREL_CHANGELOG` | Generated release changelog |
 | `SEMREL_DRY_RUN` | `true` or `false` |
 | `SEMREL_COMMITS` | JSON array of raw commit messages since last release (e.g. `["feat: foo","fix: bar"]`) |
+| `SEMREL_COMMIT_HASHES` | JSON array of full commit hashes since the last release, in the same order as `SEMREL_COMMITS` |
 | `SEMREL_CONTRIBUTORS` | JSON array of per-release contributor metadata sorted by commit count descending (e.g. `[{"name":"Jane Doe","email":"jane@example.com","commits":3,"firstContribution":true}]`) |
 | `SEMREL_REPOSITORY_URL` | Repository base URL (e.g. `https://github.com/org/repo`) — used for PR/commit linkification |
 
