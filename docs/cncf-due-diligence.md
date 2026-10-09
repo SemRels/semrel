@@ -73,7 +73,7 @@ semrel addresses the release automation gap in cloud-native CI/CD pipelines:
 ### Activity (recent)
 
 - Active feature development targeting v0.0.1 milestone
-- CI runs on every PR across Go 1.26 and 1.27
+- CI runs on every PR across Go 1.26.9, Go 1.27.0-rc.1, and Go 1.27.2
 - REUSE/SPDX compliance enforced on every PR
 
 ---
