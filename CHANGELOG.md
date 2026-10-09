@@ -1,3 +1,19 @@
+## v0.27.0 (2026-10-09)
+
+### Features
+
+* **plugins:** expose release commit hashes (#304)
+
+### Bug Fixes
+
+* honor configured bump rules (#309)
+
+### Other Changes
+
+* **ci:** bump renovatebot/github-action from 46.2.4 to 46.3.4
+* **ci:** bump docker/setup-qemu-action from 4.3.0 to 4.4.0
+* **ci:** bump docker/build-push-action from 7.3.0 to 7.4.0
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
