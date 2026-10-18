@@ -523,3 +523,79 @@ func TestRunReleaseUsesLastTagMatchingTagPrefix(t *testing.T) {
 		t.Fatalf("commits = %d, want 2 (%v)", s.Commits, s.CommitMessages)
 	}
 }
+
+func TestWorkspaceReleaseInheritsRootConfigAndTagPrefix(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: bootstrap a")
+	commitReleaseFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-a-v1.0.0", "-m", "x")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-b-v1.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a2\n", "fix: fix a")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  strategy: independent
+  packages:
+    - path: aws-a
+      tagPrefix: "aws-a-v"
+    - path: aws-b
+      tagPrefix: "aws-b-v"
+`)
+	// aws-b has its own config that only overrides the branch list.
+	if err := os.WriteFile(filepath.Join(repoDir, "aws-b", ".semrel.yaml"),
+		[]byte("branches:\n  - name: elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Relative, auto-detected root config: the failure mode from #321.
+	withWorkingDir(t, repoDir)
+	_, cfgs, err := resolveWorkspacePackages(context.Background(), "")
+	if err != nil {
+		t.Fatalf("resolveWorkspacePackages() error = %v", err)
+	}
+	if len(cfgs) != 2 {
+		t.Fatalf("packages = %d, want 2", len(cfgs))
+	}
+	for _, p := range cfgs {
+		if !filepath.IsAbs(p.Path) || !filepath.IsAbs(p.RootConfig) {
+			t.Fatalf("package paths must be absolute: %+v", p)
+		}
+	}
+
+	dry := func(p workspacePkg) (ReleaseSummary, error) {
+		if err := os.Chdir(p.Path); err != nil {
+			t.Fatal(err)
+		}
+		var s ReleaseSummary
+		stdout, _, err := captureReleaseOutput(func() error {
+			return runRelease(p.context(context.Background()), true, p.ConfigFile, false, false, false, "json", false, "", "", "")
+		})
+		if err == nil || errors.Is(err, ErrNothingToRelease) {
+			s = decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+			err = nil
+		}
+		return s, err
+	}
+
+	// aws-a has no config of its own: it inherits the root config (branch main)
+	// and gets its tag prefix from the workspace entry.
+	a, err := dry(cfgs[0])
+	if err != nil {
+		t.Fatalf("aws-a release error = %v", err)
+	}
+	if a.TagPrefix != "aws-a-v" || a.CurrentVersion != "aws-a-v1.0.0" || a.NextVersion != "aws-a-v1.0.1" {
+		t.Fatalf("aws-a summary = %+v", a)
+	}
+
+	// aws-b overrides the branches, so main is not a release branch for it,
+	// while the tag prefix still comes from the workspace entry.
+	b, err := dry(cfgs[1])
+	if err != nil {
+		t.Fatalf("aws-b release error = %v", err)
+	}
+	if b.Released || b.TagPrefix != "aws-b-v" {
+		t.Fatalf("aws-b summary = %+v, want skipped with prefix aws-b-v", b)
+	}
+}

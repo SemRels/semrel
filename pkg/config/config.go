@@ -327,6 +327,16 @@ func expandTemplates(data []byte) ([]byte, error) {
 // GitHub vs. GitLab) supply their own token env var without colliding.
 // Issue: https://github.com/SemRels/semrel/issues/243
 func LoadConfig(path string) (*Config, error) {
+	cfg, err := parseConfigFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return finalizeConfig(cfg)
+}
+
+// parseConfigFile reads, expands and decodes a config file without applying
+// defaults or validating it, so callers can tell which fields were set.
+func parseConfigFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading config %s: %w", path, err)
@@ -357,9 +367,13 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("parsing YAML config %s: %w", path, err)
 		}
 	}
+	return &cfg, nil
+}
 
-	// Apply defaults. An explicit empty string must be honored so users can
-	// opt out of prefixed tags.
+// finalizeConfig applies defaults and validates the configuration.
+func finalizeConfig(cfg *Config) (*Config, error) {
+	// An explicit empty string must be honored so users can opt out of
+	// prefixed tags.
 	if cfg.TagPrefix == nil {
 		defaultTagPrefix := "v"
 		cfg.TagPrefix = &defaultTagPrefix
@@ -372,7 +386,73 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	return &cfg, nil
+	return cfg, nil
+}
+
+// LoadInherited builds the effective configuration for a workspace package.
+//
+// The root config at basePath is loaded first (without its workspace section).
+// If pkgPath names an existing file, it is merged over the root config: every
+// field the package sets replaces the root value (lists such as branches,
+// rules and plugins are replaced as a whole, not concatenated). An empty or
+// missing pkgPath means the package inherits the root config unchanged.
+//
+// tagPrefix is the prefix assigned by the workspace entry. The precedence is:
+// tagPrefix set in the package file, then the workspace tagPrefix argument,
+// then the root config's tagPrefix. A nil argument leaves the root value.
+func LoadInherited(basePath, pkgPath string, tagPrefix *string) (*Config, error) {
+	merged, err := parseConfigFile(basePath)
+	if err != nil {
+		return nil, err
+	}
+	merged.Workspace = nil
+
+	if tagPrefix != nil {
+		merged.TagPrefix = tagPrefix
+	}
+
+	if pkgPath != "" {
+		if _, statErr := os.Stat(pkgPath); statErr == nil {
+			pkg, err := parseConfigFile(pkgPath)
+			if err != nil {
+				return nil, err
+			}
+			mergeConfig(merged, pkg)
+		}
+	}
+	return finalizeConfig(merged)
+}
+
+// mergeConfig overlays every field that is set in over onto dst. The workspace
+// section is never inherited or overridden.
+func mergeConfig(dst, over *Config) {
+	if over.SchemaVersion != 0 {
+		dst.SchemaVersion = over.SchemaVersion
+	}
+	if over.Branches != nil {
+		dst.Branches = over.Branches
+	}
+	if over.TagPrefix != nil {
+		dst.TagPrefix = over.TagPrefix
+	}
+	if len(over.Rules) > 0 {
+		dst.Rules = over.Rules
+	}
+	if over.Plugins != nil {
+		dst.Plugins = over.Plugins
+	}
+	if over.VersionCeiling != "" {
+		dst.VersionCeiling = over.VersionCeiling
+	}
+	if over.CeilingStrategy != "" {
+		dst.CeilingStrategy = over.CeilingStrategy
+	}
+	if over.CommitChangelog != nil {
+		dst.CommitChangelog = over.CommitChangelog
+	}
+	if over.TagExistsStrategy != "" {
+		dst.TagExistsStrategy = over.TagExistsStrategy
+	}
 }
 
 // TagPrefixValue returns the configured tag prefix, defaulting to "v" when
