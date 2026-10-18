@@ -297,10 +297,17 @@ func (r *Repository) CommitFiles(ctx context.Context, files []string, message st
 // CommitModifiedTrackedFiles stages all modified tracked files and commits them.
 // This is used after pre-tag plugins run to capture any version-file changes
 // so the tagged commit already contains the correct version.
+// When paths are given, only changes under those paths are staged (monorepo
+// packages); otherwise the whole repository is considered.
 // Returns (false, nil) if there are no changes to commit.
-func (r *Repository) CommitModifiedTrackedFiles(ctx context.Context, message string) (bool, error) {
+func (r *Repository) CommitModifiedTrackedFiles(ctx context.Context, message string, paths ...string) (bool, error) {
 	// git add -u stages only modified/deleted tracked files (not new untracked files)
-	if out, err := exec.CommandContext(ctx, "git", "-C", r.Path, "add", "-u").CombinedOutput(); err != nil {
+	addArgs := []string{"-C", r.Path, "add", "-u"}
+	if len(paths) > 0 {
+		addArgs = append(addArgs, "--")
+		addArgs = append(addArgs, paths...)
+	}
+	if out, err := exec.CommandContext(ctx, "git", addArgs...).CombinedOutput(); err != nil {
 		return false, fmt.Errorf("git add -u: %w\n%s", err, out)
 	}
 	diffOut, err := exec.CommandContext(ctx, "git", "-C", r.Path, "diff", "--cached", "--name-only").Output()
