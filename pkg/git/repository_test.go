@@ -147,6 +147,61 @@ func TestCommitsDetailedSinceAndCommitCountsByAuthorEmail(t *testing.T) {
 	}
 }
 
+func TestCommitsDetailedSinceFiltersByPath(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "feat: bootstrap")
+	runGit(t, repoDir, "tag", "v1.0.0")
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat(a): a only")
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "fix(b): b only")
+	// A commit touching both packages must be attributed to each of them.
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("both\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, repoDir, "add", "-A")
+	runGit(t, repoDir, "commit", "-m", "chore: touch both")
+	commitFile(t, repoDir, ".github/ci.yml", "ci\n", "ci: repo-level")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	count := func(paths ...string) int {
+		t.Helper()
+		cs, err := repo.CommitsDetailedSince(ctx, "v1.0.0", paths...)
+		if err != nil {
+			t.Fatalf("CommitsDetailedSince(%v) error = %v", paths, err)
+		}
+		return len(cs)
+	}
+
+	if got := count(); got != 4 {
+		t.Errorf("unscoped = %d, want 4", got)
+	}
+	if got := count("pkg-a"); got != 2 {
+		t.Errorf("relative pkg-a = %d, want 2", got)
+	}
+	if got := count(filepath.Join(repoDir, "pkg-b")); got != 2 {
+		t.Errorf("absolute pkg-b = %d, want 2", got)
+	}
+	if got := count("pkg-a", "pkg-b"); got != 3 {
+		t.Errorf("pkg-a+pkg-b = %d, want 3", got)
+	}
+	if got := count("pkg-missing"); got != 0 {
+		t.Errorf("missing path = %d, want 0", got)
+	}
+	if got := count(repoDir); got != 4 {
+		t.Errorf("repo root = %d, want 4", got)
+	}
+	if _, err := repo.CommitsDetailedSince(ctx, "v1.0.0", t.TempDir()); err == nil {
+		t.Error("expected error for a path outside the repository")
+	}
+}
+
 func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 	repoDir := initGitRepository(t)
 	commitFile(t, repoDir, "README.md", "hello\n", "docs: first commit")

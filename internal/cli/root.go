@@ -238,6 +238,7 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var gitlabDotenv string
 	var outputFile string
 	var nextVersionOverride string
+	var commitPaths []string
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -271,6 +272,9 @@ Examples:
   # Emit metadata to $GITHUB_OUTPUT (GitHub Actions)
   semrel release --github-output
 
+  # Monorepo: only consider commits that touch one package
+  semrel release --path plugins/foo
+
   # Force a specific next version (used by workspace lockstep)
   semrel release --next-version 2.0.0
 
@@ -278,7 +282,7 @@ Exit codes:
   0 — release created, or nothing to release on a non-release branch
   1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
+			err := runRelease(withCommitPaths(cmd.Context(), commitPaths...), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
 			}
@@ -295,6 +299,8 @@ Exit codes:
 	cmd.Flags().StringVar(&gitlabDotenv, "gitlab-dotenv", "", "Write release metadata as dotenv artifact (GitLab CI)")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write release metadata to file (.json or .env)")
 	cmd.Flags().StringVar(&nextVersionOverride, "next-version", "", "Override the calculated next version (e.g. '2.0.0' or '1.3.0-beta.1'); used by workspace lockstep")
+	cmd.Flags().StringArrayVar(&commitPaths, "path", nil,
+		"Only consider commits touching this path (repeatable); use for monorepo packages, e.g. --path plugins/foo")
 	return cmd
 }
 
@@ -412,7 +418,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("getting last tag: %w", err)
 	}
 
-	releaseCommits, err := repo.CommitsDetailedSince(ctx, lastTag)
+	releaseCommits, err := repo.CommitsDetailedSince(ctx, lastTag, commitPathsFrom(ctx)...)
 	if err != nil {
 		return fmt.Errorf("getting commits: %w", err)
 	}
