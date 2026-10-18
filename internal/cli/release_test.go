@@ -495,3 +495,31 @@ func TestRunReleaseScopesCommitsToPackagePaths(t *testing.T) {
 		}
 	})
 }
+
+func TestRunReleaseUsesLastTagMatchingTagPrefix(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: bootstrap a")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-a-v1.2.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-b-v5.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a2\n", "fix: fix a")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"aws-a-v\"\n")
+
+	withWorkingDir(t, repoDir)
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	s := decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	if s.CurrentVersion != "aws-a-v1.2.0" || s.NextVersion != "aws-a-v1.3.0" {
+		t.Fatalf("current=%q next=%q, want aws-a-v1.2.0 -> aws-a-v1.3.0", s.CurrentVersion, s.NextVersion)
+	}
+	// The range starts at aws-a-v1.2.0 (not at aws-b-v5.0.0), so b's bootstrap
+	// feat is still included here; path scoping (#319) narrows it further.
+	if s.Commits != 2 {
+		t.Fatalf("commits = %d, want 2 (%v)", s.Commits, s.CommitMessages)
+	}
+}

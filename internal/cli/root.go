@@ -413,7 +413,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	// 4. Get last tag and commits since it
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, tagPrefix)
 	if err != nil {
 		return fmt.Errorf("getting last tag: %w", err)
 	}
@@ -1240,6 +1240,18 @@ func resolveConfigFile(configFile string) (string, error) {
 	return found, nil
 }
 
+// discoverTagPrefix returns the tagPrefix of the config found in the current
+// directory, or the default "v" when no (valid) config is available. Used by
+// commands that can run without a config file.
+func discoverTagPrefix() string {
+	if found, err := config.FindConfigFile("."); err == nil {
+		if cfg, lerr := config.LoadConfig(found); lerr == nil {
+			return cfg.TagPrefixValue()
+		}
+	}
+	return (&config.Config{}).TagPrefixValue()
+}
+
 // maybeAutoRestore checks whether any plugin configured in plugins is missing
 // from all local search paths. When at least one binary is absent AND
 // .semrel.lock exists (meaning the project has committed a lock file),
@@ -1322,14 +1334,17 @@ func runLint(ctx context.Context, configFile string, outputFormat string) error 
 	if err != nil {
 		return err
 	}
-	_ = configFile
+	lintCfg, err := config.LoadConfig(configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
 
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)
 	}
 
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, lintCfg.TagPrefixValue())
 	if err != nil {
 		return fmt.Errorf("getting last tag: %w", err)
 	}
@@ -1514,7 +1529,7 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		if err != nil {
 			return fmt.Errorf("opening repository: %w", err)
 		}
-		lastTag, err := repo.LastTag(ctx)
+		lastTag, err := repo.LastTag(ctx, discoverTagPrefix())
 		if err != nil {
 			return fmt.Errorf("getting last tag: %w", err)
 		}

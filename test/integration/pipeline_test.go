@@ -135,7 +135,7 @@ func TestGitRepository_LastTag_NoTags(t *testing.T) {
 	defer cleanup()
 
 	repo, _ := gitpkg.OpenRepository(dir)
-	tag, err := repo.LastTag(context.Background())
+	tag, err := repo.LastTag(context.Background(), "v")
 	if err != nil {
 		t.Fatalf("LastTag: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestGitRepository_LastTag_WithTag(t *testing.T) {
 	addCommit(t, dir, "newfile.txt", "feat: add newfile")
 
 	repo, _ := gitpkg.OpenRepository(dir)
-	tag, err := repo.LastTag(context.Background())
+	tag, err := repo.LastTag(context.Background(), "v")
 	if err != nil {
 		t.Fatalf("LastTag: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestGitRepository_CreateTag(t *testing.T) {
 		t.Fatalf("CreateTag: %v", err)
 	}
 
-	tag, err := repo.LastTag(context.Background())
+	tag, err := repo.LastTag(context.Background(), "v")
 	if err != nil {
 		t.Fatalf("LastTag after CreateTag: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestFullPipeline_FeatCommit(t *testing.T) {
 	repo, _ := gitpkg.OpenRepository(dir)
 	ctx := context.Background()
 
-	lastTag, _ := repo.LastTag(ctx)
+	lastTag, _ := repo.LastTag(ctx, "v")
 	if lastTag != "v1.0.0" {
 		t.Fatalf("expected v1.0.0, got %q", lastTag)
 	}
@@ -287,7 +287,7 @@ func TestFullPipeline_FeatCommit(t *testing.T) {
 		t.Fatalf("CreateTag: %v", err)
 	}
 
-	tag, _ := repo.LastTag(ctx)
+	tag, _ := repo.LastTag(ctx, "v")
 	if tag != nextTag {
 		t.Errorf("expected %s as last tag, got %q", nextTag, tag)
 	}
