@@ -718,3 +718,47 @@ plugins:
 		}
 	})
 }
+
+func TestWorkspaceSharedAndIgnorePathsParseAndValidate(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".semrel.yaml")
+	body := `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  sharedPaths: ["yarn.lock", ".github/**"]
+  includeShared: false
+  ignorePaths: ["**/*.md"]
+  packages:
+    - path: plugins/a
+      includeShared: true
+      ignorePaths: ["docs/**"]
+    - path: plugins/b
+`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := cfg.Workspace
+	if len(ws.SharedPaths) != 2 || ws.IncludeShared || len(ws.IgnorePaths) != 1 {
+		t.Fatalf("workspace = %+v", ws)
+	}
+	a, b := ws.Packages[0], ws.Packages[1]
+	if a.IncludeShared == nil || !*a.IncludeShared || len(a.IgnorePaths) != 1 || a.IgnorePaths[0] != "docs/**" {
+		t.Errorf("package a = %+v", a)
+	}
+	if b.IncludeShared != nil || b.IgnorePaths != nil {
+		t.Errorf("package b must inherit workspace defaults, got %+v", b)
+	}
+
+	bad := strings.Replace(body, `sharedPaths: ["yarn.lock", ".github/**"]`, `sharedPaths: [""]`, 1)
+	if err := os.WriteFile(p, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(p); err == nil || !strings.Contains(err.Error(), "sharedPaths") {
+		t.Fatalf("expected sharedPaths validation error, got %v", err)
+	}
+}

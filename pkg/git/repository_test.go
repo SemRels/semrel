@@ -476,3 +476,76 @@ func TestCommitModifiedTrackedFilesHonorsPaths(t *testing.T) {
 		t.Errorf("pkg-b change should stay uncommitted, status = %q", status)
 	}
 }
+
+func TestPackagePathspecsSharedIgnoreAndMultiPackage(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runGit(t, repoDir, "tag", "v0.0.0")
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat(a): a code")       // 1
+	commitFile(t, repoDir, "pkg-a/README.md", "doc\n", "docs(a): readme") // 2: ignored only
+	commitFile(t, repoDir, "yarn.lock", "lock\n", "deps: bump lock")      // 3: shared only
+	commitFile(t, repoDir, ".github/ci.yml", "ci\n", "ci: workflow")      // 4: repo-level, not shared
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "fix(b): b code")        // 5
+	// 6: touches both packages and a doc in pkg-a
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt", "pkg-a/README.md"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("both\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, repoDir, "add", "-A")
+	runGit(t, repoDir, "commit", "-m", "refactor: touch both")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+	subjects := func(pkg string, shared []string, includeShared bool, ignore []string) []string {
+		t.Helper()
+		specs, err := repo.PackagePathspecs(filepath.Join(repoDir, pkg), shared, includeShared, ignore)
+		if err != nil {
+			t.Fatalf("PackagePathspecs() error = %v", err)
+		}
+		cs, err := repo.CommitsDetailedSincePathspecs(ctx, "v0.0.0", specs)
+		if err != nil {
+			t.Fatalf("CommitsDetailedSincePathspecs(%v) error = %v", specs, err)
+		}
+		var out []string
+		for _, c := range cs {
+			out = append(out, strings.SplitN(c.Message, "\n", 2)[0])
+		}
+		return out
+	}
+	shared := []string{"yarn.lock"}
+
+	if got := subjects("pkg-a", shared, false, nil); len(got) != 3 {
+		t.Errorf("pkg-a plain = %v, want 3 commits (a code, readme, both)", got)
+	}
+	if got := subjects("pkg-a", shared, true, nil); len(got) != 4 {
+		t.Errorf("pkg-a +shared = %v, want 4 commits", got)
+	}
+	// Ignoring markdown drops the docs-only commit but keeps the multi-file one.
+	got := subjects("pkg-a", shared, false, []string{"**/*.md"})
+	if len(got) != 2 {
+		t.Errorf("pkg-a ignoring md = %v, want 2 commits", got)
+	}
+	for _, s := range got {
+		if strings.HasPrefix(s, "docs(a)") {
+			t.Errorf("docs-only commit must be ignored, got %v", got)
+		}
+	}
+	// The commit touching both packages appears for pkg-b as well.
+	if got := subjects("pkg-b", shared, false, nil); len(got) != 2 {
+		t.Errorf("pkg-b = %v, want 2 commits (b code, both)", got)
+	}
+	// Repo-level files that are not shared never select a commit.
+	for _, s := range subjects("pkg-b", shared, true, nil) {
+		if strings.HasPrefix(s, "ci:") {
+			t.Errorf("non-shared repo-level commit leaked into pkg-b")
+		}
+	}
+	if _, err := repo.PackagePathspecs(t.TempDir(), nil, false, nil); err == nil {
+		t.Error("expected error for a package outside the repository")
+	}
+}

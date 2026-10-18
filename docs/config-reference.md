@@ -415,6 +415,12 @@ workspace:
   # pattern: "packages/*"
 
   fail_fast: false   # default: collect all errors
+
+  # Commit attribution (monorepos). Each package only considers commits that
+  # change files under its own path.
+  sharedPaths: [yarn.lock, ".github/**"]   # repo-level globs (repo-root-relative)
+  includeShared: false                     # default: shared-only commits release nothing
+  ignorePaths: ["**/*.md"]                 # package-relative globs; docs-only edits don't release
 ```
 
 | Field | Type | Default | Description |
@@ -423,6 +429,14 @@ workspace:
 | `packages` | list | — | Explicit package list. Each entry needs `path`; `tagPrefix` and `dependsOn` are optional. |
 | `pattern` | string | — | Glob pattern for auto-discovery (e.g. `packages/*`). Mutually exclusive with `packages`. |
 | `fail_fast` | bool | `false` | Stop the workspace release on the first package failure. |
+| `sharedPaths` | list | — | Repo-level globs (relative to the repository root) that belong to no package. |
+| `includeShared` | bool | `false` | Whether commits touching `sharedPaths` count towards each package. Can be set per package (`packages[].includeShared`). |
+| `ignorePaths` | list | — | Globs relative to each package root; commits touching only matching files do not release the package. A package's own `ignorePaths` replaces the workspace default. |
+
+A commit is attributed to a package when it changes at least one file under the
+package path (or, with `includeShared`, under `sharedPaths`) that is not matched
+by `ignorePaths`. A commit touching several packages counts for each of them.
+Commits that touch only repo-level files such as `.github/` release no package.
 
 Each package's effective configuration is built from the root config:
 

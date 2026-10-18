@@ -121,18 +121,29 @@ func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, er
 // those paths are returned (monorepo packages). Paths may be absolute or
 // relative to the repository root; they must lie inside the repository.
 func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string, paths ...string) ([]Commit, error) {
+	if len(paths) == 0 {
+		return r.CommitsDetailedSincePathspecs(ctx, ref, nil)
+	}
+	specs, err := r.pathspecs(paths)
+	if err != nil {
+		return nil, err
+	}
+	return r.CommitsDetailedSincePathspecs(ctx, ref, specs)
+}
+
+// CommitsDetailedSincePathspecs is like CommitsDetailedSince but only returns
+// commits matching the given git pathspecs (see PackagePathspecs). A commit is
+// returned when it changes at least one file matched by an include pathspec and
+// not removed by an exclude pathspec. Empty pathspecs mean no restriction.
+func (r *Repository) CommitsDetailedSincePathspecs(ctx context.Context, ref string, pathspecs []string) ([]Commit, error) {
 	args := []string{"-C", r.Path, "log"}
 	if ref != "" {
 		args = append(args, fmt.Sprintf("%s..HEAD", ref))
 	}
 	args = append(args, "--format=%H%x00%an%x00%ae%x00%B%x00%x00")
-	if len(paths) > 0 {
-		specs, err := r.pathspecs(paths)
-		if err != nil {
-			return nil, err
-		}
+	if len(pathspecs) > 0 {
 		args = append(args, "--")
-		args = append(args, specs...)
+		args = append(args, pathspecs...)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -170,29 +181,79 @@ func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string, paths
 
 // pathspecs converts paths into literal, repository-root-relative git pathspecs.
 func (r *Repository) pathspecs(paths []string) ([]string, error) {
-	root, err := filepath.EvalSymlinks(r.Path)
-	if err != nil {
-		return nil, fmt.Errorf("resolving repository root: %w", err)
-	}
 	specs := make([]string, 0, len(paths))
 	for _, p := range paths {
-		abs := p
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(root, abs)
-		} else if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
-			abs = resolved
-		}
-		rel, err := filepath.Rel(root, abs)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, fmt.Errorf("path %q is outside the repository %s", p, r.Path)
+		rel, err := r.relToRoot(p)
+		if err != nil {
+			return nil, err
 		}
 		// The repository root itself means "everything": no restriction.
 		if rel == "." {
 			return []string{":(top)"}, nil
 		}
-		specs = append(specs, ":(top,literal)"+filepath.ToSlash(rel))
+		specs = append(specs, ":(top,literal)"+rel)
 	}
 	return specs, nil
+}
+
+// globEscaper escapes characters that are special in git glob pathspecs.
+var globEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`)
+
+// PackagePathspecs builds the pathspecs that select the commits belonging to a
+// monorepo package:
+//
+//   - pkgPath (absolute or repo-root-relative) is always included;
+//   - sharedGlobs (repo-root-relative globs) are included when includeShared is
+//     true, so repo-level changes count for the package;
+//   - ignoreGlobs (relative to the package root) are excluded, so changes that
+//     only touch ignored files do not select a commit.
+//
+// A commit touching several packages is selected for each of them.
+func (r *Repository) PackagePathspecs(pkgPath string, sharedGlobs []string, includeShared bool, ignoreGlobs []string) ([]string, error) {
+	rel, err := r.relToRoot(pkgPath)
+	if err != nil {
+		return nil, err
+	}
+	var specs []string
+	if rel == "." {
+		specs = append(specs, ":(top)")
+	} else {
+		specs = append(specs, ":(top,literal)"+rel)
+	}
+	if includeShared {
+		for _, g := range sharedGlobs {
+			g = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(g)), "/")
+			specs = append(specs, ":(top,glob)"+g)
+		}
+	}
+	for _, g := range ignoreGlobs {
+		g = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(g)), "/")
+		prefix := ""
+		if rel != "." {
+			prefix = globEscaper.Replace(rel) + "/"
+		}
+		specs = append(specs, ":(top,glob,exclude)"+prefix+g)
+	}
+	return specs, nil
+}
+
+// relToRoot returns p as a slash-separated path relative to the repository root.
+func (r *Repository) relToRoot(p string) (string, error) {
+	root, err := filepath.EvalSymlinks(r.Path)
+	if err != nil {
+		return "", fmt.Errorf("resolving repository root: %w", err)
+	}
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(root, abs)
+	} else if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = resolved
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q is outside the repository %s", p, r.Path)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // CommitCountsByAuthorEmail returns commit counts across the full repository
