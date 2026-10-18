@@ -339,6 +339,7 @@ type RuleEntry struct {
 	Scope     string // exact scope to match (only when ScopeNone is false)
 	ScopeNone bool   // true when the rule was declared with scope: false
 	Bump      string // "major", "minor", "patch"
+	Hidden    bool   // keep matching commits out of generated changelogs
 }
 
 // BumpFromRules analyses commits against release rules and returns the highest bump level.
@@ -354,23 +355,39 @@ func BumpFromRules(commitList []CommitInfo, rules []RuleEntry, hasBreaking bool)
 	order := map[string]int{"major": 3, "minor": 2, "patch": 1}
 	for _, c := range commitList {
 		for _, r := range rules {
-			if r.Type != c.Type {
-				continue
-			}
-			switch {
-			case r.ScopeNone:
-				if c.Scope != "" {
-					continue // rule wants scopeless, but commit has a scope
-				}
-			case r.Scope != "":
-				if r.Scope != c.Scope {
-					continue // scope doesn't match
-				}
-			}
-			if order[r.Bump] > order[best] {
+			if r.Matches(c) && order[r.Bump] > order[best] {
 				best = r.Bump
 			}
 		}
 	}
 	return best
+}
+
+// Matches reports whether the rule applies to the commit: the type must match
+// and so must the scope (any scope, an exact scope, or no scope at all).
+func (r RuleEntry) Matches(c CommitInfo) bool {
+	if r.Type != c.Type {
+		return false
+	}
+	switch {
+	case r.ScopeNone:
+		return c.Scope == "" // rule wants scopeless commits only
+	case r.Scope != "":
+		return r.Scope == c.Scope
+	}
+	return true
+}
+
+// IsHidden reports whether the commit must be left out of generated changelogs:
+// some matching rule has Hidden set. Breaking changes are always listed.
+func IsHidden(c CommitInfo, breaking bool, rules []RuleEntry) bool {
+	if breaking {
+		return false
+	}
+	for _, r := range rules {
+		if r.Hidden && r.Matches(c) {
+			return true
+		}
+	}
+	return false
 }

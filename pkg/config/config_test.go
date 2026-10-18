@@ -762,3 +762,25 @@ workspace:
 		t.Fatalf("expected sharedPaths validation error, got %v", err)
 	}
 }
+
+func TestLoadConfigRuleHidden(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		".semrel.yaml": "branches:\n  - name: main\nrules:\n  - type: deps\n    bump: patch\n    hidden: true\n  - type: fix\n    bump: patch\n",
+		".semrel.toml": "[[branches]]\nname = \"main\"\n[[rules]]\ntype = \"deps\"\nbump = \"patch\"\nhidden = true\n[[rules]]\ntype = \"fix\"\nbump = \"patch\"\n",
+		".semrel.json": `{"branches":[{"name":"main"}],"rules":[{"type":"deps","bump":"patch","hidden":true},{"type":"fix","bump":"patch"}]}`,
+	}
+	for name, body := range cases {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := LoadConfig(p)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(cfg.Rules) != 2 || !cfg.Rules[0].Hidden || cfg.Rules[1].Hidden {
+			t.Errorf("%s: rules = %+v, want first hidden only", name, cfg.Rules)
+		}
+	}
+}

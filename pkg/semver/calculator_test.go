@@ -515,3 +515,36 @@ func TestApplyCeiling_AlreadyAtCeilingSkips(t *testing.T) {
 		t.Fatalf("got %v, want nil", got)
 	}
 }
+
+func TestRuleEntryMatchesAndIsHidden(t *testing.T) {
+	rules := []RuleEntry{
+		{Type: "ci", Bump: "patch", Hidden: true},
+		{Type: "deps", Scope: "dev", Bump: "patch", Hidden: true},
+		{Type: "docs", ScopeNone: true, Bump: "patch", Hidden: true},
+		{Type: "feat", Bump: "minor"},
+	}
+	cases := []struct {
+		name     string
+		c        CommitInfo
+		breaking bool
+		want     bool
+	}{
+		{"hidden type, any scope", CommitInfo{Type: "ci", Scope: "x"}, false, true},
+		{"exact scope matches", CommitInfo{Type: "deps", Scope: "dev"}, false, true},
+		{"other scope does not match", CommitInfo{Type: "deps", Scope: "prod"}, false, false},
+		{"scopeless rule matches scopeless commit", CommitInfo{Type: "docs"}, false, true},
+		{"scopeless rule skips scoped commit", CommitInfo{Type: "docs", Scope: "api"}, false, false},
+		{"visible rule", CommitInfo{Type: "feat"}, false, false},
+		{"no rule", CommitInfo{Type: "chore"}, false, false},
+		{"breaking change is always listed", CommitInfo{Type: "ci"}, true, false},
+	}
+	for _, tc := range cases {
+		if got := IsHidden(tc.c, tc.breaking, rules); got != tc.want {
+			t.Errorf("%s: IsHidden() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	// Hiding never changes the bump.
+	if got := BumpFromRules([]CommitInfo{{Type: "ci"}}, rules, false); got != "patch" {
+		t.Errorf("BumpFromRules() = %q, want patch", got)
+	}
+}

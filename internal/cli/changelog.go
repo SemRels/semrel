@@ -121,7 +121,7 @@ func runChangelog(ctx context.Context, configFile string, outputFormat string, w
 
 	rules := make([]semver.RuleEntry, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump}
+		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump, Hidden: r.Hidden}
 		switch v := r.Scope.(type) {
 		case string:
 			entry.Scope = v
@@ -164,7 +164,7 @@ func runChangelog(ctx context.Context, configFile string, outputFormat string, w
 	nextTag := tagPrefix + nextVer.String()
 
 	gen := changelog.NewGenerator()
-	entry := gen.Generate(nextTag, parsed)
+	entry := gen.Generate(nextTag, visibleCommits(parsed, rules))
 
 	if write {
 		if err := writeChangelogEntry(entry, cfg); err != nil {

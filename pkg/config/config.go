@@ -161,6 +161,9 @@ type ReleaseRule struct {
 	Type  string      `yaml:"type" toml:"type" json:"type"`
 	Scope interface{} `yaml:"scope,omitempty" toml:"scope,omitempty" json:"scope,omitempty"`
 	Bump  string      `yaml:"bump" toml:"bump" json:"bump"` // major, minor, patch
+	// Hidden keeps matching commits out of the generated changelog and release
+	// notes. The rule's bump still applies; breaking changes are always listed.
+	Hidden bool `yaml:"hidden,omitempty" toml:"hidden,omitempty" json:"hidden,omitempty"`
 }
 
 // PluginConfig configures a plugin.
