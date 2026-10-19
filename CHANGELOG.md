@@ -1,3 +1,10 @@
+## v0.28.1 (2026-10-19)
+
+### Bug Fixes
+
+* **release:** update stale generated release branches (#312)
+
+
 ## v0.27.0 (2026-10-16)
 
 ### Features
