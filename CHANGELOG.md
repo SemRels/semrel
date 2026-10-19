@@ -1,3 +1,39 @@
+## v0.28.1 (2026-10-19)
+
+### Bug Fixes
+
+* **release:** update stale generated release branches (#312)
+
+
+## v0.28.0 (2026-10-19)
+
+### Features
+
+* **config:** generate .gitignore for .semrel/ and .semrel-analytics.jsonl on config init
+* **config:** support hidden rules and align the JSON schema with the config (#333)
+* **workspace:** shared paths, per-package ignore paths and multi-package commits (#332)
+* **workspace:** package-scoped changelog commit, pre-tag commit and plugin env (#331)
+* **workspace:** inherit root config and apply workspace tagPrefix per package (#330)
+
+### Bug Fixes
+
+* **git:** LastTag only considers tags matching tagPrefix (#329)
+* **workspace:** scope release commits to the package path (#328)
+* **ci:** grant pull request label write permission
+
+### Other Changes
+
+* **release:** reconcile published v0.27.0 tag with main
+* **changelog:** update for v0.27.0 [skip ci] (#336)
+* **config:** use plain bool parameter for noGitignore
+* keep published tags reachable (#335)
+* **ci:** bump oras-project/setup-oras from 2.0.1 to 2.0.2 (#318)
+* **ci:** bump reviewdog/action-actionlint from 1.76.0 to 1.80.2 (#317)
+* **ci:** bump renovatebot/github-action from 46.3.4 to 46.3.8 (#316)
+* **ci:** bump actions/upload-artifact from 4.6.2 to 7.0.2 (#315)
+* **ci:** bump the codeql-action group across 1 directory with 3 updates (#314)
+
+
 ## v0.27.0 (2026-10-16)
 
 ### Features
