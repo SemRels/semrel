@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -539,5 +540,207 @@ func stubStdin(t *testing.T, input string) func() {
 	return func() {
 		os.Stdin = old
 		r.Close()
+	}
+}
+
+func initGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "init", dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init %s: %v\n%s", dir, err, out)
+	}
+}
+
+func TestRunConfigInit_CreatesGitignoreInGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := runConfigInit(cfgPath, true, false)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(r)
+	if !strings.Contains(out.String(), ".gitignore written") {
+		t.Errorf("expected output to mention .gitignore written, got: %s", out.String())
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	want := "# semrel\n.semrel-analytics.jsonl\n.semrel/\n"
+	if string(data) != want {
+		t.Errorf(".gitignore content = %q, want %q", string(data), want)
+	}
+}
+
+func TestRunConfigInit_UpdatesExistingGitignoreWithoutDuplicating(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	initial := "node_modules/\n.semrel/\ndist/\n"
+	if err := os.WriteFile(gitignorePath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := runConfigInit(cfgPath, true, false)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(r)
+	if !strings.Contains(out.String(), ".gitignore updated") {
+		t.Errorf("expected output to mention .gitignore updated, got: %s", out.String())
+	}
+
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	want := "node_modules/\n.semrel/\ndist/\n\n# semrel\n.semrel-analytics.jsonl\n"
+	if string(data) != want {
+		t.Errorf(".gitignore content = %q, want %q", string(data), want)
+	}
+}
+
+func TestRunConfigInit_GitignoreIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+
+	if err := runConfigInit(cfgPath, true, false); err != nil {
+		t.Fatalf("first runConfigInit: %v", err)
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	first, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err = runConfigInit(cfgPath, true, true)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("second runConfigInit: %v", err)
+	}
+
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(r)
+	if strings.Contains(out.String(), ".gitignore") {
+		t.Errorf("expected second run not to report .gitignore change, got: %s", out.String())
+	}
+
+	second, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(second) != string(first) {
+		t.Errorf("second run modified .gitignore:\ngot:  %q\nwant: %q", string(second), string(first))
+	}
+}
+
+func TestRunConfigInit_GitignoreRecognizesEquivalentPatterns(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	initial := "/.semrel-analytics.jsonl\n.semrel\n"
+	if err := os.WriteFile(gitignorePath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+	if err := runConfigInit(cfgPath, true, false); err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != initial {
+		t.Errorf("expected .gitignore unchanged, got %q", string(data))
+	}
+}
+
+func TestRunConfigInit_SkipsGitignoreOutsideGitRepo(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+
+	if err := runConfigInit(cfgPath, true, false); err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(gitignorePath); !os.IsNotExist(err) {
+		t.Errorf("expected no .gitignore outside git repo, stat err=%v", err)
+	}
+}
+
+func TestRunConfigInit_SkipsGitignoreWithNoGitignoreFlag(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+
+	root := NewRootCommand()
+	root.SetArgs([]string{"config", "init", "--config", cfgPath, "--no-interactive", "--no-gitignore"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(gitignorePath); !os.IsNotExist(err) {
+		t.Errorf("expected no .gitignore when --no-gitignore is passed, stat err=%v", err)
+	}
+}
+
+func TestRunConfigInit_NonTTYUpdatesGitignore(t *testing.T) {
+	oldIsTerminal := isTerminalFn
+	isTerminalFn = func() bool { return false }
+	defer func() { isTerminalFn = oldIsTerminal }()
+
+	dir := t.TempDir()
+	initGitRepo(t, dir)
+	cfgPath := filepath.Join(dir, ".semrel.yaml")
+
+	if err := runConfigInit(cfgPath, false, false); err != nil {
+		t.Fatalf("runConfigInit: %v", err)
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	if !strings.Contains(string(data), ".semrel-analytics.jsonl") || !strings.Contains(string(data), ".semrel/") {
+		t.Errorf("expected both semrel entries in .gitignore, got: %s", string(data))
 	}
 }

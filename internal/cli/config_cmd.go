@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/SemRels/semrel/pkg/config"
+	gitpkg "github.com/SemRels/semrel/pkg/git"
 )
 
 var (
@@ -79,21 +81,24 @@ Quick start:
 func newConfigInitCommand(configFile *string) *cobra.Command {
 	var noInteractive bool
 	var force bool
+	var noGitignore bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Interactive wizard to create .semrel.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runConfigInit(*configFile, noInteractive, force)
+			return runConfigInit(*configFile, noInteractive, force, noGitignore)
 		},
 	}
 	cmd.Flags().BoolVar(&noInteractive, "no-interactive", false,
 		"Skip prompts and create a minimal default config (for CI)")
 	cmd.Flags().BoolVar(&force, "force", false,
 		"Overwrite an existing config file")
+	cmd.Flags().BoolVar(&noGitignore, "no-gitignore", false,
+		"Skip creating or updating .gitignore")
 	return cmd
 }
 
-func runConfigInit(configFile string, noInteractive bool, force bool) error {
+func runConfigInit(configFile string, noInteractive bool, force bool, noGitignore ...bool) error {
 	target := configFile
 	if target == "" {
 		target = ".semrel.yaml"
@@ -128,7 +133,81 @@ func runConfigInit(configFile string, noInteractive bool, force bool) error {
 	}
 
 	fmt.Printf("✔  %s written\n", target)
+
+	skipGitignore := len(noGitignore) > 0 && noGitignore[0]
+	if !skipGitignore {
+		if err := ensureGitignore(filepath.Dir(target)); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func ensureGitignore(dir string) error {
+	if _, err := gitpkg.OpenRepository(dir); err != nil {
+		return nil
+	}
+
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	existingData, err := os.ReadFile(gitignorePath)
+	exists := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading %s: %w", gitignorePath, err)
+	}
+
+	existingContent := string(existingData)
+	hasAnalytics, hasSemrelDir := checkGitignoreEntries(existingContent)
+
+	var missing []string
+	if !hasAnalytics {
+		missing = append(missing, ".semrel-analytics.jsonl")
+	}
+	if !hasSemrelDir {
+		missing = append(missing, ".semrel/")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	var block strings.Builder
+	if exists && len(existingContent) > 0 {
+		if !strings.HasSuffix(existingContent, "\n") {
+			block.WriteString("\n")
+		}
+		if !strings.HasSuffix(existingContent, "\n\n") && !strings.HasSuffix(existingContent, "\r\n\r\n") {
+			block.WriteString("\n")
+		}
+	}
+	block.WriteString("# semrel\n")
+	for _, entry := range missing {
+		block.WriteString(entry + "\n")
+	}
+
+	newContent := existingContent + block.String()
+	if err := os.WriteFile(gitignorePath, []byte(newContent), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", gitignorePath, err)
+	}
+
+	if exists {
+		fmt.Printf("✔  %s updated\n", gitignorePath)
+	} else {
+		fmt.Printf("✔  %s written\n", gitignorePath)
+	}
+	return nil
+}
+
+func checkGitignoreEntries(content string) (hasAnalytics bool, hasSemrelDir bool) {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch trimmed {
+		case ".semrel-analytics.jsonl", "/.semrel-analytics.jsonl":
+			hasAnalytics = true
+		case ".semrel", ".semrel/", "/.semrel", "/.semrel/":
+			hasSemrelDir = true
+		}
+	}
+	return hasAnalytics, hasSemrelDir
 }
 
 // defaultConfig returns a sensible MVP starting config that works out-of-the-box

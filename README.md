@@ -51,7 +51,7 @@ semrel plugin update --check
 ## Quick Start
 
 ```bash
-# Create .semrel.yaml
+# Create .semrel.yaml (and add .semrel/ and .semrel-analytics.jsonl to .gitignore)
 semrel config init
 
 # Verify config, plugins, git state, and environment
@@ -79,7 +79,7 @@ semrel update
 | `semrel lint` | Validate commits since the last tag against Conventional Commits. |
 | `semrel commitlint` | Lint commit messages from the last tag, a git range, arguments, or stdin. |
 | `semrel doctor` | Run pre-flight checks for config, plugins, git state, and environment. |
-| `semrel config init` | Create a new `.semrel.yaml` configuration file. |
+| `semrel config init` | Create a new `.semrel.yaml` configuration file and update `.gitignore`. |
 | `semrel config show` | Print the resolved configuration. |
 | `semrel config validate` | Validate the current configuration file. |
 | `semrel config set` | Update a top-level or nested configuration key. |
