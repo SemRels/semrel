@@ -360,6 +360,9 @@ func marshalConfigYAML(cfg *config.Config) ([]byte, error) {
 			} else {
 				sb.WriteString(fmt.Sprintf("  - type: %s\n    bump: %s\n", r.Type, r.Bump))
 			}
+			if r.Hidden {
+				sb.WriteString("    hidden: true\n")
+			}
 		}
 	} else {
 		sb.WriteString("  - type: feat\n    bump: minor\n")

@@ -732,3 +732,46 @@ workspace:
 		t.Fatalf("includeShared: commits=%d bump=%q (%v), want 1/patch", s.Commits, s.Bump, s.CommitMessages)
 	}
 }
+
+func TestRunReleaseHiddenRulesKeepCommitsOutOfChangelogButStillBump(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	runReleaseGit(t, repoDir, "tag", "v1.0.0")
+	commitReleaseFile(t, repoDir, "a.txt", "1\n", "deps: bump lib")
+	commitReleaseFile(t, repoDir, "b.txt", "2\n", "ci: tweak pipeline")
+	commitReleaseFile(t, repoDir, "c.txt", "3\n", "ci!: drop old runner")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+rules:
+  - type: deps
+    bump: patch
+    hidden: true
+  - type: ci
+    bump: patch
+    hidden: true
+`)
+
+	withWorkingDir(t, repoDir)
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	s := decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	if s.Bump != "major" || s.Commits != 3 {
+		t.Fatalf("bump=%q commits=%d, want major/3 (breaking ci! still bumps)", s.Bump, s.Commits)
+	}
+	if strings.Contains(s.Changelog, "bump lib") || strings.Contains(s.Changelog, "tweak pipeline") {
+		t.Fatalf("hidden commits leaked into the changelog:\n%s", s.Changelog)
+	}
+	if !strings.Contains(s.Changelog, "drop old runner") {
+		t.Fatalf("breaking change must stay listed:\n%s", s.Changelog)
+	}
+	// Plugins and CI outputs still see every commit.
+	if len(s.CommitMessages) != 3 {
+		t.Fatalf("commit messages = %v, want all 3", s.CommitMessages)
+	}
+}

@@ -505,7 +505,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// 6. Build rule list and analyse commits
 	rules := make([]semver.RuleEntry, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump}
+		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump, Hidden: r.Hidden}
 		switch v := r.Scope.(type) {
 		case string:
 			entry.Scope = v
@@ -671,7 +671,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 8. Generate changelog
 	gen := changelog.NewGenerator()
-	changelogEntry := gen.Generate(nextTag, parsed)
+	changelogEntry := gen.Generate(nextTag, visibleCommits(parsed, rules))
 
 	// 8a. Run generator-phase plugins — these can override SEMREL_CHANGELOG
 	//     by printing a custom changelog/release-notes text to stdout.
@@ -1656,4 +1656,17 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		return fmt.Errorf("commitlint failed: %d invalid commit(s)", summary.Failed)
 	}
 	return nil
+}
+
+// visibleCommits drops the commits that a hidden rule keeps out of generated
+// changelogs. Version bumps are computed from the unfiltered commits.
+func visibleCommits(parsed []*commits.Commit, rules []semver.RuleEntry) []*commits.Commit {
+	visible := make([]*commits.Commit, 0, len(parsed))
+	for _, c := range parsed {
+		if semver.IsHidden(semver.CommitInfo{Type: c.Type, Scope: c.Scope}, c.IsBreakingChange, rules) {
+			continue
+		}
+		visible = append(visible, c)
+	}
+	return visible
 }

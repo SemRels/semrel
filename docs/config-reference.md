@@ -241,7 +241,9 @@ Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** b
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | string | Conventional commit type (for example `feat`, `fix`, `docs`) |
+| `scope` | string \| `false` | Optional scope filter. A string matches commits with that exact scope, `false` matches commits with no scope, omitted matches any scope |
 | `bump` | string | One of `major`, `minor`, `patch` |
+| `hidden` | bool | Keep matching commits out of the generated changelog and release notes. The rule's `bump` still applies and breaking changes are always listed (default: `false`) |
 
 #### Default rules
 
@@ -310,7 +312,7 @@ plugins:
 | `uses` | string | Plugin name that resolves to `semrel-plugin-<uses>` |
 | `path` | string | Optional explicit path to a plugin binary |
 | `args` | map | Plugin-specific arguments, exposed as `SEMREL_PLUGIN_<KEY>` env vars |
-| `phase` | string | When to run: `condition`, `pre-tag`, or `release` (default: `release`) |
+| `phase` | string | When to run: `condition`, `generator`, `pre-tag`, or `release` (default: `release`) |
 
 #### Local development example
 
