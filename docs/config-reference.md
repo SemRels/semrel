@@ -567,12 +567,19 @@ Manages the semrel configuration file.
 
 #### `semrel config init`
 
-Create a new `.semrel.yaml`, either interactively or with defaults.
+Create a new `.semrel.yaml`, either interactively or with defaults. When run inside a git repository, it also creates or updates `.gitignore` in the target directory to ignore `.semrel-analytics.jsonl` and `.semrel/` (unless `--no-gitignore` is passed).
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--no-interactive` | bool | Skip prompts and create a minimal default config (for CI) |
+| `--force` | bool | Overwrite an existing config file |
+| `--no-gitignore` | bool | Skip creating or updating `.gitignore` |
 
 ```bash
 semrel config init
 semrel config init --no-interactive
 semrel config init --force
+semrel config init --no-gitignore
 ```
 
 #### `semrel config show`
