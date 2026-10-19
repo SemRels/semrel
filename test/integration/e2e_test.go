@@ -301,8 +301,8 @@ plugins:
 
 	marker, err := os.ReadFile(markerFile)
 	require.NoError(t, err, "pre-tag plugin marker file must exist")
-	require.Equal(t, "v0.2.0", strings.TrimSpace(string(marker)),
-		"pre-tag plugin must receive SEMREL_NEXT_VERSION=v0.2.0")
+	require.Equal(t, "0.2.0", strings.TrimSpace(string(marker)),
+		"pre-tag plugin must receive SEMREL_NEXT_VERSION=0.2.0")
 }
 
 // TestSmokeTestAllPlugins builds and smoke-tests all plugin binaries found in
