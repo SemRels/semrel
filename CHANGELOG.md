@@ -1,3 +1,26 @@
+## v0.27.0 (2026-10-16)
+
+### Features
+
+* **plugins:** expose release commit hashes (#304)
+
+### Bug Fixes
+
+* **ci:** ensure release branch force-push and non-blocking PR creation
+* **cli:** drop unselected GitHub plugins from config init (#308)
+* **security:** update Go toolchain for Trivy findings (#311)
+* honor configured bump rules (#309)
+
+### Other Changes
+
+* **ci:** bump peter-evans/create-pull-request from 7.0.8 to 8.1.1 (#301)
+* **ci:** bump the codeql-action group across 1 directory with 3 updates (#302)
+* automate pull request labels (#305)
+* **changelog:** backfill releases through v0.26.3 (#310)
+* **ci:** bump renovatebot/github-action from 46.2.4 to 46.3.4
+* **ci:** bump docker/setup-qemu-action from 4.3.0 to 4.4.0
+* **ci:** bump docker/build-push-action from 7.3.0 to 7.4.0
+
 ## v0.13.0 (2026-06-11)
 
 ### Features
