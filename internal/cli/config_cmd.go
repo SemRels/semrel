@@ -98,7 +98,7 @@ func newConfigInitCommand(configFile *string) *cobra.Command {
 	return cmd
 }
 
-func runConfigInit(configFile string, noInteractive bool, force bool, noGitignore ...bool) error {
+func runConfigInit(configFile string, noInteractive bool, force bool, noGitignore bool) error {
 	target := configFile
 	if target == "" {
 		target = ".semrel.yaml"
@@ -134,8 +134,7 @@ func runConfigInit(configFile string, noInteractive bool, force bool, noGitignor
 
 	fmt.Printf("✔  %s written\n", target)
 
-	skipGitignore := len(noGitignore) > 0 && noGitignore[0]
-	if !skipGitignore {
+	if !noGitignore {
 		if err := ensureGitignore(filepath.Dir(target)); err != nil {
 			return err
 		}
