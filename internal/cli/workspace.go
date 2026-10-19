@@ -122,6 +122,10 @@ type workspacePkg struct {
 	DependsOn  []string
 	ConfigFile string // absolute path of the package's own config; "" when it has none
 	RootConfig string // absolute path of the root config the package inherits from
+
+	SharedPaths   []string // repo-level globs (workspace.sharedPaths)
+	IncludeShared bool     // whether SharedPaths count for this package
+	IgnorePaths   []string // package-relative globs that never release it
 }
 
 // context returns ctx extended so that runRelease builds this package's
@@ -134,6 +138,16 @@ func (p workspacePkg) context(ctx context.Context) context.Context {
 		ic.TagPrefix = &prefix
 	}
 	return withPackage(withInheritedConfig(ctx, ic), p.Name, p.Path)
+}
+
+// scope returns the commit scope restricting this package's release.
+func (p workspacePkg) scope() commitScope {
+	return commitScope{
+		PackagePath:   p.Path,
+		SharedPaths:   p.SharedPaths,
+		IncludeShared: p.IncludeShared,
+		IgnorePaths:   p.IgnorePaths,
+	}
 }
 
 func runWorkspaceRelease(ctx context.Context, rootConfigFile, outputFormat string, dryRun, parallel, failFast bool) error {
@@ -187,7 +201,7 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 	currentTagPrefix := ""
 
 	for _, pkg := range pkgs {
-		pkgCtx := withCommitPaths(pkg.context(ctx), pkg.Path)
+		pkgCtx := withCommitScope(pkg.context(ctx), pkg.scope())
 		if err := os.Chdir(pkg.Path); err != nil {
 			continue
 		}
@@ -281,7 +295,9 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 	var errs []string
 	for _, pkg := range ordered {
 		label := fmt.Sprintf("[%s]", pkg.Path)
-		pkgCtx := withCommitPaths(pkg.context(ctx), pkg.Path)
+		// Built before the chdir below so a relative package path resolves
+		// against the directory the workspace command was started from.
+		pkgCtx := withCommitScope(pkg.context(ctx), pkg.scope())
 
 		if err := os.Chdir(pkg.Path); err != nil {
 			msg := fmt.Sprintf("%s  error: cannot change to package directory: %v", label, err)
@@ -431,6 +447,21 @@ func runWorkspacePackageInSubprocess(ctx context.Context, pkg workspacePkg, outp
 
 	args = append(args, "--package-name", pkg.Name, "--package-path", pkg.Path)
 
+	scopePath, absErr := filepath.Abs(pkg.Path)
+	if absErr != nil {
+		return fmt.Errorf("resolving package path: %w", absErr)
+	}
+	args = append(args, "--scope-path", scopePath)
+	for _, g := range pkg.SharedPaths {
+		args = append(args, "--scope-shared", g)
+	}
+	if pkg.IncludeShared {
+		args = append(args, "--scope-include-shared")
+	}
+	for _, g := range pkg.IgnorePaths {
+		args = append(args, "--scope-ignore", g)
+	}
+
 	cmd := exec.CommandContext(ctx, self, args...)
 	cmd.Dir = pkg.Path
 	cmd.Stdout = os.Stdout
@@ -479,6 +510,14 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 		// Explicit list.
 		for _, ref := range ws.Packages {
 			pkgPath := filepath.Join(rootDir, ref.Path)
+			includeShared := ws.IncludeShared
+			if ref.IncludeShared != nil {
+				includeShared = *ref.IncludeShared
+			}
+			ignorePaths := ws.IgnorePaths
+			if ref.IgnorePaths != nil {
+				ignorePaths = ref.IgnorePaths
+			}
 			tagPrefix := ref.TagPrefix
 			if tagPrefix == "" {
 				tagPrefix = ref.Path + "@v"
@@ -492,6 +531,10 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 				DependsOn:  resolveDepPaths(ref.DependsOn, rootDir),
 				ConfigFile: resolvePackageConfig(pkgPath, rootCfg),
 				RootConfig: cfgFile,
+
+				SharedPaths:   ws.SharedPaths,
+				IncludeShared: includeShared,
+				IgnorePaths:   ignorePaths,
 			})
 		}
 
@@ -507,6 +550,10 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 				Package:    mp,
 				ConfigFile: resolvePackageConfig(mp.Path, rootCfg),
 				RootConfig: cfgFile,
+
+				SharedPaths:   ws.SharedPaths,
+				IncludeShared: ws.IncludeShared,
+				IgnorePaths:   ws.IgnorePaths,
 			})
 		}
 

@@ -173,6 +173,23 @@
                     "packages/api"
                   ]
                 ]
+              },
+              "includeShared": {
+                "type": "boolean",
+                "description": "Overrides workspace.includeShared for this package."
+              },
+              "ignorePaths": {
+                "type": "array",
+                "description": "Globs relative to the package root whose changes alone never release the package. Replaces workspace.ignorePaths.",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "**/*.md",
+                    "docs/**"
+                  ]
+                ]
               }
             }
           }
@@ -189,6 +206,36 @@
           "type": "boolean",
           "description": "Stop the workspace release on the first package failure. Default: false (collect all errors).",
           "default": false
+        },
+        "sharedPaths": {
+          "type": "array",
+          "description": "Repo-level globs (relative to the repository root) that belong to no package. By default commits touching only these release nothing; packages with includeShared count them as their own changes.",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "yarn.lock",
+              ".github/**"
+            ]
+          ]
+        },
+        "includeShared": {
+          "type": "boolean",
+          "description": "Workspace-wide default: whether commits touching sharedPaths count towards each package.",
+          "default": false
+        },
+        "ignorePaths": {
+          "type": "array",
+          "description": "Globs relative to each package root whose changes alone never release the package. Workspace-wide default; a package's own ignorePaths replace it.",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "**/*.md"
+            ]
+          ]
         }
       }
     }

@@ -71,6 +71,18 @@ type WorkspaceConfig struct {
 	// FailFast stops the workspace release on the first package failure.
 	// Default false: all packages are attempted and errors are collected.
 	FailFast bool `yaml:"fail_fast,omitempty" toml:"fail_fast" json:"fail_fast,omitempty"`
+	// SharedPaths are repo-level globs (relative to the repository root, e.g.
+	// "yarn.lock" or ".github/**") that belong to no package. By default commits
+	// touching only these paths release nothing; packages with IncludeShared
+	// treat them as their own changes.
+	SharedPaths []string `yaml:"sharedPaths,omitempty" toml:"shared_paths" json:"shared_paths,omitempty"`
+	// IncludeShared is the workspace-wide default for whether commits touching
+	// SharedPaths count towards each package. Packages can override it.
+	IncludeShared bool `yaml:"includeShared,omitempty" toml:"include_shared" json:"include_shared,omitempty"`
+	// IgnorePaths are globs relative to each package root (e.g. "**/*.md",
+	// "docs/**") whose changes alone never release the package. Workspace-wide
+	// default; a package's own IgnorePaths replace it.
+	IgnorePaths []string `yaml:"ignorePaths,omitempty" toml:"ignore_paths" json:"ignore_paths,omitempty"`
 }
 
 // WorkspacePackageRef references a single package inside a workspace.
@@ -83,6 +95,10 @@ type WorkspacePackageRef struct {
 	// DependsOn lists other package paths this package depends on.
 	// Dependent packages are released only after all their dependencies succeed.
 	DependsOn []string `yaml:"dependsOn,omitempty" toml:"depends_on" json:"depends_on,omitempty"`
+	// IncludeShared overrides workspace.includeShared for this package.
+	IncludeShared *bool `yaml:"includeShared,omitempty" toml:"include_shared" json:"include_shared,omitempty"`
+	// IgnorePaths replaces workspace.ignorePaths for this package.
+	IgnorePaths []string `yaml:"ignorePaths,omitempty" toml:"ignore_paths" json:"ignore_paths,omitempty"`
 }
 
 // BranchConfig configures release behavior per branch.
@@ -258,6 +274,24 @@ func (c *Config) Validate() error {
 		for i, pkg := range ws.Packages {
 			if strings.TrimSpace(pkg.Path) == "" {
 				errs = append(errs, fmt.Sprintf("workspace.packages[%d]: path must not be empty", i))
+			}
+			for _, g := range pkg.IgnorePaths {
+				if strings.TrimSpace(g) == "" {
+					errs = append(errs, fmt.Sprintf("workspace.packages[%d].ignorePaths: entries must not be empty", i))
+					break
+				}
+			}
+		}
+		for _, g := range ws.SharedPaths {
+			if strings.TrimSpace(g) == "" {
+				errs = append(errs, "workspace.sharedPaths: entries must not be empty")
+				break
+			}
+		}
+		for _, g := range ws.IgnorePaths {
+			if strings.TrimSpace(g) == "" {
+				errs = append(errs, "workspace.ignorePaths: entries must not be empty")
+				break
 			}
 		}
 	}

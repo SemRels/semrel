@@ -244,6 +244,9 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var inheritConfig string
 	var inheritTagPrefix string
 	var packageName, packagePath string
+	var scopePath string
+	var scopeShared, scopeIgnore []string
+	var scopeIncludeShared bool
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -298,6 +301,14 @@ Exit codes:
 			if packagePath != "" {
 				ctx = withPackage(ctx, packageName, packagePath)
 			}
+			if scopePath != "" {
+				ctx = withCommitScope(ctx, commitScope{
+					PackagePath:   scopePath,
+					SharedPaths:   scopeShared,
+					IncludeShared: scopeIncludeShared,
+					IgnorePaths:   scopeIgnore,
+				})
+			}
 			err := runRelease(ctx, *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
@@ -327,6 +338,13 @@ Exit codes:
 	cmd.Flags().StringVar(&packagePath, "package-path", "", "Workspace package root (set by workspace --parallel)")
 	_ = cmd.Flags().MarkHidden("package-name")
 	_ = cmd.Flags().MarkHidden("package-path")
+	cmd.Flags().StringVar(&scopePath, "scope-path", "", "Restrict commits to this package root (set by workspace --parallel)")
+	cmd.Flags().StringArrayVar(&scopeShared, "scope-shared", nil, "Shared path glob (set by workspace --parallel)")
+	cmd.Flags().BoolVar(&scopeIncludeShared, "scope-include-shared", false, "Count shared paths for this package (set by workspace --parallel)")
+	cmd.Flags().StringArrayVar(&scopeIgnore, "scope-ignore", nil, "Ignored path glob, relative to the package (set by workspace --parallel)")
+	for _, name := range []string{"scope-path", "scope-shared", "scope-include-shared", "scope-ignore"} {
+		_ = cmd.Flags().MarkHidden(name)
+	}
 	return cmd
 }
 
@@ -439,7 +457,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("getting last tag: %w", err)
 	}
 
-	releaseCommits, err := repo.CommitsDetailedSince(ctx, lastTag, commitPathsFrom(ctx)...)
+	releaseCommits, err := commitsForRelease(ctx, repo, lastTag)
 	if err != nil {
 		return fmt.Errorf("getting commits: %w", err)
 	}

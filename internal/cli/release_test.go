@@ -672,3 +672,63 @@ func TestReleaseContextEnvIncludesPackage(t *testing.T) {
 		t.Fatal("package vars must not be set outside workspace mode")
 	}
 }
+
+func TestWorkspaceSharedAndIgnorePathsScopeRelease(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runReleaseGit(t, repoDir, "tag", "-a", "pkg-a-v1.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "pkg-a/README.md", "doc\n", "feat(a): docs only")
+	commitReleaseFile(t, repoDir, "yarn.lock", "lock\n", "fix: bump lock")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  sharedPaths: ["yarn.lock"]
+  packages:
+    - path: pkg-a
+      tagPrefix: "pkg-a-v"
+      ignorePaths: ["**/*.md"]
+`)
+
+	withWorkingDir(t, repoDir)
+	_, pkgs, err := resolveWorkspacePackages(context.Background(), ".semrel.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := pkgs[0]
+	if pkg.IncludeShared || len(pkg.IgnorePaths) != 1 || len(pkg.SharedPaths) != 1 {
+		t.Fatalf("workspace settings not applied: %+v", pkg)
+	}
+	pkgCfgDir := filepath.Join(repoDir, "pkg-a")
+	if err := os.WriteFile(filepath.Join(pkgCfgDir, ".semrel.yaml"),
+		[]byte("schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"pkg-a-v\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dry := func(p workspacePkg) ReleaseSummary {
+		t.Helper()
+		ctx := withCommitScope(context.Background(), p.scope())
+		stdout, _, err := captureReleaseOutput(func() error {
+			err := runRelease(ctx, true, filepath.Join(pkgCfgDir, ".semrel.yaml"), false, false, false, "json", false, "", "", "")
+			if errors.Is(err, ErrNothingToRelease) {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatalf("runRelease() error = %v", err)
+		}
+		return decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	}
+
+	// Docs-only change is ignored and the shared lockfile does not count: nothing to release.
+	if s := dry(pkg); s.Released || s.Commits != 0 {
+		t.Fatalf("expected no release, got %+v", s)
+	}
+	// Opting in to shared paths picks up the lockfile fix (patch) but still not the ignored docs.
+	pkg.IncludeShared = true
+	if s := dry(pkg); s.Commits != 1 || s.Bump != "patch" {
+		t.Fatalf("includeShared: commits=%d bump=%q (%v), want 1/patch", s.Commits, s.Bump, s.CommitMessages)
+	}
+}
