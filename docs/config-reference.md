@@ -424,8 +424,16 @@ workspace:
 | `pattern` | string | — | Glob pattern for auto-discovery (e.g. `packages/*`). Mutually exclusive with `packages`. |
 | `fail_fast` | bool | `false` | Stop the workspace release on the first package failure. |
 
-Each package directory can have its own `.semrel.yaml` that overrides the root
-configuration for that package (branches, rules, plugins, tagPrefix).
+Each package's effective configuration is built from the root config:
+
+- A package **without** its own `.semrel.yaml` uses the root config (minus the
+  `workspace` section).
+- A package **with** a `.semrel.yaml` has it merged over the root config. Every
+  field it sets replaces the root value; lists (`branches`, `rules`, `plugins`)
+  are replaced as a whole, not concatenated.
+- The tag prefix is taken from, in order: `tagPrefix` in the package's own
+  `.semrel.yaml`, `workspace.packages[].tagPrefix`, then `<path>@v`. The root
+  `tagPrefix` is not inherited, so packages never share a tag namespace.
 
 See the [Monorepo guide](https://semrel.io/guide/monorepo/) for full details and CI examples.
 

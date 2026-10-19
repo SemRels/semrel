@@ -120,7 +120,20 @@ a package only starts when all its dependencies have succeeded.`,
 type workspacePkg struct {
 	monorepo.Package
 	DependsOn  []string
-	ConfigFile string // resolved .semrel.yaml path for this package
+	ConfigFile string // absolute path of the package's own config; "" when it has none
+	RootConfig string // absolute path of the root config the package inherits from
+}
+
+// context returns ctx extended so that runRelease builds this package's
+// effective config: root config, merged with the package config, with the
+// workspace tag prefix applied.
+func (p workspacePkg) context(ctx context.Context) context.Context {
+	ic := inheritedConfig{BaseConfig: p.RootConfig}
+	if p.TagPrefix != "" {
+		prefix := p.TagPrefix
+		ic.TagPrefix = &prefix
+	}
+	return withInheritedConfig(ctx, ic)
 }
 
 func runWorkspaceRelease(ctx context.Context, rootConfigFile, outputFormat string, dryRun, parallel, failFast bool) error {
@@ -174,23 +187,12 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 	currentTagPrefix := ""
 
 	for _, pkg := range pkgs {
-		pkgCtx := withCommitPaths(ctx, pkg.Path)
+		pkgCtx := withCommitPaths(pkg.context(ctx), pkg.Path)
 		if err := os.Chdir(pkg.Path); err != nil {
 			continue
 		}
-		cfgFile := pkg.ConfigFile
-		if cfgFile == "" {
-			if f, ferr := config.FindConfigFile("."); ferr == nil {
-				cfgFile = f
-			}
-		}
-		if cfgFile != "" {
-			if cfg, cerr := config.LoadConfig(cfgFile); cerr == nil {
-				if currentVersionStr == "" {
-					currentTagPrefix = cfg.TagPrefixValue()
-				}
-				_ = cfg
-			}
+		if currentVersionStr == "" {
+			currentTagPrefix = pkg.TagPrefix
 		}
 
 		// Capture --output json dry-run to get bump
@@ -279,7 +281,7 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 	var errs []string
 	for _, pkg := range ordered {
 		label := fmt.Sprintf("[%s]", pkg.Path)
-		pkgCtx := withCommitPaths(ctx, pkg.Path)
+		pkgCtx := withCommitPaths(pkg.context(ctx), pkg.Path)
 
 		if err := os.Chdir(pkg.Path); err != nil {
 			msg := fmt.Sprintf("%s  error: cannot change to package directory: %v", label, err)
@@ -420,6 +422,12 @@ func runWorkspacePackageInSubprocess(ctx context.Context, pkg workspacePkg, outp
 	if absPath, aerr := filepath.Abs(pkg.Path); aerr == nil {
 		args = append(args, "--path", absPath)
 	}
+	if pkg.RootConfig != "" {
+		args = append(args, "--inherit-config", pkg.RootConfig)
+		if pkg.TagPrefix != "" {
+			args = append(args, "--inherit-tag-prefix", pkg.TagPrefix)
+		}
+	}
 
 	cmd := exec.CommandContext(ctx, self, args...)
 	cmd.Dir = pkg.Path
@@ -441,6 +449,14 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 		}
 		cfgFile = found
 	}
+
+	// Packages are released from inside their own directory, so every path
+	// derived from the root config must be absolute.
+	absCfg, err := filepath.Abs(cfgFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolving config path: %w", err)
+	}
+	cfgFile = absCfg
 
 	rootCfg, err := config.LoadConfig(cfgFile)
 	if err != nil {
@@ -473,6 +489,7 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 				},
 				DependsOn:  resolveDepPaths(ref.DependsOn, rootDir),
 				ConfigFile: resolvePackageConfig(pkgPath, rootCfg),
+				RootConfig: cfgFile,
 			})
 		}
 
@@ -487,6 +504,7 @@ func resolveWorkspacePackages(_ context.Context, rootConfigFile string) (*config
 			pkgs = append(pkgs, workspacePkg{
 				Package:    mp,
 				ConfigFile: resolvePackageConfig(mp.Path, rootCfg),
+				RootConfig: cfgFile,
 			})
 		}
 
@@ -506,18 +524,16 @@ func resolveDepPaths(deps []string, rootDir string) []string {
 	return abs
 }
 
-// resolvePackageConfig returns the config file for a package directory.
-// If the package has its own .semrel.yaml, that is used (it inherits from root
-// via the package's own LoadConfig). Otherwise the root config path is returned.
-func resolvePackageConfig(pkgPath string, rootCfg *config.Config) string {
+// resolvePackageConfig returns the package's own config file, or "" when the
+// package has none. Packages without one inherit the root config; packages with
+// one have it merged over the root config (see config.LoadInherited).
+func resolvePackageConfig(pkgPath string, _ *config.Config) string {
 	for _, name := range []string{".semrel.yaml", ".semrel.yml", ".semrel.toml", ".semrel.json"} {
 		candidate := filepath.Join(pkgPath, name)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 	}
-	// No package-specific config — return empty string so runRelease auto-detects.
-	// The release will look for the config starting from pkgPath (after Chdir).
 	return ""
 }
 

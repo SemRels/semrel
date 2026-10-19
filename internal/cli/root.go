@@ -239,6 +239,8 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var outputFile string
 	var nextVersionOverride string
 	var commitPaths []string
+	var inheritConfig string
+	var inheritTagPrefix string
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -282,7 +284,15 @@ Exit codes:
   0 — release created, or nothing to release on a non-release branch
   1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := runRelease(withCommitPaths(cmd.Context(), commitPaths...), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
+			ctx := withCommitPaths(cmd.Context(), commitPaths...)
+			if inheritConfig != "" {
+				ic := inheritedConfig{BaseConfig: inheritConfig}
+				if cmd.Flags().Changed("inherit-tag-prefix") {
+					ic.TagPrefix = &inheritTagPrefix
+				}
+				ctx = withInheritedConfig(ctx, ic)
+			}
+			err := runRelease(ctx, *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
 			}
@@ -301,6 +311,12 @@ Exit codes:
 	cmd.Flags().StringVar(&nextVersionOverride, "next-version", "", "Override the calculated next version (e.g. '2.0.0' or '1.3.0-beta.1'); used by workspace lockstep")
 	cmd.Flags().StringArrayVar(&commitPaths, "path", nil,
 		"Only consider commits touching this path (repeatable); use for monorepo packages, e.g. --path plugins/foo")
+	cmd.Flags().StringVar(&inheritConfig, "inherit-config", "",
+		"Root config to inherit from; --config (optional) is merged over it. Used by workspace --parallel")
+	cmd.Flags().StringVar(&inheritTagPrefix, "inherit-tag-prefix", "",
+		"Tag prefix assigned by the workspace entry (with --inherit-config)")
+	_ = cmd.Flags().MarkHidden("inherit-config")
+	_ = cmd.Flags().MarkHidden("inherit-tag-prefix")
 	return cmd
 }
 
@@ -327,13 +343,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		_, _ = fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
 	}
 
-	configFile, err := resolveConfigFile(configFile)
-	if err != nil {
-		return err
-	}
-
 	// 1. Load config
-	cfg, err := config.LoadConfig(configFile)
+	cfg, err := loadReleaseConfig(ctx, configFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
