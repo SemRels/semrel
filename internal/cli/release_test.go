@@ -599,3 +599,76 @@ workspace:
 		t.Fatalf("aws-b summary = %+v, want skipped with prefix aws-b-v", b)
 	}
 }
+
+func TestRunReleaseInWorkspacePackageCommitsPackageChangelog(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "root.txt", "r\n", "chore: init")
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: a")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: b")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"pkg-a@v\"\n")
+	rootCfg := filepath.Join(repoDir, ".semrel.yaml")
+	runReleaseGit(t, repoDir, "add", ".semrel.yaml")
+	runReleaseGit(t, repoDir, "commit", "-m", "chore: config")
+	// An unrelated tracked file modified in another package must not leak into
+	// the release commit of pkg-a.
+	if err := os.WriteFile(filepath.Join(repoDir, "pkg-b", "b.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(repoDir, "pkg-a")
+	withWorkingDir(t, pkgDir)
+	ctx := withPackage(context.Background(), "pkg-a", pkgDir)
+	_, _, err := captureReleaseOutput(func() error {
+		return runRelease(ctx, false, rootCfg, false, false, false, "text", false, "", "", "")
+	})
+	if err != nil && !errors.Is(err, ErrNothingToRelease) {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+
+	// The changelog is written to and committed from the package directory.
+	if _, err := os.Stat(filepath.Join(pkgDir, "CHANGELOG.md")); err != nil {
+		t.Fatalf("pkg-a/CHANGELOG.md missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "CHANGELOG.md")); !os.IsNotExist(err) {
+		t.Fatalf("root CHANGELOG.md must not exist, err=%v", err)
+	}
+	subject := runReleaseGit(t, repoDir, "log", "-1", "--format=%s", "--", "pkg-a/CHANGELOG.md")
+	if !strings.Contains(subject, "chore(changelog): update pkg-a for pkg-a@v") && !strings.Contains(subject, "chore(changelog): update") {
+		t.Fatalf("changelog commit subject = %q", subject)
+	}
+	if !strings.Contains(subject, "pkg-a") {
+		t.Fatalf("changelog commit subject %q does not name the package", subject)
+	}
+	files := runReleaseGit(t, repoDir, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != "pkg-a/CHANGELOG.md" {
+		t.Fatalf("release commit touches %q, want only pkg-a/CHANGELOG.md", files)
+	}
+	if status := runReleaseGit(t, repoDir, "status", "--porcelain"); !strings.Contains(status, "pkg-b/b.txt") {
+		t.Fatalf("pkg-b change should still be uncommitted, status = %q", status)
+	}
+}
+
+func TestChangelogCommitMessageNamesPackageOnlyWhenTagDoesNot(t *testing.T) {
+	ctx := withPackage(context.Background(), "plugins/foo", "/repo/plugins/foo")
+	if got := changelogCommitMessage(ctx, "plugins/foo@v1.0.0"); got != "chore(changelog): update for plugins/foo@v1.0.0 [skip ci]" {
+		t.Errorf("tag already names the package: %q", got)
+	}
+	if got := changelogCommitMessage(ctx, "v1.0.0"); got != "chore(changelog): update plugins/foo for v1.0.0 [skip ci]" {
+		t.Errorf("tag without package name: %q", got)
+	}
+	if got := changelogCommitMessage(context.Background(), "v1.0.0"); got != "chore(changelog): update for v1.0.0 [skip ci]" {
+		t.Errorf("no package: %q", got)
+	}
+}
+
+func TestReleaseContextEnvIncludesPackage(t *testing.T) {
+	env := releaseContextEnv(ReleaseSummary{packageName: "plugins/foo", packagePath: "/repo/plugins/foo"}, false)
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "SEMREL_PACKAGE_NAME=plugins/foo") || !strings.Contains(joined, "SEMREL_PACKAGE_PATH=/repo/plugins/foo") {
+		t.Fatalf("env missing package vars: %v", env)
+	}
+	if strings.Contains(strings.Join(releaseContextEnv(ReleaseSummary{}, false), "\n"), "SEMREL_PACKAGE_") {
+		t.Fatal("package vars must not be set outside workspace mode")
+	}
+}

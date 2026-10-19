@@ -58,6 +58,8 @@ type ReleaseSummary struct {
 	Changelog      string   `json:"changelog,omitempty"`
 	CommitMessages []string `json:"commit_messages,omitempty"`
 	commitHashes   []string
+	packageName    string
+	packagePath    string
 	Branch         string `json:"branch"`
 	TagPrefix      string `json:"tag_prefix"`
 	CeilingApplied bool   `json:"ceiling_applied,omitempty"`
@@ -241,6 +243,7 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var commitPaths []string
 	var inheritConfig string
 	var inheritTagPrefix string
+	var packageName, packagePath string
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -292,6 +295,9 @@ Exit codes:
 				}
 				ctx = withInheritedConfig(ctx, ic)
 			}
+			if packagePath != "" {
+				ctx = withPackage(ctx, packageName, packagePath)
+			}
 			err := runRelease(ctx, *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
@@ -317,6 +323,10 @@ Exit codes:
 		"Tag prefix assigned by the workspace entry (with --inherit-config)")
 	_ = cmd.Flags().MarkHidden("inherit-config")
 	_ = cmd.Flags().MarkHidden("inherit-tag-prefix")
+	cmd.Flags().StringVar(&packageName, "package-name", "", "Workspace package name (set by workspace --parallel)")
+	cmd.Flags().StringVar(&packagePath, "package-path", "", "Workspace package root (set by workspace --parallel)")
+	_ = cmd.Flags().MarkHidden("package-name")
+	_ = cmd.Flags().MarkHidden("package-path")
 	return cmd
 }
 
@@ -666,6 +676,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				CommitMessages: rawMessages,
 				commitHashes:   commitHashes,
 				contributors:   contributors,
+				packageName:    packageNameFrom(ctx),
+				packagePath:    packagePathFrom(ctx),
 			})
 			if genErr != nil {
 				return fmt.Errorf("generator plugin %q: %w", label, genErr)
@@ -725,8 +737,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		CeilingApplied: ceilingApplied,
 		VersionCeiling: cfg.VersionCeiling,
 		contributors:   contributors,
+		packageName:    packageNameFrom(ctx),
+		packagePath:    packagePathFrom(ctx),
 	}
 	recordReleaseAnalytics(summary)
+
+	changelogFile := changelogPath(ctx)
 
 	// 9. Output results
 	if outputFormat != "json" {
@@ -806,11 +822,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				fmt.Printf("Tag %s already exists — updating CHANGELOG.md only (tag_exists_strategy=update-changelog).\n", nextTag)
 			}
 			if cfg.ShouldCommitChangelog() {
-				if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+				if err := prependChangelog(changelogFile, changelogEntry); err != nil {
 					_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 				} else {
-					msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
-					if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+					msg := changelogCommitMessage(ctx, nextTag)
+					if err := repo.CommitFiles(ctx, []string{changelogFile}, msg); err != nil {
 						_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 					} else if outputFormat != "json" {
 						fmt.Println(colors.Success("Committed CHANGELOG.md (tag already existed)"))
@@ -831,11 +847,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// (e.g. @semrel/generator-changelog-md with phase: pre-tag).
 	// The plugin's CHANGELOG.md write is then picked up by the auto-commit in step 11a.
 	if cfg.ShouldCommitChangelog() {
-		if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+		if err := prependChangelog(changelogFile, changelogEntry); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 		} else {
-			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
-			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+			msg := changelogCommitMessage(ctx, nextTag)
+			if err := repo.CommitFiles(ctx, []string{changelogFile}, msg); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 			} else if outputFormat != "json" {
 				fmt.Println(colors.Success("Committed CHANGELOG.md"))
@@ -860,7 +876,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			// The tag will then point to this commit so `go install @vX.Y.Z` embeds
 			// the correct version and the changelog is part of the tagged commit.
 			msg := fmt.Sprintf("chore(release): set version to %s [skip ci]", summary.NextVersion)
-			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
+			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg, preTagCommitPaths(ctx)...); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit pre-tag changes: %v", err)))
 			} else if committed && outputFormat != "json" {
 				fmt.Println(colors.Success(fmt.Sprintf("Committed pre-tag version files (%s)", summary.NextVersion)))
@@ -1019,6 +1035,9 @@ func releaseContextEnv(rel ReleaseSummary, dryRun bool) []string {
 		"SEMREL_CHANGELOG=" + rel.Changelog,
 		"SEMREL_BRANCH=" + rel.Branch,
 		"SEMREL_DRY_RUN=" + dryRunStr,
+	}
+	if rel.packageName != "" {
+		env = append(env, "SEMREL_PACKAGE_NAME="+rel.packageName, "SEMREL_PACKAGE_PATH="+rel.packagePath)
 	}
 	if len(rel.CommitMessages) > 0 {
 		if commitsJSON, err := json.Marshal(rel.CommitMessages); err == nil {

@@ -449,3 +449,30 @@ func runGitEnv(t *testing.T, dir string, env map[string]string, args ...string) 
 	}
 	return strings.TrimSpace(string(out))
 }
+
+func TestCommitModifiedTrackedFilesHonorsPaths(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: a")
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: b")
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("changed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	committed, err := repo.CommitModifiedTrackedFiles(ctx, "chore: scoped", filepath.Join(repoDir, "pkg-a"))
+	if err != nil || !committed {
+		t.Fatalf("CommitModifiedTrackedFiles() = %v, %v", committed, err)
+	}
+	if files := runGit(t, repoDir, "show", "--name-only", "--format=", "HEAD"); files != "pkg-a/a.txt" {
+		t.Errorf("scoped commit touched %q, want only pkg-a/a.txt", files)
+	}
+	if status := runGit(t, repoDir, "status", "--porcelain"); !strings.Contains(status, "pkg-b/b.txt") {
+		t.Errorf("pkg-b change should stay uncommitted, status = %q", status)
+	}
+}

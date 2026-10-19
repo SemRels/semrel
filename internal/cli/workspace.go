@@ -133,7 +133,7 @@ func (p workspacePkg) context(ctx context.Context) context.Context {
 		prefix := p.TagPrefix
 		ic.TagPrefix = &prefix
 	}
-	return withInheritedConfig(ctx, ic)
+	return withPackage(withInheritedConfig(ctx, ic), p.Name, p.Path)
 }
 
 func runWorkspaceRelease(ctx context.Context, rootConfigFile, outputFormat string, dryRun, parallel, failFast bool) error {
@@ -428,6 +428,8 @@ func runWorkspacePackageInSubprocess(ctx context.Context, pkg workspacePkg, outp
 			args = append(args, "--inherit-tag-prefix", pkg.TagPrefix)
 		}
 	}
+
+	args = append(args, "--package-name", pkg.Name, "--package-path", pkg.Path)
 
 	cmd := exec.CommandContext(ctx, self, args...)
 	cmd.Dir = pkg.Path
