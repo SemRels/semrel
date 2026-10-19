@@ -95,6 +95,7 @@ jobs:
           TAG: ${{ steps.semrel.outputs.tag }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
+          CHANGELOG_ENTRY: ${{ steps.semrel.outputs.changelog }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -121,9 +122,23 @@ jobs:
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
           branch="automation/release-${TAG}"
-          # CHANGELOG.md is part of the release commit. Protected main cannot
-          # accept that commit directly, so publish it on a PR branch first.
+          # Keep the tag on the main commit so future releases can discover it.
+          # Commit the generated changelog separately on the release PR branch.
           git switch -c "${branch}"
+          changelog_file="$(mktemp)"
+          trap 'rm -f "${changelog_file}"' EXIT
+          printf '%s\n\n' "${CHANGELOG_ENTRY%$'\n'}" > "${changelog_file}"
+          cat CHANGELOG.md >> "${changelog_file}"
+          mv "${changelog_file}" CHANGELOG.md
+          git add CHANGELOG.md
+          copilot_author="GitHub Copilot"
+          copilot_author+=" <copilot@github.com>"
+          copilot_bot="Copilot"
+          copilot_bot+=" <223556219+Copilot@users.noreply.github.com>"
+          git commit \
+            -m "chore(changelog): update for ${TAG} [skip ci]" \
+            -m "Co-authored-by: ${copilot_author}" \
+            -m "Co-authored-by: ${copilot_bot}"
           git push --force origin "HEAD:refs/heads/${branch}"
           existing_pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')"
           if [[ -z "${existing_pr}" ]]; then
