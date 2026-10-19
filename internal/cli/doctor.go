@@ -86,7 +86,7 @@ func runDoctor(ctx context.Context, configFile string, outputFormat string, onli
 	}
 
 	// 4. Check git repository.
-	checks = append(checks, checkGit(ctx, cfgPath)...)
+	checks = append(checks, checkGit(ctx, cfgPath, cfg)...)
 
 	// 5. Check common env vars.
 	checks = append(checks, checkEnvVars(cfg)...)
@@ -251,7 +251,7 @@ func checkBranch(ctx context.Context, cfg *config.Config) []DoctorCheck {
 }
 
 // checkGit verifies the git repository is reachable and has at least one tag.
-func checkGit(ctx context.Context, configFile string) []DoctorCheck {
+func checkGit(ctx context.Context, configFile string, cfg *config.Config) []DoctorCheck {
 	var checks []DoctorCheck
 
 	// Check git is on PATH.
@@ -292,8 +292,12 @@ func checkGit(ctx context.Context, configFile string) []DoctorCheck {
 		Message: fmt.Sprintf("git repository detected (path: %s)", repo.Path),
 	})
 
+	tagPrefix := (&config.Config{}).TagPrefixValue()
+	if cfg != nil {
+		tagPrefix = cfg.TagPrefixValue()
+	}
 	// Check at least one tag exists (semrel needs a baseline version).
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, tagPrefix)
 	if err != nil {
 		checks = append(checks, DoctorCheck{
 			Name:    "git-tags",

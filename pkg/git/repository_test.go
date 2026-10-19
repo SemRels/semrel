@@ -63,7 +63,7 @@ func TestRepositoryOperations(t *testing.T) {
 		t.Fatalf("CurrentBranch() = %q, want main", branch)
 	}
 
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, "v")
 	if err != nil {
 		t.Fatalf("LastTag() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestRepositoryOperations(t *testing.T) {
 		t.Fatalf("CreateTag() error = %v", err)
 	}
 
-	headTag, err := repo.LastTag(ctx)
+	headTag, err := repo.LastTag(ctx, "v")
 	if err != nil {
 		t.Fatalf("LastTag() after CreateTag error = %v", err)
 	}
@@ -202,6 +202,78 @@ func TestCommitsDetailedSinceFiltersByPath(t *testing.T) {
 	}
 }
 
+func TestLastTagHonorsTagPrefix(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runGit(t, repoDir, "tag", "-a", "aws-a-v1.0.0", "-m", "x")
+	runGit(t, repoDir, "tag", "-a", "aws-b-v1.0.0", "-m", "x")
+	commitFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: a")
+	runGit(t, repoDir, "tag", "-a", "aws-a-v1.1.0", "-m", "x")
+	commitFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: b")
+	runGit(t, repoDir, "tag", "-a", "aws-b-v1.0.1", "-m", "x")
+	// Unrelated marker tags must never be picked up.
+	runGit(t, repoDir, "tag", "deploy-prod")
+	runGit(t, repoDir, "tag", "aws-a-vnext")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	cases := []struct{ prefix, want string }{
+		{"aws-a-v", "aws-a-v1.1.0"},
+		{"aws-b-v", "aws-b-v1.0.1"},
+		{"v", ""},
+		{"aws-c-v", ""},
+		{"aws-", ""}, // remainder "a-v1.1.0" does not start with a version
+	}
+	for _, tc := range cases {
+		got, err := repo.LastTag(ctx, tc.prefix)
+		if err != nil {
+			t.Fatalf("LastTag(%q) error = %v", tc.prefix, err)
+		}
+		if got != tc.want {
+			t.Errorf("LastTag(%q) = %q, want %q", tc.prefix, got, tc.want)
+		}
+	}
+}
+
+func TestLastTagPicksHighestVersionAndHandlesPrereleases(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "a.txt", "1\n", "feat: one")
+	runGit(t, repoDir, "tag", "v1.9.0")
+	commitFile(t, repoDir, "a.txt", "2\n", "feat: two")
+	runGit(t, repoDir, "tag", "v1.10.0")
+	commitFile(t, repoDir, "a.txt", "3\n", "feat: three")
+	runGit(t, repoDir, "tag", "v2.0.0-beta.1")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+	got, err := repo.LastTag(ctx, "v")
+	if err != nil {
+		t.Fatalf("LastTag() error = %v", err)
+	}
+	if got != "v2.0.0-beta.1" {
+		t.Errorf("LastTag() = %q, want v2.0.0-beta.1", got)
+	}
+
+	// Only tags reachable from HEAD count: v2.0.0-beta.1 is not on this branch.
+	runGit(t, repoDir, "checkout", "-q", "v1.10.0")
+	got, err = repo.LastTag(ctx, "v")
+	if err != nil {
+		t.Fatalf("LastTag() error = %v", err)
+	}
+	if got != "v1.10.0" {
+		t.Errorf("LastTag() on older commit = %q, want v1.10.0", got)
+	}
+}
+
 func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 	repoDir := initGitRepository(t)
 	commitFile(t, repoDir, "README.md", "hello\n", "docs: first commit")
@@ -211,7 +283,7 @@ func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 		t.Fatalf("OpenRepository() error = %v", err)
 	}
 
-	lastTag, err := repo.LastTag(context.Background())
+	lastTag, err := repo.LastTag(context.Background(), "v")
 	if err != nil {
 		t.Fatalf("LastTag() error = %v", err)
 	}

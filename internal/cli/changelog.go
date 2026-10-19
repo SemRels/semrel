@@ -92,7 +92,7 @@ func runChangelog(ctx context.Context, configFile string, outputFormat string, w
 	if since != "" {
 		lastTag = since
 	} else {
-		lt, err := repo.LastTag(ctx)
+		lt, err := repo.LastTag(ctx, cfg.TagPrefixValue())
 		if err != nil {
 			return fmt.Errorf("getting last tag: %w", err)
 		}

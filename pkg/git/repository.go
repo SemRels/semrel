@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // Repository represents a Git repository.
@@ -40,34 +42,48 @@ func OpenRepository(path string) (*Repository, error) {
 	return &Repository{Path: root}, nil
 }
 
-// LastTag returns the most recent annotated or lightweight tag reachable from HEAD.
-// Returns an empty string if no tags exist yet (first release).
-func (r *Repository) LastTag(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "describe", "--tags", "--abbrev=0")
+// LastTag returns the highest version tag reachable from HEAD whose name is
+// tagPrefix followed by a semantic version (e.g. "v1.2.3" or "aws-a-v1.2.3").
+// Tags with a different prefix, or that do not parse as semver after the
+// prefix, are ignored, so packages in a monorepo never see each other's tags.
+// Returns an empty string if no matching tag exists yet (first release).
+func (r *Repository) LastTag(ctx context.Context, tagPrefix string) (string, error) {
+	// An empty repository has no HEAD and therefore no tags to consider.
+	if err := exec.CommandContext(ctx, "git", "-C", r.Path, "rev-parse", "--verify", "--quiet", "HEAD").Run(); err != nil {
+		return "", nil
+	}
+
 	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "tag", "--merged", "HEAD")
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		// No tags found — this is a first release scenario
-		if strings.Contains(stderr.String(), "No names found") ||
-			strings.Contains(stderr.String(), "No tags can describe") ||
-			strings.Contains(stderr.String(), "No annotated tags") {
-			return "", nil
-		}
-		// Try lightweight tags too
-		cmd2 := exec.CommandContext(ctx, "git", "-C", r.Path, "describe", "--tags", "--abbrev=0", "--always")
-		out2, err2 := cmd2.Output()
-		if err2 != nil {
-			return "", nil // no tags at all
-		}
-		tag := strings.TrimSpace(string(out2))
-		// If it looks like a SHA (no dots, no v prefix), there are no version tags
-		if !strings.Contains(tag, ".") && !strings.HasPrefix(tag, "v") {
-			return "", nil
-		}
-		return tag, nil
+		return "", fmt.Errorf("git tag --merged HEAD: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	var (
+		bestTag string
+		best    *semver.Version
+	)
+	for _, tag := range strings.Split(string(out), "\n") {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || !strings.HasPrefix(tag, tagPrefix) {
+			continue
+		}
+		rest := tag[len(tagPrefix):]
+		// The version must start right after the prefix.
+		if rest == "" || rest[0] < '0' || rest[0] > '9' {
+			continue
+		}
+		v, perr := semver.ParseVersion(rest)
+		if perr != nil {
+			continue
+		}
+		if best == nil || v.Compare(best) > 0 {
+			best, bestTag = v, tag
+		}
+	}
+	return bestTag, nil
 }
 
 // CommitsSince returns raw commit messages since the given ref (exclusive).
