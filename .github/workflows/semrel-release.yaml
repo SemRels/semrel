@@ -139,7 +139,9 @@ jobs:
             -m "chore(changelog): update for ${TAG} [skip ci]" \
             -m "Co-authored-by: ${copilot_author}" \
             -m "Co-authored-by: ${copilot_bot}"
-          git push --force origin "HEAD:refs/heads/${branch}"
+          # Release retries can leave this generated branch based on an older
+          # main commit. Replace it only if it has not changed since checkout.
+          git push --force-with-lease origin "HEAD:refs/heads/${branch}"
           existing_pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')"
           if [[ -z "${existing_pr}" ]]; then
             if ! gh pr create --base main --head "${branch}" \
