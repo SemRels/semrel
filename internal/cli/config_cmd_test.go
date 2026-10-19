@@ -227,7 +227,7 @@ func TestRunConfigInit_AlreadyExists(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 	_ = os.WriteFile(cfgPath, []byte("branches:\n  - name: main\n"), 0o644)
 
-	err := runConfigInit(cfgPath, true, false)
+	err := runConfigInit(cfgPath, true, false, false)
 	if err == nil {
 		t.Error("expected error when config already exists without --force")
 	}
@@ -238,7 +238,7 @@ func TestRunConfigInit_Force(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 	_ = os.WriteFile(cfgPath, []byte("branches:\n  - name: main\n"), 0o644)
 
-	if err := runConfigInit(cfgPath, true, true); err != nil {
+	if err := runConfigInit(cfgPath, true, true, false); err != nil {
 		t.Errorf("unexpected error with --force: %v", err)
 	}
 }
@@ -247,7 +247,7 @@ func TestRunConfigInit_NoInteractive(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 
-	if err := runConfigInit(cfgPath, true, false); err != nil {
+	if err := runConfigInit(cfgPath, true, false, false); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -330,7 +330,7 @@ func TestRunConfigWizard_ReplacesDefaultGitHubPlugins(t *testing.T) {
 func TestRunConfigInit_NoInteractiveKeepsGitHubDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
-	if err := runConfigInit(cfgPath, true, false); err != nil {
+	if err := runConfigInit(cfgPath, true, false, false); err != nil {
 		t.Fatalf("runConfigInit: %v", err)
 	}
 	cfg, err := config.LoadConfig(cfgPath)
@@ -449,7 +449,7 @@ func TestRunConfigInit_AbortDoesNotCreateOrOverwriteFile(t *testing.T) {
 
 		dir := t.TempDir()
 		cfgPath := filepath.Join(dir, ".semrel.yaml")
-		if err := runConfigInit(cfgPath, false, false); err == nil {
+		if err := runConfigInit(cfgPath, false, false, false); err == nil {
 			t.Fatal("expected error on premature EOF")
 		}
 		if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
@@ -463,7 +463,7 @@ func TestRunConfigInit_AbortDoesNotCreateOrOverwriteFile(t *testing.T) {
 
 		dir := t.TempDir()
 		cfgPath := filepath.Join(dir, ".semrel.yaml")
-		if err := runConfigInit(cfgPath, false, false); err == nil {
+		if err := runConfigInit(cfgPath, false, false, false); err == nil {
 			t.Fatal("expected error on premature EOF during plugin prompts")
 		}
 		if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
@@ -482,7 +482,7 @@ func TestRunConfigInit_AbortDoesNotCreateOrOverwriteFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := runConfigInit(cfgPath, false, true); err == nil {
+		if err := runConfigInit(cfgPath, false, true, false); err == nil {
 			t.Fatal("expected error on premature EOF with --force")
 		}
 
@@ -508,7 +508,7 @@ func TestRunConfigInit_AbortDoesNotCreateOrOverwriteFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		err := runConfigInit(cfgPath, false, true)
+		err := runConfigInit(cfgPath, false, true, false)
 		if !errors.Is(err, readErr) {
 			t.Fatalf("expected error wrapping %v, got %v", readErr, err)
 		}
@@ -560,7 +560,7 @@ func TestRunConfigInit_CreatesGitignoreInGitRepo(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := runConfigInit(cfgPath, true, false)
+	err := runConfigInit(cfgPath, true, false, false)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -600,7 +600,7 @@ func TestRunConfigInit_UpdatesExistingGitignoreWithoutDuplicating(t *testing.T) 
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err := runConfigInit(cfgPath, true, false)
+	err := runConfigInit(cfgPath, true, false, false)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -630,7 +630,7 @@ func TestRunConfigInit_GitignoreIdempotent(t *testing.T) {
 	initGitRepo(t, dir)
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 
-	if err := runConfigInit(cfgPath, true, false); err != nil {
+	if err := runConfigInit(cfgPath, true, false, false); err != nil {
 		t.Fatalf("first runConfigInit: %v", err)
 	}
 
@@ -644,7 +644,7 @@ func TestRunConfigInit_GitignoreIdempotent(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	err = runConfigInit(cfgPath, true, true)
+	err = runConfigInit(cfgPath, true, true, false)
 
 	w.Close()
 	os.Stdout = oldStdout
@@ -678,7 +678,7 @@ func TestRunConfigInit_GitignoreRecognizesEquivalentPatterns(t *testing.T) {
 	}
 
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
-	if err := runConfigInit(cfgPath, true, false); err != nil {
+	if err := runConfigInit(cfgPath, true, false, false); err != nil {
 		t.Fatalf("runConfigInit: %v", err)
 	}
 
@@ -695,7 +695,7 @@ func TestRunConfigInit_SkipsGitignoreOutsideGitRepo(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 
-	if err := runConfigInit(cfgPath, true, false); err != nil {
+	if err := runConfigInit(cfgPath, true, false, false); err != nil {
 		t.Fatalf("runConfigInit: %v", err)
 	}
 
@@ -731,7 +731,7 @@ func TestRunConfigInit_NonTTYUpdatesGitignore(t *testing.T) {
 	initGitRepo(t, dir)
 	cfgPath := filepath.Join(dir, ".semrel.yaml")
 
-	if err := runConfigInit(cfgPath, false, false); err != nil {
+	if err := runConfigInit(cfgPath, false, false, false); err != nil {
 		t.Fatalf("runConfigInit: %v", err)
 	}
 
