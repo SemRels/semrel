@@ -24,13 +24,14 @@
     },
     "tagPrefix": {
       "type": "string",
-      "description": "Prefix prepended to the version number when creating git tags. Default: \"v\".",
+      "description": "Prefix prepended to the version number when creating git tags. Default: \"v\". An empty string disables the prefix. Must not contain whitespace.",
       "default": "v",
       "examples": [
         "v",
         "release-",
         ""
-      ]
+      ],
+      "pattern": "^\\S*$"
     },
     "rules": {
       "type": "array",
@@ -77,12 +78,27 @@
             "type": "fix",
             "bump": "patch"
           }
+        ],
+        [
+          {
+            "type": "feat",
+            "bump": "minor"
+          },
+          {
+            "type": "fix",
+            "bump": "patch"
+          },
+          {
+            "type": "deps",
+            "bump": "patch",
+            "hidden": true
+          }
         ]
       ]
     },
     "plugins": {
       "type": "array",
-      "description": "Plugins to run during the release pipeline (providers, hooks, updaters, generators, conditions).",
+      "description": "Plugins to run during the release pipeline (conditions, analyzers, generators, updaters, providers, publishers, packagers, hooks).",
       "items": {
         "$ref": "#/$defs/PluginConfig"
       }
@@ -123,7 +139,7 @@
     },
     "workspace": {
       "type": "object",
-      "description": "Enables multi-package workspace (monorepo) mode. Use 'semrel workspace release' to orchestrate all packages.",
+      "description": "Enables multi-package workspace (monorepo) mode. Use 'semrel workspace release' to orchestrate all packages. 'packages' and 'pattern' are mutually exclusive.",
       "additionalProperties": false,
       "properties": {
         "strategy": {
@@ -152,7 +168,9 @@
                 "examples": [
                   "packages/api",
                   "services/worker"
-                ]
+                ],
+                "minLength": 1,
+                "pattern": "\\S"
               },
               "tagPrefix": {
                 "type": "string",
@@ -173,6 +191,23 @@
                     "packages/api"
                   ]
                 ]
+              },
+              "includeShared": {
+                "type": "boolean",
+                "description": "Overrides workspace.includeShared for this package."
+              },
+              "ignorePaths": {
+                "type": "array",
+                "description": "Globs relative to the package root whose changes alone never release the package. Replaces workspace.ignorePaths.",
+                "items": {
+                  "type": "string"
+                },
+                "examples": [
+                  [
+                    "**/*.md",
+                    "docs/**"
+                  ]
+                ]
               }
             }
           }
@@ -189,7 +224,43 @@
           "type": "boolean",
           "description": "Stop the workspace release on the first package failure. Default: false (collect all errors).",
           "default": false
+        },
+        "sharedPaths": {
+          "type": "array",
+          "description": "Repo-level globs (relative to the repository root) that belong to no package. By default commits touching only these release nothing; packages with includeShared count them as their own changes.",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "yarn.lock",
+              ".github/**"
+            ]
+          ]
+        },
+        "includeShared": {
+          "type": "boolean",
+          "description": "Workspace-wide default: whether commits touching sharedPaths count towards each package.",
+          "default": false
+        },
+        "ignorePaths": {
+          "type": "array",
+          "description": "Globs relative to each package root whose changes alone never release the package. Workspace-wide default; a package's own ignorePaths replace it.",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "**/*.md"
+            ]
+          ]
         }
+      },
+      "not": {
+        "required": [
+          "packages",
+          "pattern"
+        ]
       }
     }
   },
@@ -282,6 +353,11 @@
             "minor",
             "patch"
           ]
+        },
+        "hidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, matching commits still affect the version bump but are omitted from generated changelogs and release notes. Breaking changes are always listed."
         }
       }
     },
@@ -304,40 +380,52 @@
       "properties": {
         "uses": {
           "type": "string",
-          "description": "Official plugin name as published in the semrel registry (e.g. \"provider-github\").",
+          "description": "Plugin reference. The canonical form is \"@semrel/<category>-<name>\" (e.g. \"@semrel/provider-github\"); the typed name without namespace (\"provider-github\") and legacy short aliases (\"github\") are accepted for first-party plugins.",
           "examples": [
-            "provider-github",
-            "provider-gitlab",
-            "provider-gitea",
-            "provider-git",
-            "provider-bitbucket",
-            "analyzer-conventional",
-            "analyzer-default",
-            "generator-changelog-md",
-            "generator-changelog-html",
-            "generator-release-notes",
-            "hook-slack",
-            "hook-teams",
-            "hook-email",
-            "hook-matrix",
-            "hook-jira",
-            "hook-gitplugin",
-            "condition-github-actions",
-            "condition-gitlab-ci",
-            "condition-gitea-actions",
-            "condition-generic",
-            "updater-npm",
-            "updater-go",
-            "updater-cargo",
-            "updater-docker",
-            "updater-gradle",
-            "updater-helm",
-            "updater-homebrew",
-            "updater-maven",
-            "updater-nuget",
-            "updater-python",
-            "updater-terraform"
-          ]
+            "@semrel/analyzer-conventional",
+            "@semrel/analyzer-default",
+            "@semrel/condition-bitbucket-pipelines",
+            "@semrel/condition-circleci",
+            "@semrel/condition-generic",
+            "@semrel/condition-gitea-actions",
+            "@semrel/condition-github-actions",
+            "@semrel/condition-gitlab-ci",
+            "@semrel/generator-changelog-html",
+            "@semrel/generator-changelog-md",
+            "@semrel/generator-release-notes",
+            "@semrel/hook-discord",
+            "@semrel/hook-email",
+            "@semrel/hook-gitplugin",
+            "@semrel/hook-jira",
+            "@semrel/hook-matrix",
+            "@semrel/hook-slack",
+            "@semrel/hook-teams",
+            "@semrel/packager-nfpm",
+            "@semrel/provider-bitbucket",
+            "@semrel/provider-git",
+            "@semrel/provider-gitea",
+            "@semrel/provider-github",
+            "@semrel/provider-gitlab",
+            "@semrel/publisher-crates",
+            "@semrel/publisher-generic-http",
+            "@semrel/publisher-npm",
+            "@semrel/publisher-oci",
+            "@semrel/publisher-pypi",
+            "@semrel/updater-cargo",
+            "@semrel/updater-composer",
+            "@semrel/updater-docker",
+            "@semrel/updater-go",
+            "@semrel/updater-gradle",
+            "@semrel/updater-helm",
+            "@semrel/updater-homebrew",
+            "@semrel/updater-maven",
+            "@semrel/updater-npm",
+            "@semrel/updater-nuget",
+            "@semrel/updater-pubspec",
+            "@semrel/updater-python",
+            "@semrel/updater-terraform"
+          ],
+          "minLength": 1
         },
         "name": {
           "type": "string",
@@ -353,7 +441,8 @@
           "examples": [
             "/usr/local/bin/semrel-plugin-custom",
             "./bin/my-plugin"
-          ]
+          ],
+          "minLength": 1
         },
         "args": {
           "type": "object",
@@ -373,9 +462,10 @@
         },
         "phase": {
           "type": "string",
-          "description": "Pipeline phase in which this plugin runs. Default: \"release\".",
+          "description": "Pipeline phase in which this plugin runs. \"condition\" runs before commits are analyzed (gate check); \"generator\" runs after the changelog is generated and may replace it by printing custom text to stdout; \"pre-tag\" runs before the tag is created and its file changes are auto-committed; \"release\" runs after the tag is created. Default: \"release\".",
           "enum": [
             "condition",
+            "generator",
             "pre-tag",
             "release"
           ],

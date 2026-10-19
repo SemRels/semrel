@@ -11,7 +11,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 // Repository represents a Git repository.
@@ -39,34 +42,48 @@ func OpenRepository(path string) (*Repository, error) {
 	return &Repository{Path: root}, nil
 }
 
-// LastTag returns the most recent annotated or lightweight tag reachable from HEAD.
-// Returns an empty string if no tags exist yet (first release).
-func (r *Repository) LastTag(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "describe", "--tags", "--abbrev=0")
+// LastTag returns the highest version tag reachable from HEAD whose name is
+// tagPrefix followed by a semantic version (e.g. "v1.2.3" or "aws-a-v1.2.3").
+// Tags with a different prefix, or that do not parse as semver after the
+// prefix, are ignored, so packages in a monorepo never see each other's tags.
+// Returns an empty string if no matching tag exists yet (first release).
+func (r *Repository) LastTag(ctx context.Context, tagPrefix string) (string, error) {
+	// An empty repository has no HEAD and therefore no tags to consider.
+	if err := exec.CommandContext(ctx, "git", "-C", r.Path, "rev-parse", "--verify", "--quiet", "HEAD").Run(); err != nil {
+		return "", nil
+	}
+
 	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", "-C", r.Path, "tag", "--merged", "HEAD")
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		// No tags found — this is a first release scenario
-		if strings.Contains(stderr.String(), "No names found") ||
-			strings.Contains(stderr.String(), "No tags can describe") ||
-			strings.Contains(stderr.String(), "No annotated tags") {
-			return "", nil
-		}
-		// Try lightweight tags too
-		cmd2 := exec.CommandContext(ctx, "git", "-C", r.Path, "describe", "--tags", "--abbrev=0", "--always")
-		out2, err2 := cmd2.Output()
-		if err2 != nil {
-			return "", nil // no tags at all
-		}
-		tag := strings.TrimSpace(string(out2))
-		// If it looks like a SHA (no dots, no v prefix), there are no version tags
-		if !strings.Contains(tag, ".") && !strings.HasPrefix(tag, "v") {
-			return "", nil
-		}
-		return tag, nil
+		return "", fmt.Errorf("git tag --merged HEAD: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	var (
+		bestTag string
+		best    *semver.Version
+	)
+	for _, tag := range strings.Split(string(out), "\n") {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || !strings.HasPrefix(tag, tagPrefix) {
+			continue
+		}
+		rest := tag[len(tagPrefix):]
+		// The version must start right after the prefix.
+		if rest == "" || rest[0] < '0' || rest[0] > '9' {
+			continue
+		}
+		v, perr := semver.ParseVersion(rest)
+		if perr != nil {
+			continue
+		}
+		if best == nil || v.Compare(best) > 0 {
+			best, bestTag = v, tag
+		}
+	}
+	return bestTag, nil
 }
 
 // CommitsSince returns raw commit messages since the given ref (exclusive).
@@ -99,12 +116,34 @@ func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, er
 
 // CommitsDetailedSince returns commit metadata since the given ref (exclusive).
 // If ref is empty, returns all commits reachable from HEAD.
-func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string) ([]Commit, error) {
-	var args []string
-	if ref == "" {
-		args = []string{"-C", r.Path, "log", "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
-	} else {
-		args = []string{"-C", r.Path, "log", fmt.Sprintf("%s..HEAD", ref), "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
+//
+// When paths are given, only commits that change at least one file under one of
+// those paths are returned (monorepo packages). Paths may be absolute or
+// relative to the repository root; they must lie inside the repository.
+func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string, paths ...string) ([]Commit, error) {
+	if len(paths) == 0 {
+		return r.CommitsDetailedSincePathspecs(ctx, ref, nil)
+	}
+	specs, err := r.pathspecs(paths)
+	if err != nil {
+		return nil, err
+	}
+	return r.CommitsDetailedSincePathspecs(ctx, ref, specs)
+}
+
+// CommitsDetailedSincePathspecs is like CommitsDetailedSince but only returns
+// commits matching the given git pathspecs (see PackagePathspecs). A commit is
+// returned when it changes at least one file matched by an include pathspec and
+// not removed by an exclude pathspec. Empty pathspecs mean no restriction.
+func (r *Repository) CommitsDetailedSincePathspecs(ctx context.Context, ref string, pathspecs []string) ([]Commit, error) {
+	args := []string{"-C", r.Path, "log"}
+	if ref != "" {
+		args = append(args, fmt.Sprintf("%s..HEAD", ref))
+	}
+	args = append(args, "--format=%H%x00%an%x00%ae%x00%B%x00%x00")
+	if len(pathspecs) > 0 {
+		args = append(args, "--")
+		args = append(args, pathspecs...)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -138,6 +177,83 @@ func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string) ([]Co
 		})
 	}
 	return commits, nil
+}
+
+// pathspecs converts paths into literal, repository-root-relative git pathspecs.
+func (r *Repository) pathspecs(paths []string) ([]string, error) {
+	specs := make([]string, 0, len(paths))
+	for _, p := range paths {
+		rel, err := r.relToRoot(p)
+		if err != nil {
+			return nil, err
+		}
+		// The repository root itself means "everything": no restriction.
+		if rel == "." {
+			return []string{":(top)"}, nil
+		}
+		specs = append(specs, ":(top,literal)"+rel)
+	}
+	return specs, nil
+}
+
+// globEscaper escapes characters that are special in git glob pathspecs.
+var globEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`)
+
+// PackagePathspecs builds the pathspecs that select the commits belonging to a
+// monorepo package:
+//
+//   - pkgPath (absolute or repo-root-relative) is always included;
+//   - sharedGlobs (repo-root-relative globs) are included when includeShared is
+//     true, so repo-level changes count for the package;
+//   - ignoreGlobs (relative to the package root) are excluded, so changes that
+//     only touch ignored files do not select a commit.
+//
+// A commit touching several packages is selected for each of them.
+func (r *Repository) PackagePathspecs(pkgPath string, sharedGlobs []string, includeShared bool, ignoreGlobs []string) ([]string, error) {
+	rel, err := r.relToRoot(pkgPath)
+	if err != nil {
+		return nil, err
+	}
+	var specs []string
+	if rel == "." {
+		specs = append(specs, ":(top)")
+	} else {
+		specs = append(specs, ":(top,literal)"+rel)
+	}
+	if includeShared {
+		for _, g := range sharedGlobs {
+			g = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(g)), "/")
+			specs = append(specs, ":(top,glob)"+g)
+		}
+	}
+	for _, g := range ignoreGlobs {
+		g = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(g)), "/")
+		prefix := ""
+		if rel != "." {
+			prefix = globEscaper.Replace(rel) + "/"
+		}
+		specs = append(specs, ":(top,glob,exclude)"+prefix+g)
+	}
+	return specs, nil
+}
+
+// relToRoot returns p as a slash-separated path relative to the repository root.
+func (r *Repository) relToRoot(p string) (string, error) {
+	root, err := filepath.EvalSymlinks(r.Path)
+	if err != nil {
+		return "", fmt.Errorf("resolving repository root: %w", err)
+	}
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(root, abs)
+	} else if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = resolved
+	}
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q is outside the repository %s", p, r.Path)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // CommitCountsByAuthorEmail returns commit counts across the full repository
@@ -242,10 +358,17 @@ func (r *Repository) CommitFiles(ctx context.Context, files []string, message st
 // CommitModifiedTrackedFiles stages all modified tracked files and commits them.
 // This is used after pre-tag plugins run to capture any version-file changes
 // so the tagged commit already contains the correct version.
+// When paths are given, only changes under those paths are staged (monorepo
+// packages); otherwise the whole repository is considered.
 // Returns (false, nil) if there are no changes to commit.
-func (r *Repository) CommitModifiedTrackedFiles(ctx context.Context, message string) (bool, error) {
+func (r *Repository) CommitModifiedTrackedFiles(ctx context.Context, message string, paths ...string) (bool, error) {
 	// git add -u stages only modified/deleted tracked files (not new untracked files)
-	if out, err := exec.CommandContext(ctx, "git", "-C", r.Path, "add", "-u").CombinedOutput(); err != nil {
+	addArgs := []string{"-C", r.Path, "add", "-u"}
+	if len(paths) > 0 {
+		addArgs = append(addArgs, "--")
+		addArgs = append(addArgs, paths...)
+	}
+	if out, err := exec.CommandContext(ctx, "git", addArgs...).CombinedOutput(); err != nil {
 		return false, fmt.Errorf("git add -u: %w\n%s", err, out)
 	}
 	diffOut, err := exec.CommandContext(ctx, "git", "-C", r.Path, "diff", "--cached", "--name-only").Output()

@@ -63,7 +63,7 @@ func TestRepositoryOperations(t *testing.T) {
 		t.Fatalf("CurrentBranch() = %q, want main", branch)
 	}
 
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, "v")
 	if err != nil {
 		t.Fatalf("LastTag() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestRepositoryOperations(t *testing.T) {
 		t.Fatalf("CreateTag() error = %v", err)
 	}
 
-	headTag, err := repo.LastTag(ctx)
+	headTag, err := repo.LastTag(ctx, "v")
 	if err != nil {
 		t.Fatalf("LastTag() after CreateTag error = %v", err)
 	}
@@ -147,6 +147,133 @@ func TestCommitsDetailedSinceAndCommitCountsByAuthorEmail(t *testing.T) {
 	}
 }
 
+func TestCommitsDetailedSinceFiltersByPath(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "feat: bootstrap")
+	runGit(t, repoDir, "tag", "v1.0.0")
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat(a): a only")
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "fix(b): b only")
+	// A commit touching both packages must be attributed to each of them.
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("both\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, repoDir, "add", "-A")
+	runGit(t, repoDir, "commit", "-m", "chore: touch both")
+	commitFile(t, repoDir, ".github/ci.yml", "ci\n", "ci: repo-level")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	count := func(paths ...string) int {
+		t.Helper()
+		cs, err := repo.CommitsDetailedSince(ctx, "v1.0.0", paths...)
+		if err != nil {
+			t.Fatalf("CommitsDetailedSince(%v) error = %v", paths, err)
+		}
+		return len(cs)
+	}
+
+	if got := count(); got != 4 {
+		t.Errorf("unscoped = %d, want 4", got)
+	}
+	if got := count("pkg-a"); got != 2 {
+		t.Errorf("relative pkg-a = %d, want 2", got)
+	}
+	if got := count(filepath.Join(repoDir, "pkg-b")); got != 2 {
+		t.Errorf("absolute pkg-b = %d, want 2", got)
+	}
+	if got := count("pkg-a", "pkg-b"); got != 3 {
+		t.Errorf("pkg-a+pkg-b = %d, want 3", got)
+	}
+	if got := count("pkg-missing"); got != 0 {
+		t.Errorf("missing path = %d, want 0", got)
+	}
+	if got := count(repoDir); got != 4 {
+		t.Errorf("repo root = %d, want 4", got)
+	}
+	if _, err := repo.CommitsDetailedSince(ctx, "v1.0.0", t.TempDir()); err == nil {
+		t.Error("expected error for a path outside the repository")
+	}
+}
+
+func TestLastTagHonorsTagPrefix(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runGit(t, repoDir, "tag", "-a", "aws-a-v1.0.0", "-m", "x")
+	runGit(t, repoDir, "tag", "-a", "aws-b-v1.0.0", "-m", "x")
+	commitFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: a")
+	runGit(t, repoDir, "tag", "-a", "aws-a-v1.1.0", "-m", "x")
+	commitFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: b")
+	runGit(t, repoDir, "tag", "-a", "aws-b-v1.0.1", "-m", "x")
+	// Unrelated marker tags must never be picked up.
+	runGit(t, repoDir, "tag", "deploy-prod")
+	runGit(t, repoDir, "tag", "aws-a-vnext")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	cases := []struct{ prefix, want string }{
+		{"aws-a-v", "aws-a-v1.1.0"},
+		{"aws-b-v", "aws-b-v1.0.1"},
+		{"v", ""},
+		{"aws-c-v", ""},
+		{"aws-", ""}, // remainder "a-v1.1.0" does not start with a version
+	}
+	for _, tc := range cases {
+		got, err := repo.LastTag(ctx, tc.prefix)
+		if err != nil {
+			t.Fatalf("LastTag(%q) error = %v", tc.prefix, err)
+		}
+		if got != tc.want {
+			t.Errorf("LastTag(%q) = %q, want %q", tc.prefix, got, tc.want)
+		}
+	}
+}
+
+func TestLastTagPicksHighestVersionAndHandlesPrereleases(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "a.txt", "1\n", "feat: one")
+	runGit(t, repoDir, "tag", "v1.9.0")
+	commitFile(t, repoDir, "a.txt", "2\n", "feat: two")
+	runGit(t, repoDir, "tag", "v1.10.0")
+	commitFile(t, repoDir, "a.txt", "3\n", "feat: three")
+	runGit(t, repoDir, "tag", "v2.0.0-beta.1")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+	got, err := repo.LastTag(ctx, "v")
+	if err != nil {
+		t.Fatalf("LastTag() error = %v", err)
+	}
+	if got != "v2.0.0-beta.1" {
+		t.Errorf("LastTag() = %q, want v2.0.0-beta.1", got)
+	}
+
+	// Only tags reachable from HEAD count: v2.0.0-beta.1 is not on this branch.
+	runGit(t, repoDir, "checkout", "-q", "v1.10.0")
+	got, err = repo.LastTag(ctx, "v")
+	if err != nil {
+		t.Fatalf("LastTag() error = %v", err)
+	}
+	if got != "v1.10.0" {
+		t.Errorf("LastTag() on older commit = %q, want v1.10.0", got)
+	}
+}
+
 func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 	repoDir := initGitRepository(t)
 	commitFile(t, repoDir, "README.md", "hello\n", "docs: first commit")
@@ -156,7 +283,7 @@ func TestLastTagReturnsEmptyWhenRepositoryHasNoTags(t *testing.T) {
 		t.Fatalf("OpenRepository() error = %v", err)
 	}
 
-	lastTag, err := repo.LastTag(context.Background())
+	lastTag, err := repo.LastTag(context.Background(), "v")
 	if err != nil {
 		t.Fatalf("LastTag() error = %v", err)
 	}
@@ -321,4 +448,104 @@ func runGitEnv(t *testing.T, dir string, env map[string]string, args ...string) 
 		t.Fatalf("git %s error: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func TestCommitModifiedTrackedFilesHonorsPaths(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: a")
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: b")
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("changed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+
+	committed, err := repo.CommitModifiedTrackedFiles(ctx, "chore: scoped", filepath.Join(repoDir, "pkg-a"))
+	if err != nil || !committed {
+		t.Fatalf("CommitModifiedTrackedFiles() = %v, %v", committed, err)
+	}
+	if files := runGit(t, repoDir, "show", "--name-only", "--format=", "HEAD"); files != "pkg-a/a.txt" {
+		t.Errorf("scoped commit touched %q, want only pkg-a/a.txt", files)
+	}
+	if status := runGit(t, repoDir, "status", "--porcelain"); !strings.Contains(status, "pkg-b/b.txt") {
+		t.Errorf("pkg-b change should stay uncommitted, status = %q", status)
+	}
+}
+
+func TestPackagePathspecsSharedIgnoreAndMultiPackage(t *testing.T) {
+	ctx := context.Background()
+	repoDir := initGitRepository(t)
+
+	commitFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runGit(t, repoDir, "tag", "v0.0.0")
+	commitFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat(a): a code")       // 1
+	commitFile(t, repoDir, "pkg-a/README.md", "doc\n", "docs(a): readme") // 2: ignored only
+	commitFile(t, repoDir, "yarn.lock", "lock\n", "deps: bump lock")      // 3: shared only
+	commitFile(t, repoDir, ".github/ci.yml", "ci\n", "ci: workflow")      // 4: repo-level, not shared
+	commitFile(t, repoDir, "pkg-b/b.txt", "b\n", "fix(b): b code")        // 5
+	// 6: touches both packages and a doc in pkg-a
+	for _, f := range []string{"pkg-a/a.txt", "pkg-b/b.txt", "pkg-a/README.md"} {
+		if err := os.WriteFile(filepath.Join(repoDir, f), []byte("both\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, repoDir, "add", "-A")
+	runGit(t, repoDir, "commit", "-m", "refactor: touch both")
+
+	repo, err := OpenRepository(repoDir)
+	if err != nil {
+		t.Fatalf("OpenRepository() error = %v", err)
+	}
+	subjects := func(pkg string, shared []string, includeShared bool, ignore []string) []string {
+		t.Helper()
+		specs, err := repo.PackagePathspecs(filepath.Join(repoDir, pkg), shared, includeShared, ignore)
+		if err != nil {
+			t.Fatalf("PackagePathspecs() error = %v", err)
+		}
+		cs, err := repo.CommitsDetailedSincePathspecs(ctx, "v0.0.0", specs)
+		if err != nil {
+			t.Fatalf("CommitsDetailedSincePathspecs(%v) error = %v", specs, err)
+		}
+		var out []string
+		for _, c := range cs {
+			out = append(out, strings.SplitN(c.Message, "\n", 2)[0])
+		}
+		return out
+	}
+	shared := []string{"yarn.lock"}
+
+	if got := subjects("pkg-a", shared, false, nil); len(got) != 3 {
+		t.Errorf("pkg-a plain = %v, want 3 commits (a code, readme, both)", got)
+	}
+	if got := subjects("pkg-a", shared, true, nil); len(got) != 4 {
+		t.Errorf("pkg-a +shared = %v, want 4 commits", got)
+	}
+	// Ignoring markdown drops the docs-only commit but keeps the multi-file one.
+	got := subjects("pkg-a", shared, false, []string{"**/*.md"})
+	if len(got) != 2 {
+		t.Errorf("pkg-a ignoring md = %v, want 2 commits", got)
+	}
+	for _, s := range got {
+		if strings.HasPrefix(s, "docs(a)") {
+			t.Errorf("docs-only commit must be ignored, got %v", got)
+		}
+	}
+	// The commit touching both packages appears for pkg-b as well.
+	if got := subjects("pkg-b", shared, false, nil); len(got) != 2 {
+		t.Errorf("pkg-b = %v, want 2 commits (b code, both)", got)
+	}
+	// Repo-level files that are not shared never select a commit.
+	for _, s := range subjects("pkg-b", shared, true, nil) {
+		if strings.HasPrefix(s, "ci:") {
+			t.Errorf("non-shared repo-level commit leaked into pkg-b")
+		}
+	}
+	if _, err := repo.PackagePathspecs(t.TempDir(), nil, false, nil); err == nil {
+		t.Error("expected error for a package outside the repository")
+	}
 }

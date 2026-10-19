@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -432,5 +433,345 @@ func TestRunReleaseNextVersionOverride(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "3.0.0") {
 		t.Fatalf("expected overridden version 3.0.0, stdout = %q", stdout)
+	}
+}
+
+func TestRunReleaseScopesCommitsToPackagePaths(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: bootstrap a")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "v1.0.0")
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a2\n", "feat(a): new a feature")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b2\n", "fix(b): fix b")
+	commitReleaseFile(t, repoDir, ".github/ci.yml", "ci\n", "feat: repo-level change")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\n")
+
+	run := func(t *testing.T, cwd string, paths ...string) ReleaseSummary {
+		t.Helper()
+		withWorkingDir(t, repoDir)
+		ctx := withCommitPaths(context.Background(), paths...)
+		stdout, _, err := captureReleaseOutput(func() error {
+			err := runRelease(ctx, true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+			if errors.Is(err, ErrNothingToRelease) {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatalf("runRelease() error = %v", err)
+		}
+		return decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	}
+
+	t.Run("package a sees only its own feat", func(t *testing.T) {
+		s := run(t, repoDir, filepath.Join(repoDir, "pkg-a"))
+		if s.Commits != 1 || s.Bump != "minor" {
+			t.Fatalf("pkg-a: commits=%d bump=%q, want 1/minor (%v)", s.Commits, s.Bump, s.CommitMessages)
+		}
+	})
+	t.Run("package b only gets a patch", func(t *testing.T) {
+		s := run(t, repoDir, "pkg-b")
+		if s.Commits != 1 || s.Bump != "patch" {
+			t.Fatalf("pkg-b: commits=%d bump=%q, want 1/patch (%v)", s.Commits, s.Bump, s.CommitMessages)
+		}
+		if strings.Contains(s.Changelog, "new a feature") || strings.Contains(s.Changelog, "repo-level") {
+			t.Fatalf("pkg-b changelog contains foreign commits:\n%s", s.Changelog)
+		}
+	})
+	t.Run("package without changes releases nothing", func(t *testing.T) {
+		if err := os.MkdirAll(filepath.Join(repoDir, "pkg-c"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		s := run(t, repoDir, filepath.Join(repoDir, "pkg-c"))
+		if s.Released || s.Commits != 0 || s.Bump != "" {
+			t.Fatalf("pkg-c: %+v, want no release", s)
+		}
+	})
+	t.Run("no scope sees every commit", func(t *testing.T) {
+		s := run(t, repoDir)
+		if s.Commits != 3 {
+			t.Fatalf("unscoped commits = %d, want 3", s.Commits)
+		}
+	})
+}
+
+func TestRunReleaseUsesLastTagMatchingTagPrefix(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: bootstrap a")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-a-v1.2.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-b-v5.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a2\n", "fix: fix a")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"aws-a-v\"\n")
+
+	withWorkingDir(t, repoDir)
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	s := decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	if s.CurrentVersion != "aws-a-v1.2.0" || s.NextVersion != "aws-a-v1.3.0" {
+		t.Fatalf("current=%q next=%q, want aws-a-v1.2.0 -> aws-a-v1.3.0", s.CurrentVersion, s.NextVersion)
+	}
+	// The range starts at aws-a-v1.2.0 (not at aws-b-v5.0.0), so b's bootstrap
+	// feat is still included here; path scoping (#319) narrows it further.
+	if s.Commits != 2 {
+		t.Fatalf("commits = %d, want 2 (%v)", s.Commits, s.CommitMessages)
+	}
+}
+
+func TestWorkspaceReleaseInheritsRootConfigAndTagPrefix(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a\n", "feat: bootstrap a")
+	commitReleaseFile(t, repoDir, "aws-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-a-v1.0.0", "-m", "x")
+	runReleaseGit(t, repoDir, "tag", "-a", "aws-b-v1.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "aws-a/a.txt", "a2\n", "fix: fix a")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  strategy: independent
+  packages:
+    - path: aws-a
+      tagPrefix: "aws-a-v"
+    - path: aws-b
+      tagPrefix: "aws-b-v"
+`)
+	// aws-b has its own config that only overrides the branch list.
+	if err := os.WriteFile(filepath.Join(repoDir, "aws-b", ".semrel.yaml"),
+		[]byte("branches:\n  - name: elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Relative, auto-detected root config: the failure mode from #321.
+	withWorkingDir(t, repoDir)
+	_, cfgs, err := resolveWorkspacePackages(context.Background(), "")
+	if err != nil {
+		t.Fatalf("resolveWorkspacePackages() error = %v", err)
+	}
+	if len(cfgs) != 2 {
+		t.Fatalf("packages = %d, want 2", len(cfgs))
+	}
+	for _, p := range cfgs {
+		if !filepath.IsAbs(p.Path) || !filepath.IsAbs(p.RootConfig) {
+			t.Fatalf("package paths must be absolute: %+v", p)
+		}
+	}
+
+	dry := func(p workspacePkg) (ReleaseSummary, error) {
+		if err := os.Chdir(p.Path); err != nil {
+			t.Fatal(err)
+		}
+		var s ReleaseSummary
+		stdout, _, err := captureReleaseOutput(func() error {
+			return runRelease(p.context(context.Background()), true, p.ConfigFile, false, false, false, "json", false, "", "", "")
+		})
+		if err == nil || errors.Is(err, ErrNothingToRelease) {
+			s = decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+			err = nil
+		}
+		return s, err
+	}
+
+	// aws-a has no config of its own: it inherits the root config (branch main)
+	// and gets its tag prefix from the workspace entry.
+	a, err := dry(cfgs[0])
+	if err != nil {
+		t.Fatalf("aws-a release error = %v", err)
+	}
+	if a.TagPrefix != "aws-a-v" || a.CurrentVersion != "aws-a-v1.0.0" || a.NextVersion != "aws-a-v1.0.1" {
+		t.Fatalf("aws-a summary = %+v", a)
+	}
+
+	// aws-b overrides the branches, so main is not a release branch for it,
+	// while the tag prefix still comes from the workspace entry.
+	b, err := dry(cfgs[1])
+	if err != nil {
+		t.Fatalf("aws-b release error = %v", err)
+	}
+	if b.Released || b.TagPrefix != "aws-b-v" {
+		t.Fatalf("aws-b summary = %+v, want skipped with prefix aws-b-v", b)
+	}
+}
+
+func TestRunReleaseInWorkspacePackageCommitsPackageChangelog(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "root.txt", "r\n", "chore: init")
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: a")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: b")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"pkg-a@v\"\n")
+	rootCfg := filepath.Join(repoDir, ".semrel.yaml")
+	runReleaseGit(t, repoDir, "add", ".semrel.yaml")
+	runReleaseGit(t, repoDir, "commit", "-m", "chore: config")
+	// An unrelated tracked file modified in another package must not leak into
+	// the release commit of pkg-a.
+	if err := os.WriteFile(filepath.Join(repoDir, "pkg-b", "b.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgDir := filepath.Join(repoDir, "pkg-a")
+	withWorkingDir(t, pkgDir)
+	ctx := withPackage(context.Background(), "pkg-a", pkgDir)
+	_, _, err := captureReleaseOutput(func() error {
+		return runRelease(ctx, false, rootCfg, false, false, false, "text", false, "", "", "")
+	})
+	if err != nil && !errors.Is(err, ErrNothingToRelease) {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+
+	// The changelog is written to and committed from the package directory.
+	if _, err := os.Stat(filepath.Join(pkgDir, "CHANGELOG.md")); err != nil {
+		t.Fatalf("pkg-a/CHANGELOG.md missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoDir, "CHANGELOG.md")); !os.IsNotExist(err) {
+		t.Fatalf("root CHANGELOG.md must not exist, err=%v", err)
+	}
+	subject := runReleaseGit(t, repoDir, "log", "-1", "--format=%s", "--", "pkg-a/CHANGELOG.md")
+	if !strings.Contains(subject, "chore(changelog): update pkg-a for pkg-a@v") && !strings.Contains(subject, "chore(changelog): update") {
+		t.Fatalf("changelog commit subject = %q", subject)
+	}
+	if !strings.Contains(subject, "pkg-a") {
+		t.Fatalf("changelog commit subject %q does not name the package", subject)
+	}
+	files := runReleaseGit(t, repoDir, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != "pkg-a/CHANGELOG.md" {
+		t.Fatalf("release commit touches %q, want only pkg-a/CHANGELOG.md", files)
+	}
+	if status := runReleaseGit(t, repoDir, "status", "--porcelain"); !strings.Contains(status, "pkg-b/b.txt") {
+		t.Fatalf("pkg-b change should still be uncommitted, status = %q", status)
+	}
+}
+
+func TestChangelogCommitMessageNamesPackageOnlyWhenTagDoesNot(t *testing.T) {
+	ctx := withPackage(context.Background(), "plugins/foo", "/repo/plugins/foo")
+	if got := changelogCommitMessage(ctx, "plugins/foo@v1.0.0"); got != "chore(changelog): update for plugins/foo@v1.0.0 [skip ci]" {
+		t.Errorf("tag already names the package: %q", got)
+	}
+	if got := changelogCommitMessage(ctx, "v1.0.0"); got != "chore(changelog): update plugins/foo for v1.0.0 [skip ci]" {
+		t.Errorf("tag without package name: %q", got)
+	}
+	if got := changelogCommitMessage(context.Background(), "v1.0.0"); got != "chore(changelog): update for v1.0.0 [skip ci]" {
+		t.Errorf("no package: %q", got)
+	}
+}
+
+func TestReleaseContextEnvIncludesPackage(t *testing.T) {
+	env := releaseContextEnv(ReleaseSummary{packageName: "plugins/foo", packagePath: "/repo/plugins/foo"}, false)
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "SEMREL_PACKAGE_NAME=plugins/foo") || !strings.Contains(joined, "SEMREL_PACKAGE_PATH=/repo/plugins/foo") {
+		t.Fatalf("env missing package vars: %v", env)
+	}
+	if strings.Contains(strings.Join(releaseContextEnv(ReleaseSummary{}, false), "\n"), "SEMREL_PACKAGE_") {
+		t.Fatal("package vars must not be set outside workspace mode")
+	}
+}
+
+func TestWorkspaceSharedAndIgnorePathsScopeRelease(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "base\n", "chore: init")
+	runReleaseGit(t, repoDir, "tag", "-a", "pkg-a-v1.0.0", "-m", "x")
+	commitReleaseFile(t, repoDir, "pkg-a/README.md", "doc\n", "feat(a): docs only")
+	commitReleaseFile(t, repoDir, "yarn.lock", "lock\n", "fix: bump lock")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  sharedPaths: ["yarn.lock"]
+  packages:
+    - path: pkg-a
+      tagPrefix: "pkg-a-v"
+      ignorePaths: ["**/*.md"]
+`)
+
+	withWorkingDir(t, repoDir)
+	_, pkgs, err := resolveWorkspacePackages(context.Background(), ".semrel.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := pkgs[0]
+	if pkg.IncludeShared || len(pkg.IgnorePaths) != 1 || len(pkg.SharedPaths) != 1 {
+		t.Fatalf("workspace settings not applied: %+v", pkg)
+	}
+	pkgCfgDir := filepath.Join(repoDir, "pkg-a")
+	if err := os.WriteFile(filepath.Join(pkgCfgDir, ".semrel.yaml"),
+		[]byte("schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"pkg-a-v\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dry := func(p workspacePkg) ReleaseSummary {
+		t.Helper()
+		ctx := withCommitScope(context.Background(), p.scope())
+		stdout, _, err := captureReleaseOutput(func() error {
+			err := runRelease(ctx, true, filepath.Join(pkgCfgDir, ".semrel.yaml"), false, false, false, "json", false, "", "", "")
+			if errors.Is(err, ErrNothingToRelease) {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatalf("runRelease() error = %v", err)
+		}
+		return decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	}
+
+	// Docs-only change is ignored and the shared lockfile does not count: nothing to release.
+	if s := dry(pkg); s.Released || s.Commits != 0 {
+		t.Fatalf("expected no release, got %+v", s)
+	}
+	// Opting in to shared paths picks up the lockfile fix (patch) but still not the ignored docs.
+	pkg.IncludeShared = true
+	if s := dry(pkg); s.Commits != 1 || s.Bump != "patch" {
+		t.Fatalf("includeShared: commits=%d bump=%q (%v), want 1/patch", s.Commits, s.Bump, s.CommitMessages)
+	}
+}
+
+func TestRunReleaseHiddenRulesKeepCommitsOutOfChangelogButStillBump(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "README.md", "hello\n", "feat: initial")
+	runReleaseGit(t, repoDir, "tag", "v1.0.0")
+	commitReleaseFile(t, repoDir, "a.txt", "1\n", "deps: bump lib")
+	commitReleaseFile(t, repoDir, "b.txt", "2\n", "ci: tweak pipeline")
+	commitReleaseFile(t, repoDir, "c.txt", "3\n", "ci!: drop old runner")
+	writeReleaseConfig(t, repoDir, `schemaVersion: 1
+branches:
+  - name: main
+rules:
+  - type: deps
+    bump: patch
+    hidden: true
+  - type: ci
+    bump: patch
+    hidden: true
+`)
+
+	withWorkingDir(t, repoDir)
+	stdout, _, err := captureReleaseOutput(func() error {
+		return runRelease(context.Background(), true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+	})
+	if err != nil {
+		t.Fatalf("runRelease() error = %v", err)
+	}
+	s := decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	if s.Bump != "major" || s.Commits != 3 {
+		t.Fatalf("bump=%q commits=%d, want major/3 (breaking ci! still bumps)", s.Bump, s.Commits)
+	}
+	if strings.Contains(s.Changelog, "bump lib") || strings.Contains(s.Changelog, "tweak pipeline") {
+		t.Fatalf("hidden commits leaked into the changelog:\n%s", s.Changelog)
+	}
+	if !strings.Contains(s.Changelog, "drop old runner") {
+		t.Fatalf("breaking change must stay listed:\n%s", s.Changelog)
+	}
+	// Plugins and CI outputs still see every commit.
+	if len(s.CommitMessages) != 3 {
+		t.Fatalf("commit messages = %v, want all 3", s.CommitMessages)
 	}
 }

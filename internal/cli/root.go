@@ -58,6 +58,8 @@ type ReleaseSummary struct {
 	Changelog      string   `json:"changelog,omitempty"`
 	CommitMessages []string `json:"commit_messages,omitempty"`
 	commitHashes   []string
+	packageName    string
+	packagePath    string
 	Branch         string `json:"branch"`
 	TagPrefix      string `json:"tag_prefix"`
 	CeilingApplied bool   `json:"ceiling_applied,omitempty"`
@@ -238,6 +240,13 @@ func newReleaseCommand(dryRun *bool, configFile *string, outputFormat *string) *
 	var gitlabDotenv string
 	var outputFile string
 	var nextVersionOverride string
+	var commitPaths []string
+	var inheritConfig string
+	var inheritTagPrefix string
+	var packageName, packagePath string
+	var scopePath string
+	var scopeShared, scopeIgnore []string
+	var scopeIncludeShared bool
 	cmd := &cobra.Command{
 		Use:   "release",
 		Short: "Run the full release pipeline",
@@ -271,6 +280,9 @@ Examples:
   # Emit metadata to $GITHUB_OUTPUT (GitHub Actions)
   semrel release --github-output
 
+  # Monorepo: only consider commits that touch one package
+  semrel release --path plugins/foo
+
   # Force a specific next version (used by workspace lockstep)
   semrel release --next-version 2.0.0
 
@@ -278,7 +290,26 @@ Exit codes:
   0 — release created, or nothing to release on a non-release branch
   1 — error (config invalid, git error, plugin failure, …)`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := runRelease(cmd.Context(), *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
+			ctx := withCommitPaths(cmd.Context(), commitPaths...)
+			if inheritConfig != "" {
+				ic := inheritedConfig{BaseConfig: inheritConfig}
+				if cmd.Flags().Changed("inherit-tag-prefix") {
+					ic.TagPrefix = &inheritTagPrefix
+				}
+				ctx = withInheritedConfig(ctx, ic)
+			}
+			if packagePath != "" {
+				ctx = withPackage(ctx, packageName, packagePath)
+			}
+			if scopePath != "" {
+				ctx = withCommitScope(ctx, commitScope{
+					PackagePath:   scopePath,
+					SharedPaths:   scopeShared,
+					IncludeShared: scopeIncludeShared,
+					IgnorePaths:   scopeIgnore,
+				})
+			}
+			err := runRelease(ctx, *dryRun, *configFile, forcePatch, editNotes, interactive, *outputFormat, githubOutput, gitlabDotenv, outputFile, nextVersionOverride)
 			if errors.Is(err, ErrNothingToRelease) {
 				return nil // exit 0 — nothing to release is not an error for the CLI
 			}
@@ -295,6 +326,25 @@ Exit codes:
 	cmd.Flags().StringVar(&gitlabDotenv, "gitlab-dotenv", "", "Write release metadata as dotenv artifact (GitLab CI)")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write release metadata to file (.json or .env)")
 	cmd.Flags().StringVar(&nextVersionOverride, "next-version", "", "Override the calculated next version (e.g. '2.0.0' or '1.3.0-beta.1'); used by workspace lockstep")
+	cmd.Flags().StringArrayVar(&commitPaths, "path", nil,
+		"Only consider commits touching this path (repeatable); use for monorepo packages, e.g. --path plugins/foo")
+	cmd.Flags().StringVar(&inheritConfig, "inherit-config", "",
+		"Root config to inherit from; --config (optional) is merged over it. Used by workspace --parallel")
+	cmd.Flags().StringVar(&inheritTagPrefix, "inherit-tag-prefix", "",
+		"Tag prefix assigned by the workspace entry (with --inherit-config)")
+	_ = cmd.Flags().MarkHidden("inherit-config")
+	_ = cmd.Flags().MarkHidden("inherit-tag-prefix")
+	cmd.Flags().StringVar(&packageName, "package-name", "", "Workspace package name (set by workspace --parallel)")
+	cmd.Flags().StringVar(&packagePath, "package-path", "", "Workspace package root (set by workspace --parallel)")
+	_ = cmd.Flags().MarkHidden("package-name")
+	_ = cmd.Flags().MarkHidden("package-path")
+	cmd.Flags().StringVar(&scopePath, "scope-path", "", "Restrict commits to this package root (set by workspace --parallel)")
+	cmd.Flags().StringArrayVar(&scopeShared, "scope-shared", nil, "Shared path glob (set by workspace --parallel)")
+	cmd.Flags().BoolVar(&scopeIncludeShared, "scope-include-shared", false, "Count shared paths for this package (set by workspace --parallel)")
+	cmd.Flags().StringArrayVar(&scopeIgnore, "scope-ignore", nil, "Ignored path glob, relative to the package (set by workspace --parallel)")
+	for _, name := range []string{"scope-path", "scope-shared", "scope-include-shared", "scope-ignore"} {
+		_ = cmd.Flags().MarkHidden(name)
+	}
 	return cmd
 }
 
@@ -321,13 +371,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		_, _ = fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
 	}
 
-	configFile, err := resolveConfigFile(configFile)
-	if err != nil {
-		return err
-	}
-
 	// 1. Load config
-	cfg, err := config.LoadConfig(configFile)
+	cfg, err := loadReleaseConfig(ctx, configFile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -407,12 +452,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	// 4. Get last tag and commits since it
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, tagPrefix)
 	if err != nil {
 		return fmt.Errorf("getting last tag: %w", err)
 	}
 
-	releaseCommits, err := repo.CommitsDetailedSince(ctx, lastTag)
+	releaseCommits, err := commitsForRelease(ctx, repo, lastTag)
 	if err != nil {
 		return fmt.Errorf("getting commits: %w", err)
 	}
@@ -460,7 +505,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// 6. Build rule list and analyse commits
 	rules := make([]semver.RuleEntry, 0, len(cfg.Rules))
 	for _, r := range cfg.Rules {
-		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump}
+		entry := semver.RuleEntry{Type: r.Type, Bump: r.Bump, Hidden: r.Hidden}
 		switch v := r.Scope.(type) {
 		case string:
 			entry.Scope = v
@@ -626,7 +671,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 
 	// 8. Generate changelog
 	gen := changelog.NewGenerator()
-	changelogEntry := gen.Generate(nextTag, parsed)
+	changelogEntry := gen.Generate(nextTag, visibleCommits(parsed, rules))
 
 	// 8a. Run generator-phase plugins — these can override SEMREL_CHANGELOG
 	//     by printing a custom changelog/release-notes text to stdout.
@@ -649,6 +694,8 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				CommitMessages: rawMessages,
 				commitHashes:   commitHashes,
 				contributors:   contributors,
+				packageName:    packageNameFrom(ctx),
+				packagePath:    packagePathFrom(ctx),
 			})
 			if genErr != nil {
 				return fmt.Errorf("generator plugin %q: %w", label, genErr)
@@ -708,8 +755,12 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		CeilingApplied: ceilingApplied,
 		VersionCeiling: cfg.VersionCeiling,
 		contributors:   contributors,
+		packageName:    packageNameFrom(ctx),
+		packagePath:    packagePathFrom(ctx),
 	}
 	recordReleaseAnalytics(summary)
+
+	changelogFile := changelogPath(ctx)
 
 	// 9. Output results
 	if outputFormat != "json" {
@@ -789,11 +840,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				fmt.Printf("Tag %s already exists — updating CHANGELOG.md only (tag_exists_strategy=update-changelog).\n", nextTag)
 			}
 			if cfg.ShouldCommitChangelog() {
-				if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+				if err := prependChangelog(changelogFile, changelogEntry); err != nil {
 					_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 				} else {
-					msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
-					if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+					msg := changelogCommitMessage(ctx, nextTag)
+					if err := repo.CommitFiles(ctx, []string{changelogFile}, msg); err != nil {
 						_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 					} else if outputFormat != "json" {
 						fmt.Println(colors.Success("Committed CHANGELOG.md (tag already existed)"))
@@ -814,11 +865,11 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	// (e.g. @semrel/generator-changelog-md with phase: pre-tag).
 	// The plugin's CHANGELOG.md write is then picked up by the auto-commit in step 11a.
 	if cfg.ShouldCommitChangelog() {
-		if err := prependChangelog("CHANGELOG.md", changelogEntry); err != nil {
+		if err := prependChangelog(changelogFile, changelogEntry); err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not update CHANGELOG.md: %v", err)))
 		} else {
-			msg := fmt.Sprintf("chore(changelog): update for %s [skip ci]", nextTag)
-			if err := repo.CommitFiles(ctx, []string{"CHANGELOG.md"}, msg); err != nil {
+			msg := changelogCommitMessage(ctx, nextTag)
+			if err := repo.CommitFiles(ctx, []string{changelogFile}, msg); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit CHANGELOG.md: %v", err)))
 			} else if outputFormat != "json" {
 				fmt.Println(colors.Success("Committed CHANGELOG.md"))
@@ -843,7 +894,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 			// The tag will then point to this commit so `go install @vX.Y.Z` embeds
 			// the correct version and the changelog is part of the tagged commit.
 			msg := fmt.Sprintf("chore(release): set version to %s [skip ci]", summary.NextVersion)
-			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg); err != nil {
+			if committed, err := repo.CommitModifiedTrackedFiles(ctx, msg, preTagCommitPaths(ctx)...); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, colors.Warning(fmt.Sprintf("could not commit pre-tag changes: %v", err)))
 			} else if committed && outputFormat != "json" {
 				fmt.Println(colors.Success(fmt.Sprintf("Committed pre-tag version files (%s)", summary.NextVersion)))
@@ -1002,6 +1053,9 @@ func releaseContextEnv(rel ReleaseSummary, dryRun bool) []string {
 		"SEMREL_CHANGELOG=" + rel.Changelog,
 		"SEMREL_BRANCH=" + rel.Branch,
 		"SEMREL_DRY_RUN=" + dryRunStr,
+	}
+	if rel.packageName != "" {
+		env = append(env, "SEMREL_PACKAGE_NAME="+rel.packageName, "SEMREL_PACKAGE_PATH="+rel.packagePath)
 	}
 	if len(rel.CommitMessages) > 0 {
 		if commitsJSON, err := json.Marshal(rel.CommitMessages); err == nil {
@@ -1234,6 +1288,18 @@ func resolveConfigFile(configFile string) (string, error) {
 	return found, nil
 }
 
+// discoverTagPrefix returns the tagPrefix of the config found in the current
+// directory, or the default "v" when no (valid) config is available. Used by
+// commands that can run without a config file.
+func discoverTagPrefix() string {
+	if found, err := config.FindConfigFile("."); err == nil {
+		if cfg, lerr := config.LoadConfig(found); lerr == nil {
+			return cfg.TagPrefixValue()
+		}
+	}
+	return (&config.Config{}).TagPrefixValue()
+}
+
 // maybeAutoRestore checks whether any plugin configured in plugins is missing
 // from all local search paths. When at least one binary is absent AND
 // .semrel.lock exists (meaning the project has committed a lock file),
@@ -1316,14 +1382,17 @@ func runLint(ctx context.Context, configFile string, outputFormat string) error 
 	if err != nil {
 		return err
 	}
-	_ = configFile
+	lintCfg, err := config.LoadConfig(configFile)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
 
 	repo, err := gitpkg.OpenRepository(".")
 	if err != nil {
 		return fmt.Errorf("opening repository: %w", err)
 	}
 
-	lastTag, err := repo.LastTag(ctx)
+	lastTag, err := repo.LastTag(ctx, lintCfg.TagPrefixValue())
 	if err != nil {
 		return fmt.Errorf("getting last tag: %w", err)
 	}
@@ -1508,7 +1577,7 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		if err != nil {
 			return fmt.Errorf("opening repository: %w", err)
 		}
-		lastTag, err := repo.LastTag(ctx)
+		lastTag, err := repo.LastTag(ctx, discoverTagPrefix())
 		if err != nil {
 			return fmt.Errorf("getting last tag: %w", err)
 		}
@@ -1587,4 +1656,17 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		return fmt.Errorf("commitlint failed: %d invalid commit(s)", summary.Failed)
 	}
 	return nil
+}
+
+// visibleCommits drops the commits that a hidden rule keeps out of generated
+// changelogs. Version bumps are computed from the unfiltered commits.
+func visibleCommits(parsed []*commits.Commit, rules []semver.RuleEntry) []*commits.Commit {
+	visible := make([]*commits.Commit, 0, len(parsed))
+	for _, c := range parsed {
+		if semver.IsHidden(semver.CommitInfo{Type: c.Type, Scope: c.Scope}, c.IsBreakingChange, rules) {
+			continue
+		}
+		visible = append(visible, c)
+	}
+	return visible
 }

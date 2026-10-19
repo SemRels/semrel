@@ -616,3 +616,171 @@ func TestValidate_ValidCeilingStrategiesAccepted(t *testing.T) {
 		})
 	}
 }
+
+func writeCfg(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLoadInherited(t *testing.T) {
+	root := t.TempDir()
+	rootCfg := writeCfg(t, root, ".semrel.yaml", `schemaVersion: 1
+branches:
+  - name: main
+tagPrefix: "v"
+rules:
+  - type: feat
+    bump: minor
+plugins:
+  - uses: "@semrel/provider-github"
+  - uses: "@semrel/updater-npm"
+workspace:
+  packages:
+    - path: a
+`)
+	wsPrefix := "a@v"
+
+	t.Run("no package config inherits root and takes the workspace tag prefix", func(t *testing.T) {
+		cfg, err := LoadInherited(rootCfg, "", &wsPrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Workspace != nil {
+			t.Error("workspace section must not be inherited")
+		}
+		if got := cfg.TagPrefixValue(); got != "a@v" {
+			t.Errorf("tagPrefix = %q, want a@v", got)
+		}
+		if len(cfg.Plugins) != 2 || len(cfg.Branches) != 1 || len(cfg.Rules) != 1 {
+			t.Errorf("root values not inherited: %+v", cfg)
+		}
+	})
+
+	t.Run("missing package config file behaves like none", func(t *testing.T) {
+		cfg, err := LoadInherited(rootCfg, filepath.Join(root, "nope", ".semrel.yaml"), &wsPrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.TagPrefixValue() != "a@v" {
+			t.Errorf("tagPrefix = %q", cfg.TagPrefixValue())
+		}
+	})
+
+	t.Run("package config overrides only what it sets", func(t *testing.T) {
+		pkg := writeCfg(t, filepath.Join(root, "a"), ".semrel.yaml", `branches:
+  - name: release
+plugins:
+  - uses: "@semrel/updater-go"
+`)
+		cfg, err := LoadInherited(rootCfg, pkg, &wsPrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.Branches) != 1 || cfg.Branches[0].Name != "release" {
+			t.Errorf("branches = %+v, want [release]", cfg.Branches)
+		}
+		if len(cfg.Plugins) != 1 || cfg.Plugins[0].Uses != "@semrel/updater-go" {
+			t.Errorf("plugins = %+v, want only updater-go (lists are replaced)", cfg.Plugins)
+		}
+		if len(cfg.Rules) != 1 || cfg.Rules[0].Type != "feat" {
+			t.Errorf("rules not inherited: %+v", cfg.Rules)
+		}
+		if cfg.TagPrefixValue() != "a@v" {
+			t.Errorf("tagPrefix = %q, want workspace value a@v", cfg.TagPrefixValue())
+		}
+	})
+
+	t.Run("tagPrefix in the package file wins over the workspace entry", func(t *testing.T) {
+		pkg := writeCfg(t, filepath.Join(root, "b"), ".semrel.yaml", "tagPrefix: \"custom-\"\n")
+		cfg, err := LoadInherited(rootCfg, pkg, &wsPrefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.TagPrefixValue() != "custom-" {
+			t.Errorf("tagPrefix = %q, want custom-", cfg.TagPrefixValue())
+		}
+	})
+
+	t.Run("nil workspace prefix keeps the root value", func(t *testing.T) {
+		cfg, err := LoadInherited(rootCfg, "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.TagPrefixValue() != "v" {
+			t.Errorf("tagPrefix = %q, want v", cfg.TagPrefixValue())
+		}
+	})
+}
+
+func TestWorkspaceSharedAndIgnorePathsParseAndValidate(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, ".semrel.yaml")
+	body := `schemaVersion: 1
+branches:
+  - name: main
+workspace:
+  sharedPaths: ["yarn.lock", ".github/**"]
+  includeShared: false
+  ignorePaths: ["**/*.md"]
+  packages:
+    - path: plugins/a
+      includeShared: true
+      ignorePaths: ["docs/**"]
+    - path: plugins/b
+`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws := cfg.Workspace
+	if len(ws.SharedPaths) != 2 || ws.IncludeShared || len(ws.IgnorePaths) != 1 {
+		t.Fatalf("workspace = %+v", ws)
+	}
+	a, b := ws.Packages[0], ws.Packages[1]
+	if a.IncludeShared == nil || !*a.IncludeShared || len(a.IgnorePaths) != 1 || a.IgnorePaths[0] != "docs/**" {
+		t.Errorf("package a = %+v", a)
+	}
+	if b.IncludeShared != nil || b.IgnorePaths != nil {
+		t.Errorf("package b must inherit workspace defaults, got %+v", b)
+	}
+
+	bad := strings.Replace(body, `sharedPaths: ["yarn.lock", ".github/**"]`, `sharedPaths: [""]`, 1)
+	if err := os.WriteFile(p, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(p); err == nil || !strings.Contains(err.Error(), "sharedPaths") {
+		t.Fatalf("expected sharedPaths validation error, got %v", err)
+	}
+}
+
+func TestLoadConfigRuleHidden(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		".semrel.yaml": "branches:\n  - name: main\nrules:\n  - type: deps\n    bump: patch\n    hidden: true\n  - type: fix\n    bump: patch\n",
+		".semrel.toml": "[[branches]]\nname = \"main\"\n[[rules]]\ntype = \"deps\"\nbump = \"patch\"\nhidden = true\n[[rules]]\ntype = \"fix\"\nbump = \"patch\"\n",
+		".semrel.json": `{"branches":[{"name":"main"}],"rules":[{"type":"deps","bump":"patch","hidden":true},{"type":"fix","bump":"patch"}]}`,
+	}
+	for name, body := range cases {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := LoadConfig(p)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(cfg.Rules) != 2 || !cfg.Rules[0].Hidden || cfg.Rules[1].Hidden {
+			t.Errorf("%s: rules = %+v, want first hidden only", name, cfg.Rules)
+		}
+	}
+}

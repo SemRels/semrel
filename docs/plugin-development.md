@@ -55,6 +55,8 @@ When a plugin is invoked, semrel:
 | `SEMREL_COMMIT_HASHES` | JSON array of full commit hashes since the last release, in the same order as `SEMREL_COMMITS` |
 | `SEMREL_CONTRIBUTORS` | JSON array of per-release contributor metadata sorted by commit count descending (e.g. `[{"name":"Jane Doe","email":"jane@example.com","commits":3,"firstContribution":true}]`) |
 | `SEMREL_REPOSITORY_URL` | Repository base URL (e.g. `https://github.com/org/repo`) — used for PR/commit linkification |
+| `SEMREL_PACKAGE_NAME` | Workspace package name (e.g. `plugins/foo`); only set in workspace mode |
+| `SEMREL_PACKAGE_PATH` | Absolute package root directory; only set in workspace mode |
 
 `SEMREL_CONTRIBUTORS` is populated for plugins that run after semrel has analysed the release commit range (for example generator, pre-tag, provider, hook, publisher, and updater plugins). Condition and analyzer plugins should not rely on it.
 

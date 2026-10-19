@@ -91,11 +91,11 @@ jobs:
       - name: Push tag to GitHub
         id: tag
         if: steps.semrel.outputs.released == 'true'
-        continue-on-error: true
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           SOURCE_EPOCH: ${{ steps.source.outputs.source_epoch }}
+          CHANGELOG_ENTRY: ${{ steps.semrel.outputs.changelog }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -122,17 +122,33 @@ jobs:
           [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${SOURCE_EPOCH}" =~ ^[0-9]+$ ]]
           branch="automation/release-${TAG}"
-          # CHANGELOG.md is part of the release commit. Protected main cannot
-          # accept that commit directly, so publish it on a PR branch first.
+          # Keep the tag on the main commit so future releases can discover it.
+          # Commit the generated changelog separately on the release PR branch.
           git switch -c "${branch}"
+          changelog_file="$(mktemp)"
+          trap 'rm -f "${changelog_file}"' EXIT
+          printf '%s\n\n' "${CHANGELOG_ENTRY%$'\n'}" > "${changelog_file}"
+          cat CHANGELOG.md >> "${changelog_file}"
+          mv "${changelog_file}" CHANGELOG.md
+          git add CHANGELOG.md
+          copilot_author="GitHub Copilot"
+          copilot_author+=" <copilot@github.com>"
+          copilot_bot="Copilot"
+          copilot_bot+=" <223556219+Copilot@users.noreply.github.com>"
+          git commit \
+            -m "chore(changelog): update for ${TAG} [skip ci]" \
+            -m "Co-authored-by: ${copilot_author}" \
+            -m "Co-authored-by: ${copilot_bot}"
           # Release retries can leave this generated branch based on an older
           # main commit. Replace it only if it has not changed since checkout.
           git push --force-with-lease origin "HEAD:refs/heads/${branch}"
           existing_pr="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')"
           if [[ -z "${existing_pr}" ]]; then
-            gh pr create --base main --head "${branch}" \
+            if ! gh pr create --base main --head "${branch}" \
               --title "chore(release): prepare ${TAG}" \
-              --body "Automated release preparation for ${TAG}. Merge this PR to bring the generated CHANGELOG.md commit into protected main."
+              --body "Automated release preparation for ${TAG}. Merge this PR to bring the generated CHANGELOG.md commit into protected main."; then
+              echo "::warning::Unable to create release PR automatically (GitHub Actions PR creation may be disabled for this organization)."
+            fi
           else
             echo "Release PR #${existing_pr} already exists."
           fi
@@ -144,7 +160,9 @@ jobs:
             printf 'source_sha=%s\n' "${SOURCE_SHA}"
             printf 'stable=%s\n' "${stable}"
           } >> "${GITHUB_OUTPUT}"
-          if ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on remote — skipping tag push."
+          elif ! git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "refs/tags/${TAG}"; then
             echo "Git tag push failed; creating the tag through the GitHub REST API."
             response="$(curl --fail-with-body --silent --show-error \
@@ -154,13 +172,14 @@ jobs:
               -H "X-GitHub-Api-Version: 2022-11-28" \
               --data "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${SOURCE_SHA}\"}")" || {
                 printf 'Warning: unable to publish tag %s: %s\n' "${TAG}" "${response}" >&2
+                exit 1
               }
             printf 'Tag publication response: %s\n' "${response}"
           fi
 
       - name: Resolve release metadata
         id: metadata
-        if: always() && steps.semrel.outputs.released == 'true'
+        if: steps.semrel.outputs.released == 'true'
         env:
           TAG: ${{ steps.semrel.outputs.tag }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
@@ -188,7 +207,7 @@ jobs:
 
       - name: Upload generated changelog
         if: steps.semrel.outputs.released == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: generated-changelog
           path: ${{ runner.temp }}/CHANGELOG.md
@@ -287,7 +306,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload scanned OCI validation archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: semrel-image-${{ matrix.target }}-${{ matrix.platform.arch }}
           path: |
@@ -357,7 +376,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Install ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: 1.3.1
 
@@ -782,7 +801,7 @@ jobs:
       packages: write
     steps:
       - name: Install ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
           version: 1.3.1
 

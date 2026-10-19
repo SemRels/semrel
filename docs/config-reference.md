@@ -241,7 +241,9 @@ Breaking changes (`feat!`, `BREAKING CHANGE:` footer) always cause a **major** b
 | Field | Type | Description |
 |-------|------|-------------|
 | `type` | string | Conventional commit type (for example `feat`, `fix`, `docs`) |
+| `scope` | string \| `false` | Optional scope filter. A string matches commits with that exact scope, `false` matches commits with no scope, omitted matches any scope |
 | `bump` | string | One of `major`, `minor`, `patch` |
+| `hidden` | bool | Keep matching commits out of the generated changelog and release notes. The rule's `bump` still applies and breaking changes are always listed (default: `false`) |
 
 #### Default rules
 
@@ -310,7 +312,7 @@ plugins:
 | `uses` | string | Plugin name that resolves to `semrel-plugin-<uses>` |
 | `path` | string | Optional explicit path to a plugin binary |
 | `args` | map | Plugin-specific arguments, exposed as `SEMREL_PLUGIN_<KEY>` env vars |
-| `phase` | string | When to run: `condition`, `pre-tag`, or `release` (default: `release`) |
+| `phase` | string | When to run: `condition`, `generator`, `pre-tag`, or `release` (default: `release`) |
 
 #### Local development example
 
@@ -415,6 +417,12 @@ workspace:
   # pattern: "packages/*"
 
   fail_fast: false   # default: collect all errors
+
+  # Commit attribution (monorepos). Each package only considers commits that
+  # change files under its own path.
+  sharedPaths: [yarn.lock, ".github/**"]   # repo-level globs (repo-root-relative)
+  includeShared: false                     # default: shared-only commits release nothing
+  ignorePaths: ["**/*.md"]                 # package-relative globs; docs-only edits don't release
 ```
 
 | Field | Type | Default | Description |
@@ -423,9 +431,25 @@ workspace:
 | `packages` | list | — | Explicit package list. Each entry needs `path`; `tagPrefix` and `dependsOn` are optional. |
 | `pattern` | string | — | Glob pattern for auto-discovery (e.g. `packages/*`). Mutually exclusive with `packages`. |
 | `fail_fast` | bool | `false` | Stop the workspace release on the first package failure. |
+| `sharedPaths` | list | — | Repo-level globs (relative to the repository root) that belong to no package. |
+| `includeShared` | bool | `false` | Whether commits touching `sharedPaths` count towards each package. Can be set per package (`packages[].includeShared`). |
+| `ignorePaths` | list | — | Globs relative to each package root; commits touching only matching files do not release the package. A package's own `ignorePaths` replaces the workspace default. |
 
-Each package directory can have its own `.semrel.yaml` that overrides the root
-configuration for that package (branches, rules, plugins, tagPrefix).
+A commit is attributed to a package when it changes at least one file under the
+package path (or, with `includeShared`, under `sharedPaths`) that is not matched
+by `ignorePaths`. A commit touching several packages counts for each of them.
+Commits that touch only repo-level files such as `.github/` release no package.
+
+Each package's effective configuration is built from the root config:
+
+- A package **without** its own `.semrel.yaml` uses the root config (minus the
+  `workspace` section).
+- A package **with** a `.semrel.yaml` has it merged over the root config. Every
+  field it sets replaces the root value; lists (`branches`, `rules`, `plugins`)
+  are replaced as a whole, not concatenated.
+- The tag prefix is taken from, in order: `tagPrefix` in the package's own
+  `.semrel.yaml`, `workspace.packages[].tagPrefix`, then `<path>@v`. The root
+  `tagPrefix` is not inherited, so packages never share a tag namespace.
 
 See the [Monorepo guide](https://semrel.io/guide/monorepo/) for full details and CI examples.
 
@@ -543,12 +567,19 @@ Manages the semrel configuration file.
 
 #### `semrel config init`
 
-Create a new `.semrel.yaml`, either interactively or with defaults.
+Create a new `.semrel.yaml`, either interactively or with defaults. When run inside a git repository, it also creates or updates `.gitignore` in the target directory to ignore `.semrel-analytics.jsonl` and `.semrel/` (unless `--no-gitignore` is passed).
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--no-interactive` | bool | Skip prompts and create a minimal default config (for CI) |
+| `--force` | bool | Overwrite an existing config file |
+| `--no-gitignore` | bool | Skip creating or updating `.gitignore` |
 
 ```bash
 semrel config init
 semrel config init --no-interactive
 semrel config init --force
+semrel config init --no-gitignore
 ```
 
 #### `semrel config show`
