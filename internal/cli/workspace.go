@@ -174,6 +174,7 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 	currentTagPrefix := ""
 
 	for _, pkg := range pkgs {
+		pkgCtx := withCommitPaths(ctx, pkg.Path)
 		if err := os.Chdir(pkg.Path); err != nil {
 			continue
 		}
@@ -197,7 +198,7 @@ func runWorkspaceLockstep(ctx context.Context, pkgs []workspacePkg, outputFormat
 		oldStdout := os.Stdout
 		r, w, _ := os.Pipe()
 		os.Stdout = w
-		_ = runRelease(ctx, true, pkg.ConfigFile, false, false, false, "json", false, "", "", "")
+		_ = runRelease(pkgCtx, true, pkg.ConfigFile, false, false, false, "json", false, "", "", "")
 		_ = w.Close()
 		os.Stdout = oldStdout
 		_, _ = io.Copy(&dryBuf, r)
@@ -278,6 +279,7 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 	var errs []string
 	for _, pkg := range ordered {
 		label := fmt.Sprintf("[%s]", pkg.Path)
+		pkgCtx := withCommitPaths(ctx, pkg.Path)
 
 		if err := os.Chdir(pkg.Path); err != nil {
 			msg := fmt.Sprintf("%s  error: cannot change to package directory: %v", label, err)
@@ -289,7 +291,7 @@ func runWorkspaceSequential(ctx context.Context, pkgs []workspacePkg, outputForm
 		}
 
 		fmt.Printf("%s  releasing…\n", label)
-		releaseErr := runRelease(ctx, dryRun, pkg.ConfigFile, false, false, false, outputFormat, false, "", "", nextVersionOverride)
+		releaseErr := runRelease(pkgCtx, dryRun, pkg.ConfigFile, false, false, false, outputFormat, false, "", "", nextVersionOverride)
 		_ = os.Chdir(origDir) //nolint:errcheck
 
 		switch {
@@ -414,6 +416,9 @@ func runWorkspacePackageInSubprocess(ctx context.Context, pkg workspacePkg, outp
 	}
 	if pkg.ConfigFile != "" {
 		args = append(args, "--config", pkg.ConfigFile)
+	}
+	if absPath, aerr := filepath.Abs(pkg.Path); aerr == nil {
+		args = append(args, "--path", absPath)
 	}
 
 	cmd := exec.CommandContext(ctx, self, args...)

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -433,4 +434,64 @@ func TestRunReleaseNextVersionOverride(t *testing.T) {
 	if !strings.Contains(stdout, "3.0.0") {
 		t.Fatalf("expected overridden version 3.0.0, stdout = %q", stdout)
 	}
+}
+
+func TestRunReleaseScopesCommitsToPackagePaths(t *testing.T) {
+	withColorsDisabled(t)
+	repoDir := initReleaseRepo(t)
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a\n", "feat: bootstrap a")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b\n", "feat: bootstrap b")
+	runReleaseGit(t, repoDir, "tag", "v1.0.0")
+	commitReleaseFile(t, repoDir, "pkg-a/a.txt", "a2\n", "feat(a): new a feature")
+	commitReleaseFile(t, repoDir, "pkg-b/b.txt", "b2\n", "fix(b): fix b")
+	commitReleaseFile(t, repoDir, ".github/ci.yml", "ci\n", "feat: repo-level change")
+	writeReleaseConfig(t, repoDir, "schemaVersion: 1\nbranches:\n  - name: main\ntagPrefix: \"v\"\n")
+
+	run := func(t *testing.T, cwd string, paths ...string) ReleaseSummary {
+		t.Helper()
+		withWorkingDir(t, repoDir)
+		ctx := withCommitPaths(context.Background(), paths...)
+		stdout, _, err := captureReleaseOutput(func() error {
+			err := runRelease(ctx, true, ".semrel.yaml", false, false, false, "json", false, "", "", "")
+			if errors.Is(err, ErrNothingToRelease) {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatalf("runRelease() error = %v", err)
+		}
+		return decodeReleaseSummary(t, stdout[strings.Index(stdout, "{"):])
+	}
+
+	t.Run("package a sees only its own feat", func(t *testing.T) {
+		s := run(t, repoDir, filepath.Join(repoDir, "pkg-a"))
+		if s.Commits != 1 || s.Bump != "minor" {
+			t.Fatalf("pkg-a: commits=%d bump=%q, want 1/minor (%v)", s.Commits, s.Bump, s.CommitMessages)
+		}
+	})
+	t.Run("package b only gets a patch", func(t *testing.T) {
+		s := run(t, repoDir, "pkg-b")
+		if s.Commits != 1 || s.Bump != "patch" {
+			t.Fatalf("pkg-b: commits=%d bump=%q, want 1/patch (%v)", s.Commits, s.Bump, s.CommitMessages)
+		}
+		if strings.Contains(s.Changelog, "new a feature") || strings.Contains(s.Changelog, "repo-level") {
+			t.Fatalf("pkg-b changelog contains foreign commits:\n%s", s.Changelog)
+		}
+	})
+	t.Run("package without changes releases nothing", func(t *testing.T) {
+		if err := os.MkdirAll(filepath.Join(repoDir, "pkg-c"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		s := run(t, repoDir, filepath.Join(repoDir, "pkg-c"))
+		if s.Released || s.Commits != 0 || s.Bump != "" {
+			t.Fatalf("pkg-c: %+v, want no release", s)
+		}
+	})
+	t.Run("no scope sees every commit", func(t *testing.T) {
+		s := run(t, repoDir)
+		if s.Commits != 3 {
+			t.Fatalf("unscoped commits = %d, want 3", s.Commits)
+		}
+	})
 }

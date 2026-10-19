@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -99,12 +100,23 @@ func (r *Repository) CommitsSince(ctx context.Context, ref string) ([]string, er
 
 // CommitsDetailedSince returns commit metadata since the given ref (exclusive).
 // If ref is empty, returns all commits reachable from HEAD.
-func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string) ([]Commit, error) {
-	var args []string
-	if ref == "" {
-		args = []string{"-C", r.Path, "log", "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
-	} else {
-		args = []string{"-C", r.Path, "log", fmt.Sprintf("%s..HEAD", ref), "--format=%H%x00%an%x00%ae%x00%B%x00%x00"}
+//
+// When paths are given, only commits that change at least one file under one of
+// those paths are returned (monorepo packages). Paths may be absolute or
+// relative to the repository root; they must lie inside the repository.
+func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string, paths ...string) ([]Commit, error) {
+	args := []string{"-C", r.Path, "log"}
+	if ref != "" {
+		args = append(args, fmt.Sprintf("%s..HEAD", ref))
+	}
+	args = append(args, "--format=%H%x00%an%x00%ae%x00%B%x00%x00")
+	if len(paths) > 0 {
+		specs, err := r.pathspecs(paths)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--")
+		args = append(args, specs...)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
@@ -138,6 +150,33 @@ func (r *Repository) CommitsDetailedSince(ctx context.Context, ref string) ([]Co
 		})
 	}
 	return commits, nil
+}
+
+// pathspecs converts paths into literal, repository-root-relative git pathspecs.
+func (r *Repository) pathspecs(paths []string) ([]string, error) {
+	root, err := filepath.EvalSymlinks(r.Path)
+	if err != nil {
+		return nil, fmt.Errorf("resolving repository root: %w", err)
+	}
+	specs := make([]string, 0, len(paths))
+	for _, p := range paths {
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(root, abs)
+		} else if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+			abs = resolved
+		}
+		rel, err := filepath.Rel(root, abs)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("path %q is outside the repository %s", p, r.Path)
+		}
+		// The repository root itself means "everything": no restriction.
+		if rel == "." {
+			return []string{":(top)"}, nil
+		}
+		specs = append(specs, ":(top,literal)"+filepath.ToSlash(rel))
+	}
+	return specs, nil
 }
 
 // CommitCountsByAuthorEmail returns commit counts across the full repository
