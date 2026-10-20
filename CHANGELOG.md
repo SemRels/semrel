@@ -1,3 +1,14 @@
+## v0.28.2 (2026-10-20)
+
+### Bug Fixes
+
+* strip tag prefix from SEMREL_VERSION and SEMREL_NEXT_VERSION
+
+### Other Changes
+
+* **changelog:** add v0.28.0 and v0.28.1 entries
+
+
 ## v0.28.1 (2026-10-19)
 
 ### Bug Fixes
