@@ -37,6 +37,14 @@ rules:
 plugins:
     - uses: "@semrel/condition-github-actions"
       phase: condition
+    # The wrapper maps core contributor metadata into the notes plugin's input.
+    - path: .github/scripts/release-notes-generator.sh
+      phase: generator
+      args:
+          ai-disclosure: "true"
+          ai-disclosure-section: "true"
+          mvp: "true"
+          signature: "true"
 version_ceiling: 1.0.0
 ceiling_strategy: clamp
 tag_exists_strategy: update-changelog

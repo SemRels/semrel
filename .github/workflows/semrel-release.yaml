@@ -63,6 +63,8 @@ jobs:
           mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-condition-github-actions"
           go install github.com/SemRels/updater-go/cmd/plugin@v0.3.2
           mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-gobinary"
+          go install github.com/SemRels/generator-release-notes/cmd/plugin@v0.6.3
+          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-generator-release-notes.real"
 
       - name: Configure git identity
         run: |
@@ -640,6 +642,8 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      issues: write
+      pull-requests: read
     steps:
       - name: Check out released tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -762,6 +766,21 @@ jobs:
             mv "${bundle}" "${artifact}.intoto.jsonl"
           done
 
+      - name: Collect commit hashes for release pull requests
+        id: commits
+        env:
+          SOURCE_SHA: ${{ needs.release.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          previous_tag="$(git describe --tags --abbrev=0 "${SOURCE_SHA}^")"
+          commit_hashes="$(git rev-list --reverse "${previous_tag}..${SOURCE_SHA}" | python3 -c 'import json,sys; print(json.dumps([line.strip() for line in sys.stdin if line.strip()], separators=(",", ":")))')"
+          [[ "${commit_hashes}" != "[]" ]] || {
+            printf 'No commits found between %s and %s\n' "${previous_tag}" "${SOURCE_SHA}" >&2
+            exit 1
+          }
+          printf 'commit_hashes=%s\n' "${commit_hashes}" >> "${GITHUB_OUTPUT}"
+
       - name: Add release footer
         env:
           CHANGELOG: ${{ needs.release.outputs.changelog }}
@@ -787,7 +806,7 @@ jobs:
           GOSUMDB: "off"
         run: |
           set -euo pipefail
-          go install github.com/SemRels/provider-github/cmd/plugin@3c974fff4ad24d8c4dc45b169d2727607472ab08
+          go install github.com/SemRels/provider-github/cmd/plugin@06df42d3c5f1f80f778b219d1407e46feab04cca
           mv "$(go env GOPATH)/bin/plugin" "${RUNNER_TEMP}/provider-github-plugin"
 
       - name: Publish GitHub release
@@ -796,9 +815,11 @@ jobs:
           SEMREL_DRY_RUN: "false"
           SEMREL_NEXT_VERSION: ${{ needs.release.outputs.tag }}
           SEMREL_PLUGIN_ASSETS: "dist/*.tar.gz,dist/*.zip,dist/checksums.txt,dist/checksums.txt.bundle,dist/*.sigstore.json,dist/*.intoto.jsonl"
+          SEMREL_PLUGIN_COMMENT_ON_PRS: "true"
           SEMREL_PLUGIN_OWNER: SemRels
           SEMREL_PLUGIN_REPO: semrel
           SEMREL_PLUGIN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMREL_COMMIT_HASHES: ${{ steps.commits.outputs.commit_hashes }}
           SEMREL_TAG_NAME: ${{ needs.release.outputs.tag }}
           SEMREL_VERSION: ${{ needs.release.outputs.version_short }}
         run: '"${PROVIDER_BIN}"'

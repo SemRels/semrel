@@ -69,6 +69,10 @@ gh attestation verify "${ARCHIVE}" \
   --signer-workflow SemRels/semrel/.github/workflows/semrel-release.yaml
 ```
 
+Release notes disclose AI-assisted commits with a badge and summary section,
+highlight an MVP among first-time contributors, and leave an idempotent release
+comment on each included pull request.
+
 ## Quick Start
 
 ```bash
