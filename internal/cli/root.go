@@ -1043,11 +1043,16 @@ func releaseContextEnv(rel ReleaseSummary, dryRun bool) []string {
 	if dryRun {
 		dryRunStr = "true"
 	}
+	// NextVersion is the full tag (prefix included). SEMREL_VERSION and
+	// SEMREL_NEXT_VERSION carry the bare version so plugins can write it to
+	// package.json, Cargo.toml etc. even with a custom (monorepo) tag prefix;
+	// SEMREL_TAG_NAME keeps the prefix.
+	version := strings.TrimPrefix(rel.NextVersion, rel.TagPrefix)
 	env := []string{
 		"SEMREL_CURRENT_VERSION=" + rel.CurrentVersion,
-		"SEMREL_VERSION=" + rel.NextVersion,
+		"SEMREL_VERSION=" + version,
 		"SEMREL_TAG_NAME=" + rel.NextVersion,
-		"SEMREL_NEXT_VERSION=" + rel.NextVersion,
+		"SEMREL_NEXT_VERSION=" + version,
 		"SEMREL_BUMP=" + rel.Bump,
 		"SEMREL_TAG_PREFIX=" + rel.TagPrefix,
 		"SEMREL_CHANGELOG=" + rel.Changelog,
