@@ -23,4 +23,4 @@ print(json.dumps([
   )"
 fi
 
-exec "${HOME}/.semrel/plugins/semrel-plugin-generator-release-notes.real"
+exec "${PWD}/.semrel/plugins/semrel-plugin-release-notes"

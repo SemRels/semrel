@@ -54,18 +54,6 @@ jobs:
       - name: Build semrel from source
         run: go build -ldflags="-s -w" -o "${RUNNER_TEMP}/semrel" ./cmd/semrel
 
-      - name: Install plugins from source
-        run: |
-          set -euo pipefail
-          plugin_dir="${HOME}/.semrel/plugins"
-          mkdir -p "${plugin_dir}"
-          go install github.com/SemRels/condition-github-actions/cmd/plugin@v0.2.2
-          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-condition-github-actions"
-          go install github.com/SemRels/updater-go/cmd/plugin@v0.3.2
-          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-gobinary"
-          go install github.com/SemRels/generator-release-notes/cmd/plugin@v0.6.3
-          mv "$(go env GOPATH)/bin/plugin" "${plugin_dir}/semrel-plugin-generator-release-notes.real"
-
       - name: Configure git identity
         run: |
           git config user.name "semrel-bot"
@@ -800,7 +788,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Build provider-github plugin
-        # Pinned to the release-asset Content-Length fix.
+        # The PR-comment feature is not published to the Semrel plugin registry yet.
         env:
           GOPROXY: direct
           GOSUMDB: "off"
