@@ -11,8 +11,9 @@
 [![JSON Schema](https://img.shields.io/badge/schema-registry.semrel.io%2Fschemas%2Fcore%2Fv1.json-blue)](https://registry.semrel.io/schemas/core/v1.json)
 [![Website](https://img.shields.io/badge/docs-www.semrel.io-6366f1)](https://www.semrel.io)
 [![Plugin Registry](https://img.shields.io/badge/plugins-46%20official-10b981)](https://registry.semrel.io)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Community%20(Release%20Ping)-5865F2?logo=discord&logoColor=white)](https://discord.gg/w8zTm2r3jg)
 
-[**Documentation (www.semrel.io)**](https://www.semrel.io) · [**Quick Start (5 min)**](https://www.semrel.io/getting-started/quick-start/) · [**vs semantic-release & GoReleaser**](https://www.semrel.io/guide/comparison/) · [**46 Official Plugins**](https://www.semrel.io/plugins/) · [**Plugin Registry**](https://registry.semrel.io)
+[**Documentation (www.semrel.io)**](https://www.semrel.io) · [**Quick Start (5 min)**](https://www.semrel.io/getting-started/quick-start/) · [**vs semantic-release & GoReleaser**](https://www.semrel.io/guide/comparison/) · [**46 Official Plugins**](https://www.semrel.io/plugins/) · [**Plugin Registry**](https://registry.semrel.io) · [**Discord Community**](https://discord.gg/w8zTm2r3jg)
 
 ---
 
