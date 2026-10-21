@@ -67,7 +67,7 @@ ENTRYPOINT ["/semrel"]
 # apk upgrade ensures all packages are at their latest patched versions,
 # eliminating the outdated-base CVEs reported by Trivy / Harbor SBOM scans.
 # Includes openssh-client for deployments that push over SSH.
-FROM docker.io/library/alpine:3.22 AS alpine
+FROM docker.io/library/alpine:3.24 AS alpine
 
 ARG VERSION=dev
 ARG BUILD_DATE
