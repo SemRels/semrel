@@ -22,7 +22,7 @@ RUN chmod 0555 /semrel
 # ── git deps stage (for distroless) ──────────────────────────────────────────
 # Extract git and CA certificates from Debian so they can be copied into the
 # distroless/base image (which has glibc but no package manager).
-FROM docker.io/library/debian:12-slim AS gitdeps
+FROM docker.io/library/debian:13-slim AS gitdeps
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         git \
