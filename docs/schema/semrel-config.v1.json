@@ -462,9 +462,10 @@
         },
         "phase": {
           "type": "string",
-          "description": "Pipeline phase in which this plugin runs. \"condition\" runs before commits are analyzed (gate check); \"generator\" runs after the changelog is generated and may replace it by printing custom text to stdout; \"pre-tag\" runs before the tag is created and its file changes are auto-committed; \"release\" runs after the tag is created. Default: \"release\".",
+          "description": "Pipeline phase in which this plugin runs. \"condition\" runs before commits are analyzed (gate check); \"analyzer\" inspects commits and reports a bump decision; \"generator\" runs after the changelog is generated and may replace it by printing custom text to stdout; \"pre-tag\" runs before the tag is created and its file changes are auto-committed; \"release\" runs after the tag is created. Default: \"release\".",
           "enum": [
             "condition",
+            "analyzer",
             "generator",
             "pre-tag",
             "release"
