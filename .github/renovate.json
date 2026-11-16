@@ -9,10 +9,15 @@
   "labels": ["type: chore"],
   "reviewers": ["mwaldheim", "tboerger"],
   "schedule": ["before 6am on monday"],
-  "golang": {
-    "postUpdateOptions": ["gomodTidy"]
-  },
   "packageRules": [
+    {
+      "matchCategories": [
+        "golang"
+      ],
+      "postUpdateOptions": [
+        "gomodTidy"
+      ]
+    },
     {
       "description": "Group all GitHub Actions minor/patch updates",
       "matchManagers": ["github-actions"],
