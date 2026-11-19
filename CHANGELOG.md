@@ -1,3 +1,21 @@
+## v0.28.3 (2026-10-22)
+
+### Bug Fixes
+
+* **deps:** update module github.com/go-sprout/sprout to v1.1.2 (#353)
+
+### Other Changes
+
+* **deps:** update docker.io/library/alpine docker tag to v3.24 (#354)
+* **deps:** update docker.io/library/golang docker tag to v1.27.3 (#355)
+* **readme:** add official Discord community badge and invite link (#360)
+* **readme:** overhaul README for SEO, competitor comparison, and 46 plugins (#359)
+* **ci:** bump actions/github-script from 8.0.0 to 9.0.0 (#345)
+* **ci:** bump actions/download-artifact from 8.0.1 to 8.0.2 (#344)
+* **ci:** bump ossf/scorecard-action from 2.4.4 to 2.5.0 (#343)
+* **changelog:** update for v0.28.2 [skip ci]
+
+
 ## v0.28.2 (2026-10-20)
 
 ### Bug Fixes
