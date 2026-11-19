@@ -32,7 +32,7 @@ RUN apt-get update && \
 # ── distroless release image ───────────────────────────────────────────────────
 # gcr.io/distroless/base-debian12 provides glibc so dynamically-linked git works.
 # Runs as nonroot (uid 65532) — no shell, no package manager, minimal attack surface.
-FROM gcr.io/distroless/base-debian12:nonroot AS release
+FROM gcr.io/distroless/base-debian12:nonroot@sha256:7f0c72cd138b442ae0deeb69c08b1acf5525439ba251a49ad93c320a061567e5 AS release
 
 ARG VERSION=dev
 ARG BUILD_DATE
@@ -63,7 +63,7 @@ USER nonroot
 ENTRYPOINT ["/semrel"]
 
 # ── alpine variant ─────────────────────────────────────────────────────────────
-# Pinned to Alpine 3.22 (latest stable minor) to prevent untracked base upgrades.
+# Alpine 3.24 is used to get current fixes and packages.
 # apk upgrade ensures all packages are at their latest patched versions,
 # eliminating the outdated-base CVEs reported by Trivy / Harbor SBOM scans.
 # Includes openssh-client for deployments that push over SSH.
