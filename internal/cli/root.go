@@ -195,13 +195,16 @@ Quick start:
   semrel config init        — create .semrel.yaml interactively
   semrel doctor             — verify your setup before the first release
   semrel release --dry-run  — preview the next release without making changes
-  semrel release            — run the full release pipeline`,
+  semrel release            — run the full release pipeline
+  semrel update --check     — check for a newer semrel release
+  semrel plugin update --check — check for newer locked plugins`,
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if noColor {
 				colors.Disable()
 			}
+			maybeNotifyUpdates(cmd, outputFormat)
 			if envFile != "" {
 				if err := envfile.Load(envFile); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not load env file %q: %v\n", envFile, err)
@@ -228,6 +231,7 @@ Quick start:
 	root.AddCommand(newMigrateCommand(&configFile))
 	root.AddCommand(newUpdateCommand())
 	root.AddCommand(newWorkspaceCommand(&configFile, &outputFormat))
+	root.AddCommand(newUpdateCheckWorkerCommand())
 
 	return root
 }
