@@ -157,6 +157,10 @@ semrel release --github-output
 | `semrel plugin restore` | Reinstall SHA-256 pinned plugins from `.semrel.lock` (air-gap friendly). |
 | `semrel update` | Check for and install the latest `semrel` release. |
 
+Interactive text output uses aligned status labels and color to make command
+results and release stages easier to scan. Use `--no-color` or `NO_COLOR` to
+disable color. Redirected output, CI logs and JSON retain their existing format.
+
 ## IDE Support & JSON Schemas
 
 The `.semrel.yaml` config file has a published [JSON Schema](https://registry.semrel.io/schemas/core/v1.json) that enables auto-complete, validation, and hover docs in VS Code, JetBrains IDEs, Neovim, and any LSP-aware editor.
