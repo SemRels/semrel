@@ -15,7 +15,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +34,7 @@ import (
 	"github.com/SemRels/semrel/pkg/lock"
 	"github.com/SemRels/semrel/pkg/plugin"
 	"github.com/SemRels/semrel/pkg/plugininstance"
+	"github.com/SemRels/semrel/pkg/sdk"
 	"github.com/SemRels/semrel/pkg/semver"
 )
 
@@ -41,6 +44,19 @@ import (
 // semrel workspace release uses errors.Is to show a "skipped" label instead
 // of "done" in the workspace summary output.
 var ErrNothingToRelease = errors.New("nothing to release")
+
+// DryRunPluginReport captures a single plugin's execution during a dry-run.
+type DryRunPluginReport struct {
+	Name            string                 `json:"name"`
+	Phase           string                 `json:"phase"`
+	Status          string                 `json:"status"`
+	DryRunSupported bool                   `json:"dry_run_supported"`
+	SchemaVersion   int                    `json:"schema_version,omitempty"`
+	Logs            []string               `json:"logs,omitempty"`
+	Output          string                 `json:"output,omitempty"`
+	Summary         map[string]interface{} `json:"summary,omitempty"`
+	Warning         string                 `json:"warning,omitempty"`
+}
 
 // ReleaseSummary holds the structured output of a release run.
 // See: https://github.com/SemRels/semrel/issues/20
@@ -60,10 +76,11 @@ type ReleaseSummary struct {
 	commitHashes   []string
 	packageName    string
 	packagePath    string
-	Branch         string `json:"branch"`
-	TagPrefix      string `json:"tag_prefix"`
-	CeilingApplied bool   `json:"ceiling_applied,omitempty"`
-	VersionCeiling string `json:"version_ceiling,omitempty"`
+	Branch         string               `json:"branch"`
+	TagPrefix      string               `json:"tag_prefix"`
+	CeilingApplied bool                 `json:"ceiling_applied,omitempty"`
+	VersionCeiling string               `json:"version_ceiling,omitempty"`
+	DryRunPlugins  []DryRunPluginReport `json:"dry_run_plugins,omitempty"`
 	contributors   []contributorMetadata
 }
 
@@ -76,6 +93,11 @@ func printSummary(s ReleaseSummary, format string) error {
 	}
 	// default: text
 	if !s.Released {
+		return nil
+	}
+	if styledOutput {
+		writeStatus(os.Stdout, "→", "version", fmt.Sprintf("%s → %s (%s)", s.CurrentVersion, colors.Bold(s.NextVersion), colors.Yellow(s.Bump)))
+		fmt.Printf("\n%s", s.Changelog)
 		return nil
 	}
 	fmt.Printf("Current version : %s\n", colors.Cyan(s.CurrentVersion))
@@ -119,11 +141,11 @@ func writeCIOutputs(summary ReleaseSummary, githubOutput bool, gitlabDotenv stri
 	return nil
 }
 
-// recordReleaseAnalytics appends one analytics record for a successful release
-// attempt (including dry-runs). Failures are non-fatal and only reported as
-// warnings, so analytics cannot block a release.
+// recordReleaseAnalytics appends one analytics record for a successful release.
+// Dry-runs do not write analytics files so the working tree remains untouched.
+// Failures are non-fatal and only reported as warnings.
 func recordReleaseAnalytics(summary ReleaseSummary) {
-	if !summary.Released {
+	if !summary.Released || summary.DryRun {
 		return
 	}
 
@@ -195,17 +217,25 @@ Quick start:
   semrel config init        — create .semrel.yaml interactively
   semrel doctor             — verify your setup before the first release
   semrel release --dry-run  — preview the next release without making changes
-  semrel release            — run the full release pipeline`,
+  semrel release            — run the full release pipeline
+  semrel update --check     — check for a newer semrel release
+  semrel plugin update --check — check for newer locked plugins`,
 		Version:      version,
 		SilenceUsage: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			cmd.SilenceErrors = false
+			styledOutput = useStyledOutput(outputFormat)
 			if noColor {
 				colors.Disable()
 			}
+			updateNoticeOptedIn := os.Getenv("SEMREL_UPDATE_CHECK") == "1"
 			if envFile != "" {
 				if err := envfile.Load(envFile); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not load env file %q: %v\n", envFile, err)
 				}
+			}
+			if updateNoticeOptedIn {
+				maybeNotifyUpdates(cmd, outputFormat)
 			}
 		},
 	}
@@ -228,7 +258,23 @@ Quick start:
 	root.AddCommand(newMigrateCommand(&configFile))
 	root.AddCommand(newUpdateCommand())
 	root.AddCommand(newWorkspaceCommand(&configFile, &outputFormat))
+	root.AddCommand(newUpdateCheckWorkerCommand())
 
+	styleCommandErrors(root)
+	help := root.HelpFunc()
+	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		if !noColor && useStyledOutput(outputFormat) {
+			styleHeadings := func(template string) string {
+				for _, heading := range []string{"Usage:", "Aliases:", "Examples:", "Available Commands:", "Flags:", "Global Flags:", "Additional help topics:"} {
+					template = strings.ReplaceAll(template, heading, colors.Cyan(heading))
+				}
+				return template
+			}
+			cmd.SetHelpTemplate(styleHeadings(cmd.HelpTemplate()))
+			cmd.SetUsageTemplate(styleHeadings(cmd.UsageTemplate()))
+		}
+		help(cmd, args)
+	})
 	return root
 }
 
@@ -365,11 +411,14 @@ func versionFlagsForBump(bump string) (hasFeat, hasFix, hasBreaking bool) {
 
 // This code has been partially generated by an AI.
 func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch bool, editNotes bool, interactive bool, outputFormat string, githubOutput bool, gitlabDotenv string, outputFile string, nextVersionOverride string) error {
-	if dryRun {
+	started := time.Now()
+	if dryRun && outputFormat != "json" {
 		_, _ = fmt.Fprintln(os.Stdout, "╔══════════════════════════════════════╗")
 		_, _ = fmt.Fprintln(os.Stdout, "║          DRY RUN — no changes        ║")
 		_, _ = fmt.Fprintln(os.Stdout, "╚══════════════════════════════════════╝")
 	}
+
+	var dryRunReports []DryRunPluginReport
 
 	// 1. Load config
 	cfg, err := loadReleaseConfig(ctx, configFile)
@@ -417,17 +466,25 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	// 2a. Run condition-phase plugins — these gate the release before any git work.
-	// A failing condition plugin aborts the release immediately with a clear error.
+	// A failing condition plugin aborts a real release immediately with a clear error.
+	// In dry-run mode, condition plugins report their decision and reason without
+	// aborting the rest of the dry-run preview.
 	if condSpecs := pluginSpecsForPhase(cfg.Plugins, "condition"); len(condSpecs) > 0 {
-		if outputFormat != "json" {
-			fmt.Println("Running condition checks…")
-		}
-		orch := plugininstance.NewOrchestrator(makePluginRunner(dryRun, ReleaseSummary{}))
-		if err := orch.Run(ctx, condSpecs); err != nil {
-			return fmt.Errorf("condition check failed: %w", err)
-		}
-		if outputFormat != "json" {
-			fmt.Println(colors.Success("All conditions passed."))
+		if dryRun {
+			for _, spec := range condSpecs {
+				dryRunReports = append(dryRunReports, runDryRunPlugin(ctx, spec, "condition", ReleaseSummary{DryRun: true}, outputFormat))
+			}
+		} else {
+			if outputFormat != "json" && !styledOutput {
+				fmt.Println("Running condition checks…")
+			}
+			orch := plugininstance.NewOrchestrator(makePluginRunnerForPhase(dryRun, ReleaseSummary{}, "condition"))
+			if err := orch.Run(ctx, condSpecs); err != nil {
+				return fmt.Errorf("condition check failed: %w", err)
+			}
+			if outputFormat != "json" && !styledOutput {
+				fmt.Println(colors.Success("All conditions passed."))
+			}
 		}
 	}
 
@@ -670,6 +727,10 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	// 8. Generate changelog
+	if styledOutput {
+		writeStatus(os.Stdout, "✓", "analyzer", fmt.Sprintf("%d commits → %s (breaking=%v feat=%v fix=%v)",
+			len(parsed), colors.Yellow(bump), hasBreaking, hasFeat, hasFix))
+	}
 	gen := changelog.NewGenerator()
 	changelogEntry := gen.Generate(nextTag, visibleCommits(parsed, rules))
 
@@ -678,13 +739,14 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	//     stdout is captured (not forwarded to the terminal); stderr goes to the terminal.
 	//     This is how generator-changelog-html and generator-release-notes work:
 	//     their output becomes the SEMREL_CHANGELOG that provider and hook plugins receive.
-	if genSpecs := pluginSpecsForPhase(cfg.Plugins, "generator"); len(genSpecs) > 0 && !dryRun {
+	if genSpecs := pluginSpecsForPhase(cfg.Plugins, "generator"); len(genSpecs) > 0 {
 		for _, spec := range genSpecs {
 			label := spec.Uses
 			if label == "" {
 				label = spec.Path
 			}
-			out, genErr := runGeneratorPlugin(ctx, spec, ReleaseSummary{
+			genSummary := ReleaseSummary{
+				DryRun:         dryRun,
 				CurrentVersion: currentTag,
 				NextVersion:    nextTag,
 				Bump:           bump,
@@ -696,14 +758,27 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				contributors:   contributors,
 				packageName:    packageNameFrom(ctx),
 				packagePath:    packagePathFrom(ctx),
-			})
+			}
+			if dryRun {
+				report := runDryRunPlugin(ctx, spec, "generator", genSummary, outputFormat)
+				dryRunReports = append(dryRunReports, report)
+				if strings.TrimSpace(report.Output) != "" && report.Status != "error" {
+					changelogEntry = strings.TrimSpace(report.Output) + "\n"
+					if outputFormat != "json" {
+						fmt.Printf("✓  %s provided custom changelog/release-notes\n", label)
+					}
+				}
+				continue
+			}
+			out, genErr := runGeneratorPlugin(ctx, spec, genSummary)
 			if genErr != nil {
 				return fmt.Errorf("generator plugin %q: %w", label, genErr)
 			}
 			if out != "" {
 				changelogEntry = out
 				if outputFormat != "json" {
-					fmt.Printf("✓  %s provided custom changelog/release-notes\n", label)
+					printStatus(os.Stdout, "✓", "generator", colors.Cyan(label)+" provided custom changelog/release-notes",
+						fmt.Sprintf("✓  %s provided custom changelog/release-notes\n", label))
 				}
 			}
 		}
@@ -770,6 +845,21 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 
 	if dryRun {
+		if analyzerSpecs := pluginSpecsForPhase(cfg.Plugins, "analyzer"); len(analyzerSpecs) > 0 {
+			for _, spec := range analyzerSpecs {
+				dryRunReports = append(dryRunReports, runDryRunPlugin(ctx, spec, "analyzer", summary, outputFormat))
+			}
+		}
+		preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag")
+		for _, spec := range preTagSpecs {
+			dryRunReports = append(dryRunReports, runDryRunPlugin(ctx, spec, "pre-tag", summary, outputFormat))
+		}
+		releaseSpecs := pluginSpecsFromConfig(cfg.Plugins)
+		for _, spec := range releaseSpecs {
+			dryRunReports = append(dryRunReports, runDryRunPlugin(ctx, spec, "release", summary, outputFormat))
+		}
+		summary.DryRunPlugins = dryRunReports
+
 		if outputFormat != "json" {
 			fmt.Println("\n[dry-run] Would perform:")
 			if cfg.ShouldCommitChangelog() {
@@ -778,36 +868,27 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 				fmt.Printf("  • skip built-in changelog write (commit_changelog: false — plugin handles it)\n")
 			}
 			fmt.Printf("  • git tag %s\n", nextTag)
-		}
-		// Release-phase plugins (providers, hooks) require live credentials that
-		// are typically absent in MR pipelines. Skip them in dry-run to keep the
-		// preview informative without failing on missing tokens.
-		// Pre-tag plugins (e.g. version-file updaters) are also skipped because
-		// they write files and their effect is already implied by the changelog entry.
-		if preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag"); len(preTagSpecs) > 0 {
-			if outputFormat != "json" {
+			if len(preTagSpecs) > 0 {
 				fmt.Printf("  • run pre-tag plugins: ")
 				for i, s := range preTagSpecs {
 					if i > 0 {
 						fmt.Print(", ")
 					}
-					fmt.Print(s.Uses)
+					fmt.Print(s.InstanceID())
 				}
 				fmt.Println()
 			}
-		}
-		releaseSpecs := pluginSpecsFromConfig(cfg.Plugins)
-		if len(releaseSpecs) > 0 && outputFormat != "json" {
-			fmt.Printf("  • run release plugins: ")
-			for i, s := range releaseSpecs {
-				if i > 0 {
-					fmt.Print(", ")
+			if len(releaseSpecs) > 0 {
+				fmt.Printf("  • run release plugins: ")
+				for i, s := range releaseSpecs {
+					if i > 0 {
+						fmt.Print(", ")
+					}
+					fmt.Print(s.InstanceID())
 				}
-				fmt.Print(s.Uses)
+				fmt.Println()
 			}
-			fmt.Println()
-		}
-		if outputFormat != "json" {
+			printDryRunPluginReports(dryRunReports)
 			fmt.Println("\n[dry-run] No changes made.")
 		}
 		if err := writeCIOutputs(summary, githubOutput, gitlabDotenv, outputFile); err != nil {
@@ -885,7 +966,7 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	//      for writing CHANGELOG.md; the auto-commit below picks it up automatically.
 	if preTagSpecs := pluginSpecsForPhase(cfg.Plugins, "pre-tag"); len(preTagSpecs) > 0 {
 		if !dryRun {
-			orch := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
+			orch := plugininstance.NewOrchestrator(makePluginRunnerForPhase(dryRun, summary, "pre-tag"))
 			if err := orch.Run(ctx, preTagSpecs); err != nil {
 				return err
 			}
@@ -909,12 +990,13 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 		return fmt.Errorf("creating tag: %w", err)
 	}
 	if outputFormat != "json" {
-		fmt.Println(colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag))))
+		printStatus(os.Stdout, "✓", "git", "created tag "+colors.Bold(nextTag),
+			colors.Success(fmt.Sprintf("Created tag %s", colors.Bold(nextTag)))+"\n")
 	}
 
 	// 13. Run configured release-phase plugins
 	if len(cfg.Plugins) > 0 {
-		orchestrator := plugininstance.NewOrchestrator(makePluginRunner(dryRun, summary))
+		orchestrator := plugininstance.NewOrchestrator(makePluginRunnerForPhase(dryRun, summary, "release"))
 		if err := orchestrator.Run(ctx, pluginSpecsFromConfig(cfg.Plugins)); err != nil {
 			return err
 		}
@@ -925,6 +1007,9 @@ func runRelease(ctx context.Context, dryRun bool, configFile string, forcePatch 
 	}
 	if outputFormat == "json" {
 		return printSummary(summary, outputFormat)
+	}
+	if styledOutput {
+		writeStatus(os.Stdout, "✓", "release", fmt.Sprintf("%s completed in %s", colors.Bold(nextTag), time.Since(started).Round(time.Millisecond)))
 	}
 	return nil
 }
@@ -956,6 +1041,10 @@ func pluginSpecsForPhase(plugins []config.PluginConfig, phase string) []pluginin
 }
 
 func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
+	return makePluginRunnerForPhase(dryRun, rel, "")
+}
+
+func makePluginRunnerForPhase(dryRun bool, rel ReleaseSummary, phase string) plugininstance.Runner {
 	return func(ctx context.Context, spec plugininstance.PluginSpec) error {
 		binPath, err := resolvePluginBinary(spec)
 		if err != nil && spec.Uses != "" {
@@ -996,7 +1085,13 @@ func makePluginRunner(dryRun bool, rel ReleaseSummary) plugininstance.Runner {
 			env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
 		}
 		cmd.Env = env
-		return cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		if styledOutput && phase != "" {
+			writeStatus(os.Stdout, "✓", pluginStage(phase, spec.Uses), colors.Cyan(spec.InstanceID())+" completed")
+		}
+		return nil
 	}
 }
 
@@ -1034,6 +1129,123 @@ func runGeneratorPlugin(ctx context.Context, spec plugininstance.PluginSpec, rel
 		return "", err
 	}
 	return strings.TrimSpace(buf.String()), nil
+}
+
+func runDryRunPlugin(ctx context.Context, spec plugininstance.PluginSpec, phase string, rel ReleaseSummary, outputFormat string) DryRunPluginReport {
+	report := DryRunPluginReport{
+		Name:   spec.InstanceID(),
+		Phase:  phase,
+		Status: "ok",
+	}
+
+	binPath, err := resolvePluginBinary(spec)
+	if err != nil && spec.Uses != "" {
+		if outputFormat != "json" {
+			fmt.Printf("⬇  plugin %q not found — attempting auto-install...\n", spec.Uses)
+		}
+		if installErr := autoInstallPlugin(ctx, spec.Uses); installErr != nil {
+			report.Status = "skipped"
+			report.Warning = fmt.Sprintf("auto-install of %q failed: %v", spec.Uses, installErr)
+			return report
+		}
+		binPath, err = resolvePluginBinary(spec)
+	}
+	if err != nil {
+		report.Status = "skipped"
+		report.Warning = fmt.Sprintf("plugin binary not found for %q", report.Name)
+		return report
+	}
+
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd := exec.CommandContext(ctx, binPath)
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	env := os.Environ()
+	env = append(env, releaseContextEnv(rel, true)...)
+	for k, v := range spec.Config {
+		val := fmt.Sprintf("%v", v)
+		if val == "" {
+			continue
+		}
+		env = append(env, "SEMREL_PLUGIN_"+pluginEnvKey(k)+"="+val)
+	}
+	cmd.Env = env
+	runErr := cmd.Run()
+
+	explicitDryRunFlag := false
+	for _, rawLine := range strings.Split(strings.ReplaceAll(stderrBuf.String(), "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "plugin_schema_version=") {
+			if v, convErr := strconv.Atoi(strings.TrimPrefix(line, "plugin_schema_version=")); convErr == nil {
+				report.SchemaVersion = v
+				if !explicitDryRunFlag && v >= 1 {
+					report.DryRunSupported = true
+				}
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "plugin_dry_run=") {
+			explicitDryRunFlag = true
+			report.DryRunSupported = strings.EqualFold(strings.TrimPrefix(line, "plugin_dry_run="), "true")
+			continue
+		}
+		if strings.HasPrefix(line, sdk.DryRunSummaryPrefix) {
+			rawSummary := strings.TrimPrefix(line, sdk.DryRunSummaryPrefix)
+			var parsed map[string]interface{}
+			if jsonErr := json.Unmarshal([]byte(rawSummary), &parsed); jsonErr == nil {
+				report.Summary = parsed
+			}
+			continue
+		}
+		report.Logs = append(report.Logs, line)
+	}
+
+	report.Output = strings.TrimRight(strings.ReplaceAll(stdoutBuf.String(), "\r\n", "\n"), "\n")
+
+	if strings.HasPrefix(strings.TrimSpace(report.Output), "{") {
+		var stdoutObj map[string]interface{}
+		if jsonErr := json.Unmarshal([]byte(report.Output), &stdoutObj); jsonErr == nil {
+			if v, ok := stdoutObj["plugin_schema_version"].(float64); ok && int(v) >= 1 {
+				if report.SchemaVersion == 0 {
+					report.SchemaVersion = int(v)
+				}
+				if !explicitDryRunFlag {
+					report.DryRunSupported = true
+				}
+			}
+			if report.Summary == nil {
+				report.Summary = stdoutObj
+			}
+		}
+	}
+
+	if runErr != nil {
+		report.Status = "warning"
+		report.Warning = fmt.Sprintf("plugin %q failed in dry-run: %v", report.Name, runErr)
+	} else if !report.DryRunSupported {
+		report.Status = "warning"
+		report.Warning = fmt.Sprintf("plugin %q does not declare dry-run capability (missing plugin_schema_version handshake)", report.Name)
+	}
+
+	return report
+}
+
+func printDryRunPluginReports(reports []DryRunPluginReport) {
+	for _, report := range reports {
+		fmt.Printf("\n── [dry-run] %s (%s) ──\n", report.Name, report.Phase)
+		for _, line := range report.Logs {
+			_, _ = fmt.Fprintln(os.Stderr, line)
+		}
+		if report.Warning != "" {
+			_, _ = fmt.Fprintln(os.Stderr, colors.Warning("warning: "+report.Warning))
+		}
+		if report.Output != "" {
+			fmt.Println(report.Output)
+		}
+	}
 }
 
 func releaseContextEnv(rel ReleaseSummary, dryRun bool) []string {
@@ -1437,7 +1649,8 @@ func runLint(ctx context.Context, configFile string, outputFormat string) error 
 		enc.SetIndent("", "  ")
 		return enc.Encode(LintSummary{Valid: true, Total: len(rawMessages)})
 	}
-	fmt.Println(colors.Success(fmt.Sprintf("All %d commit(s) follow Conventional Commits.", len(rawMessages))))
+	printStatus(os.Stdout, "✓", "lint", fmt.Sprintf("%d commits follow Conventional Commits", len(rawMessages)),
+		colors.Success(fmt.Sprintf("All %d commit(s) follow Conventional Commits.", len(rawMessages)))+"\n")
 	return nil
 }
 
@@ -1594,7 +1807,7 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 	}
 
 	if len(messages) == 0 {
-		fmt.Println("No commit messages to lint.")
+		printStatus(os.Stdout, "→", "commitlint", "no commit messages to lint", "No commit messages to lint.\n")
 		return nil
 	}
 
@@ -1640,9 +1853,9 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 	} else {
 		for _, r := range results {
 			if r.Valid {
-				fmt.Println(colors.Success(fmt.Sprintf("  ✓ %s", r.Message)))
+				printStatus(os.Stdout, "✓", "commitlint", r.Message, colors.Success(fmt.Sprintf("  ✓ %s", r.Message))+"\n")
 			} else {
-				fmt.Println(colors.Error(fmt.Sprintf("  ✗ %s", r.Message)))
+				printStatus(os.Stdout, "✗", "commitlint", r.Message, colors.Error(fmt.Sprintf("  ✗ %s", r.Message))+"\n")
 				if r.Error != "" {
 					fmt.Printf("      %s\n", colors.Red(r.Error))
 				}
@@ -1650,7 +1863,8 @@ func runCommitlint(ctx context.Context, args []string, fromRef, toRef string, st
 		}
 		fmt.Println()
 		if summary.Valid {
-			fmt.Println(colors.Success(fmt.Sprintf("All %d commit(s) are valid.", summary.Total)))
+			printStatus(os.Stdout, "✓", "commitlint", fmt.Sprintf("%d commits are valid", summary.Total),
+				colors.Success(fmt.Sprintf("All %d commit(s) are valid.", summary.Total))+"\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "%s\n",
 				colors.Error(fmt.Sprintf("%d of %d commit(s) failed validation.", summary.Failed, summary.Total)))
