@@ -204,11 +204,14 @@ Quick start:
 			if noColor {
 				colors.Disable()
 			}
-			maybeNotifyUpdates(cmd, outputFormat)
+			updateNoticeOptedIn := os.Getenv("SEMREL_UPDATE_CHECK") == "1"
 			if envFile != "" {
 				if err := envfile.Load(envFile); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: could not load env file %q: %v\n", envFile, err)
 				}
+			}
+			if updateNoticeOptedIn {
+				maybeNotifyUpdates(cmd, outputFormat)
 			}
 		},
 	}

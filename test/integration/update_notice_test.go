@@ -122,3 +122,82 @@ func TestUpdateNoticeInteractive(t *testing.T) {
 		t.Fatalf("got %d registry requests, want one", calls.Load())
 	}
 }
+
+func TestUpdateNoticeEnvFileRegistry(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses Linux script for a pseudo-terminal")
+	}
+	script, err := exec.LookPath("script")
+	if err != nil {
+		t.Skip("script is not installed")
+	}
+	binary := requireSemrelBinary(t)
+	dir := t.TempDir()
+	requests := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests <- struct{}{}
+		fmt.Fprint(w, `{"plugins":[]}`)
+	}))
+	defer server.Close()
+	if err := os.WriteFile(filepath.Join(dir, ".semrel.yaml"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "custom.env"), []byte("SEMREL_REGISTRY_URL="+server.URL+"\nSEMREL_UPDATE_CHECK=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := make([]string, 0, len(os.Environ())+5)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "SEMREL_REGISTRY_URL=") && !strings.HasPrefix(entry, "SEMREL_UPDATE_CHECK=") {
+			env = append(env, entry)
+		}
+	}
+	env = append(env, "CI=", "XDG_CACHE_HOME="+filepath.Join(dir, "cache"),
+		"HTTPS_PROXY=http://127.0.0.1:1", "HTTP_PROXY=http://127.0.0.1:1",
+		"NO_PROXY=127.0.0.1,localhost", "no_proxy=127.0.0.1,localhost")
+	run := func(environ []string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		quoted := "'" + strings.ReplaceAll(binary, "'", "'\\''") + "'"
+		cmd := exec.CommandContext(ctx, script, "-q", "-e", "-c", quoted+" config show --env-file=custom.env", "/dev/null")
+		cmd.Dir, cmd.Env = dir, environ
+		stdin, input, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer stdin.Close()
+		defer input.Close()
+		cmd.Stdin = stdin
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("semrel failed: %v\n%s", err, out)
+		}
+	}
+
+	run(env)
+	if _, err := os.Stat(filepath.Join(dir, "cache", "semrel", "update-notices")); !os.IsNotExist(err) {
+		t.Fatalf("env file alone enabled update checks: %v", err)
+	}
+	run(append(env, "SEMREL_UPDATE_CHECK=1"))
+	select {
+	case <-requests:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background check did not use the registry from the env file")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		matches, err := filepath.Glob(filepath.Join(dir, "cache", "semrel", "update-notices", "*", "registry-cache", "plugins.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(matches) == 1 {
+			logFile := filepath.Join(filepath.Dir(filepath.Dir(matches[0])), "errors.log")
+			if info, err := os.Stat(logFile); err == nil && info.Size() > 0 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background check did not complete and save the registry cache")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
