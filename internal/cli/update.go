@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	buildversion "github.com/SemRels/semrel/internal/version"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 const (
@@ -62,29 +63,45 @@ Exit codes:
 }
 
 func runUpdate(ctx context.Context, checkOnly bool) error {
-	current := strings.TrimPrefix(buildversion.Version, "v")
+	current := strings.TrimPrefix(currentSemrelVersion(), "v")
 
 	release, err := fetchLatestRelease(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching latest release info: %w", err)
 	}
 	latest := strings.TrimPrefix(release.TagName, "v")
+	latestVersion, err := semver.ParseVersion(latest)
+	if err != nil || latest == "" || latestVersion.Prerelease != "" {
+		return fmt.Errorf("latest release %q is not a stable semantic version", release.TagName)
+	}
+	if checkOnly {
+		cacheManualUpdate(func(dir string) error { return writeReleaseCache(dir, release) })
+	}
 
 	switch current {
 	case "dev":
 		fmt.Printf("Current version: dev (built from source)\n")
 		fmt.Printf("Latest release:  %s\n", release.TagName)
-	case latest:
-		printStatus(os.Stdout, "✓", "update", fmt.Sprintf("already up to date (%s)", release.TagName),
-			fmt.Sprintf("✔  Already up to date (%s)\n", release.TagName))
-		return nil
 	default:
+		currentVersion, err := semver.ParseVersion(current)
+		if err != nil || current == "" {
+			return fmt.Errorf("cannot compare current version %q to the latest release", current)
+		}
+		if currentVersion.Compare(latestVersion) == 0 {
+			printStatus(os.Stdout, "✓", "update", fmt.Sprintf("already up to date (%s)", release.TagName),
+				fmt.Sprintf("✔  Already up to date (%s)\n", release.TagName))
+			return nil
+		}
 		fmt.Printf("Current version: v%s\n", current)
 		fmt.Printf("Latest release:  %s\n", release.TagName)
+		if currentVersion.Compare(latestVersion) > 0 {
+			fmt.Printf("No newer stable release is available.\n")
+			return nil
+		}
 	}
 
 	if checkOnly {
-		if current != latest {
+		if current != "dev" && newerStable(current, release.TagName) {
 			fmt.Printf("→  Run 'semrel update' to upgrade\n")
 		}
 		return nil

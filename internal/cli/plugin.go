@@ -18,6 +18,7 @@ import (
 	"github.com/SemRels/semrel/internal/colors"
 	"github.com/SemRels/semrel/internal/registry"
 	"github.com/SemRels/semrel/pkg/plugin"
+	"github.com/SemRels/semrel/pkg/semver"
 )
 
 func newPluginCommand() *cobra.Command {
@@ -314,6 +315,9 @@ func runPluginUpdate(ctx context.Context, nameVer string, checkOnly bool) error 
 	if err != nil {
 		return err
 	}
+	if checkOnly {
+		cacheManualUpdate(func(dir string) error { return writePluginNoticeCache(dir, reg) })
+	}
 	if len(targets) == 0 {
 		fmt.Printf("nothing to update — %s has no plugin entries\n", LockFileName)
 		return nil
@@ -432,23 +436,15 @@ func isVersionNewer(current, candidate string) bool {
 		return true
 	}
 
-	var (
-		cMaj, cMin, cPatch int
-		nMaj, nMin, nPatch int
-	)
-	if _, err := fmt.Sscanf(current, "%d.%d.%d", &cMaj, &cMin, &cPatch); err != nil {
+	old, err := semver.ParseVersion(current)
+	if err != nil {
 		return candidate != current
 	}
-	if _, err := fmt.Sscanf(candidate, "%d.%d.%d", &nMaj, &nMin, &nPatch); err != nil {
+	next, err := semver.ParseVersion(candidate)
+	if err != nil {
 		return candidate != current
 	}
-	if nMaj != cMaj {
-		return nMaj > cMaj
-	}
-	if nMin != cMin {
-		return nMin > cMin
-	}
-	return nPatch > cPatch
+	return next.Compare(old) > 0
 }
 
 func latestStableVersion(meta *registry.PluginMeta) (*registry.PluginVersion, error) {
