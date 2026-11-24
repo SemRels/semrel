@@ -42,6 +42,70 @@ func TestUnifiedDiffBytes(t *testing.T) {
 	}
 }
 
+func TestUnifiedDiffLineEndings(t *testing.T) {
+	tests := []struct {
+		name, before, after, want string
+	}{
+		{
+			name:   "remove final newline",
+			before: "line\n",
+			after:  "line",
+			want:   "--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-line\n+line\n\\ No newline at end of file\n",
+		},
+		{
+			name:   "add final newline",
+			before: "line",
+			after:  "line\n",
+			want:   "--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-line\n\\ No newline at end of file\n+line\n",
+		},
+		{
+			name:   "change CRLF to LF",
+			before: "line\r\n",
+			after:  "line\n",
+			want:   "--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-line\r\n+line\n",
+		},
+		{
+			name:  "create content",
+			after: "line\n",
+			want:  "--- a/file\n+++ b/file\n@@ -0,0 +1,1 @@\n+line\n",
+		},
+		{
+			name:   "remove content",
+			before: "line\n",
+			want:   "--- a/file\n+++ b/file\n@@ -1,1 +0,0 @@\n-line\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := UnifiedDiff("file", tt.before, tt.after); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnifiedDiffLargeFiles(t *testing.T) {
+	prefix := strings.Repeat("unchanged\n", 10_000)
+	suffix := strings.Repeat("unchanged\n", 10_000)
+	got := UnifiedDiff("file", prefix+"old\n"+suffix, prefix+"new\n"+suffix)
+	if !strings.Contains(got, "-old\n+new\n") || len(got) > 200 {
+		t.Fatalf("unexpected large-file diff: %q", got)
+	}
+	got = UnifiedDiff("file", strings.Repeat("line\n", 10), strings.Repeat("line\n", 10)+"new\n")
+	if !strings.Contains(got, "@@ -8,3 +8,4 @@\n") {
+		t.Fatalf("incorrect append hunk: %q", got)
+	}
+
+	before := strings.Repeat("old\n", 2_000)
+	after := strings.Repeat("new\n", 2_000)
+	got = UnifiedDiff("file", before, after)
+	if !strings.Contains(got, "@@ -1,2000 +1,2000 @@\n") ||
+		strings.Count(got, "-old\n") != 2_000 ||
+		strings.Count(got, "+new\n") != 2_000 {
+		t.Fatal("large replacement did not include all changed lines")
+	}
+}
+
 func TestMaskSecret(t *testing.T) {
 	if got := MaskSecret(""); got != "" {
 		t.Fatalf("MaskSecret(\"\") = %q, want empty", got)

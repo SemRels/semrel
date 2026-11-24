@@ -10,7 +10,10 @@ import (
 	"strings"
 )
 
-const diffContextLines = 3
+const (
+	diffContextLines = 3
+	maxDiffCells     = 1_000_000
+)
 
 // DryRunSummaryPrefix is the optional stderr line prefix plugins can emit to
 // provide a structured machine-readable summary for `semrel release --dry-run --output json`.
@@ -18,7 +21,7 @@ const DryRunSummaryPrefix = "plugin_dry_run_summary="
 
 // UnifiedDiff computes a unified diff between before and after for the given
 // file path entirely in memory. When before and after are identical, it returns
-// an empty string.
+// an empty string. Large changed regions may be shown as full replacements.
 func UnifiedDiff(path, before, after string) string {
 	if before == after {
 		return ""
@@ -41,8 +44,11 @@ func UnifiedDiff(path, before, after string) string {
 	for _, h := range hunks {
 		fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@\n", h.aStart, h.aCount, h.bStart, h.bCount)
 		for _, line := range h.lines {
-			b.WriteString(line)
-			b.WriteByte('\n')
+			b.WriteByte(line.kind)
+			b.WriteString(line.text)
+			if !strings.HasSuffix(line.text, "\n") {
+				b.WriteString("\n\\ No newline at end of file\n")
+			}
 		}
 	}
 	return b.String()
@@ -90,61 +96,85 @@ type diffHunk struct {
 	aCount int
 	bStart int
 	bCount int
-	lines  []string
+	lines  []editOp
 }
 
 func splitLines(s string) []string {
 	if s == "" {
 		return nil
 	}
-	normalized := strings.ReplaceAll(s, "\r\n", "\n")
-	normalized = strings.TrimSuffix(normalized, "\n")
-	if normalized == "" {
-		return []string{""}
+	lines := strings.SplitAfter(s, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
-	return strings.Split(normalized, "\n")
+	return lines
 }
 
 func diffLines(a, b []string) []editOp {
-	n, m := len(a), len(b)
-	dp := make([][]int, n+1)
-	for i := range dp {
-		dp[i] = make([]int, m+1)
+	prefix := 0
+	for prefix < len(a) && prefix < len(b) && a[prefix] == b[prefix] {
+		prefix++
 	}
-	for i := n - 1; i >= 0; i-- {
-		for j := m - 1; j >= 0; j-- {
-			if a[i] == b[j] {
-				dp[i][j] = dp[i+1][j+1] + 1
-			} else if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
-			} else {
-				dp[i][j] = dp[i][j+1]
+	suffix := 0
+	for suffix < len(a)-prefix && suffix < len(b)-prefix &&
+		a[len(a)-1-suffix] == b[len(b)-1-suffix] {
+		suffix++
+	}
+
+	ops := make([]editOp, 0, len(a)+len(b))
+	i, j := 0, 0
+	add := func(kind byte, text string) {
+		ops = append(ops, editOp{kind: kind, text: text, aIdx: i + 1, bIdx: j + 1})
+		if kind != '+' {
+			i++
+		}
+		if kind != '-' {
+			j++
+		}
+	}
+	for i < prefix {
+		add(' ', a[i])
+	}
+
+	old, new := a[prefix:len(a)-suffix], b[prefix:len(b)-suffix]
+	n, m := len(old), len(new)
+	if n > 0 && m > 0 && m <= maxDiffCells/n {
+		dp := make([][]int, n+1)
+		for row := range dp {
+			dp[row] = make([]int, m+1)
+		}
+		for row := n - 1; row >= 0; row-- {
+			for col := m - 1; col >= 0; col-- {
+				if old[row] == new[col] {
+					dp[row][col] = dp[row+1][col+1] + 1
+				} else if dp[row+1][col] >= dp[row][col+1] {
+					dp[row][col] = dp[row+1][col]
+				} else {
+					dp[row][col] = dp[row][col+1]
+				}
+			}
+		}
+		for i < prefix+n && j < prefix+m {
+			row, col := i-prefix, j-prefix
+			switch {
+			case old[row] == new[col]:
+				add(' ', old[row])
+			case dp[row+1][col] >= dp[row][col+1]:
+				add('-', old[row])
+			default:
+				add('+', new[col])
 			}
 		}
 	}
-
-	ops := make([]editOp, 0, n+m)
-	i, j := 0, 0
-	for i < n && j < m {
-		if a[i] == b[j] {
-			ops = append(ops, editOp{kind: ' ', text: a[i], aIdx: i + 1, bIdx: j + 1})
-			i++
-			j++
-		} else if dp[i+1][j] >= dp[i][j+1] {
-			ops = append(ops, editOp{kind: '-', text: a[i], aIdx: i + 1, bIdx: j + 1})
-			i++
-		} else {
-			ops = append(ops, editOp{kind: '+', text: b[j], aIdx: i + 1, bIdx: j + 1})
-			j++
-		}
+	// Large changed regions are emitted as replacements to bound LCS memory.
+	for i < prefix+n {
+		add('-', a[i])
 	}
-	for i < n {
-		ops = append(ops, editOp{kind: '-', text: a[i], aIdx: i + 1, bIdx: j + 1})
-		i++
+	for j < prefix+m {
+		add('+', b[j])
 	}
-	for j < m {
-		ops = append(ops, editOp{kind: '+', text: b[j], aIdx: i + 1, bIdx: j + 1})
-		j++
+	for i < len(a) {
+		add(' ', a[i])
 	}
 	return ops
 }
@@ -177,7 +207,7 @@ func buildHunks(ops []editOp, contextLines int) []diffHunk {
 		h := diffHunk{
 			aStart: 1,
 			bStart: 1,
-			lines:  make([]string, 0, len(slice)),
+			lines:  make([]editOp, 0, len(slice)),
 		}
 		if len(slice) > 0 {
 			h.aStart = slice[0].aIdx
@@ -193,7 +223,7 @@ func buildHunks(ops []editOp, contextLines int) []diffHunk {
 			case '+':
 				h.bCount++
 			}
-			h.lines = append(h.lines, string(op.kind)+op.text)
+			h.lines = append(h.lines, op)
 		}
 		if h.aCount == 0 {
 			h.aStart = 0
