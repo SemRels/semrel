@@ -132,7 +132,7 @@ func runConfigInit(configFile string, noInteractive bool, force bool, noGitignor
 		return fmt.Errorf("writing %s: %w", target, err)
 	}
 
-	fmt.Printf("✔  %s written\n", target)
+	printStatus(os.Stdout, "✓", "config", target+" written", fmt.Sprintf("✔  %s written\n", target))
 
 	if !noGitignore {
 		if err := ensureGitignore(filepath.Dir(target)); err != nil {
@@ -189,9 +189,9 @@ func ensureGitignore(dir string) error {
 	}
 
 	if exists {
-		fmt.Printf("✔  %s updated\n", gitignorePath)
+		printStatus(os.Stdout, "✓", "config", gitignorePath+" updated", fmt.Sprintf("✔  %s updated\n", gitignorePath))
 	} else {
-		fmt.Printf("✔  %s written\n", gitignorePath)
+		printStatus(os.Stdout, "✓", "config", gitignorePath+" written", fmt.Sprintf("✔  %s written\n", gitignorePath))
 	}
 	return nil
 }
@@ -247,9 +247,9 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 
 	prompt := func(label, def string) (string, error) {
 		if def != "" {
-			fmt.Fprintf(os.Stderr, "? %s [%s]: ", label, def)
+			fmt.Fprintf(os.Stderr, "%s %s [%s]: ", promptMarker(), label, def)
 		} else {
-			fmt.Fprintf(os.Stderr, "? %s: ", label)
+			fmt.Fprintf(os.Stderr, "%s %s: ", promptMarker(), label)
 		}
 		v, err := scanLine()
 		if err != nil {
@@ -266,7 +266,7 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 		if !def {
 			defStr = "y/N"
 		}
-		fmt.Fprintf(os.Stderr, "? %s [%s]: ", label, defStr)
+		fmt.Fprintf(os.Stderr, "%s %s [%s]: ", promptMarker(), label, defStr)
 		v, err := scanLine()
 		if err != nil {
 			return false, err
@@ -332,7 +332,7 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	out.Plugins = nil
 
 	// CI condition plugin.
-	fmt.Fprintf(os.Stderr, "? CI environment [github-actions/gitlab-ci/gitea-actions/generic/skip]: ")
+	fmt.Fprintf(os.Stderr, "%s CI environment [github-actions/gitlab-ci/gitea-actions/generic/skip]: ", promptMarker())
 	ci, err := scanLine()
 	if err != nil {
 		return nil, err
@@ -350,7 +350,7 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 
 	// Provider plugin.
-	fmt.Fprintf(os.Stderr, "? Git forge / provider plugin [github/gitlab/gitea/git/skip]: ")
+	fmt.Fprintf(os.Stderr, "%s Git forge / provider plugin [github/gitlab/gitea/git/skip]: ", promptMarker())
 	provider, err := scanLine()
 	if err != nil {
 		return nil, err
@@ -368,7 +368,7 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 
 	// Changelog generator.
-	fmt.Fprintf(os.Stderr, "? Add changelog generator? [changelog-md/changelog-html/skip]: ")
+	fmt.Fprintf(os.Stderr, "%s Add changelog generator? [changelog-md/changelog-html/skip]: ", promptMarker())
 	gen, err := scanLine()
 	if err != nil {
 		return nil, err
@@ -382,7 +382,7 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	}
 
 	// Notification hook.
-	fmt.Fprintf(os.Stderr, "? Add notification hook? [slack/teams/matrix/email/skip]: ")
+	fmt.Fprintf(os.Stderr, "%s Add notification hook? [slack/teams/matrix/email/skip]: ", promptMarker())
 	hook, err := scanLine()
 	if err != nil {
 		return nil, err
@@ -503,7 +503,7 @@ func runConfigValidate(configFile string) error {
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
-	fmt.Printf("✔  %s is valid\n", cfgPath)
+	printStatus(os.Stdout, "✓", "config", cfgPath+" is valid", fmt.Sprintf("✔  %s is valid\n", cfgPath))
 	return nil
 }
 
@@ -594,7 +594,8 @@ func runConfigSet(configFile, key, value string) error {
 	if err := os.WriteFile(cfgPath, raw, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("✔  %s updated: %s = %s\n", cfgPath, key, value)
+	printStatus(os.Stdout, "✓", "config", fmt.Sprintf("%s updated: %s = %s", cfgPath, key, value),
+		fmt.Sprintf("✔  %s updated: %s = %s\n", cfgPath, key, value))
 	return nil
 }
 
