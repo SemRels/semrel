@@ -12,10 +12,10 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"github.com/SemRels/semrel/internal/colors"
 	"github.com/SemRels/semrel/internal/registry"
 	"github.com/SemRels/semrel/pkg/plugin"
 	"github.com/SemRels/semrel/pkg/semver"
@@ -169,7 +169,7 @@ func runPluginList(ctx context.Context, noHeader bool, sortBy string) error {
 		})
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w, flush := tableWriter(!noHeader)
 	if !noHeader {
 		_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDOWNLOADS\tDESCRIPTION")
 		_, _ = fmt.Fprintln(w, "----\t--------\t---------\t-----------")
@@ -177,7 +177,7 @@ func runPluginList(ctx context.Context, noHeader bool, sortBy string) error {
 	for _, p := range plugins {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", pluginRef(p), p.Category, p.Downloads, truncate(p.Description, 50))
 	}
-	return w.Flush()
+	return flush()
 }
 
 func runPluginSearch(ctx context.Context, query string) error {
@@ -187,7 +187,7 @@ func runPluginSearch(ctx context.Context, query string) error {
 	}
 
 	q := strings.ToLower(query)
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w, flush := tableWriter(true)
 	_, _ = fmt.Fprintln(w, "NAME\tCATEGORY\tDESCRIPTION")
 	_, _ = fmt.Fprintln(w, "----\t--------\t-----------")
 
@@ -203,7 +203,7 @@ func runPluginSearch(ctx context.Context, query string) error {
 			found++
 		}
 	}
-	if err := w.Flush(); err != nil {
+	if err := flush(); err != nil {
 		return err
 	}
 	if found == 0 {
@@ -237,7 +237,8 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("plugin %q@%s has no binary releases yet; check back later", name, versionEntry.Version)
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "Installing %s@%s ...\n", pluginRef(*meta), versionEntry.Version)
+	printStatus(os.Stdout, "→", "plugin", "installing "+colors.Cyan(pluginRef(*meta))+"@"+versionEntry.Version,
+		fmt.Sprintf("Installing %s@%s ...\n", pluginRef(*meta), versionEntry.Version))
 
 	binaryPath, err := loader.ResolvePluginBinary(ctx, meta.CanonicalRef(), versionEntry.Version)
 	if err != nil {
@@ -266,7 +267,8 @@ func runPluginInstall(ctx context.Context, nameVer, overrideDir string) error {
 		return fmt.Errorf("installing plugin binary: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(os.Stdout, "✓ Installed %s to %s\n", pluginRef(*meta), dest)
+	printStatus(os.Stdout, "✓", "plugin", "installed "+colors.Cyan(pluginRef(*meta))+" → "+dest,
+		fmt.Sprintf("✓ Installed %s to %s\n", pluginRef(*meta), dest))
 
 	// Update .semrel.lock so the installed version is pinned for all contributors.
 	// Only update the lock when installing to the default project-local directory.
@@ -324,11 +326,14 @@ func runPluginUpdate(ctx context.Context, nameVer string, checkOnly bool) error 
 	for _, target := range targets {
 		switch {
 		case target.CurrentVersion == "":
-			fmt.Printf("• %s: not installed, latest is %s\n", target.Ref, target.LatestVersion)
+			printStatus(os.Stdout, "→", "plugin", fmt.Sprintf("%s not installed, latest is %s", colors.Cyan(target.Ref), target.LatestVersion),
+				fmt.Sprintf("• %s: not installed, latest is %s\n", target.Ref, target.LatestVersion))
 		case target.UpdateAvailable:
-			fmt.Printf("• %s: %s → %s\n", target.Ref, target.CurrentVersion, target.LatestVersion)
+			printStatus(os.Stdout, "→", "plugin", fmt.Sprintf("%s %s → %s", colors.Cyan(target.Ref), target.CurrentVersion, target.LatestVersion),
+				fmt.Sprintf("• %s: %s → %s\n", target.Ref, target.CurrentVersion, target.LatestVersion))
 		default:
-			fmt.Printf("• %s: up to date (%s)\n", target.Ref, target.CurrentVersion)
+			printStatus(os.Stdout, "✓", "plugin", fmt.Sprintf("%s up to date (%s)", colors.Cyan(target.Ref), target.CurrentVersion),
+				fmt.Sprintf("• %s: up to date (%s)\n", target.Ref, target.CurrentVersion))
 		}
 	}
 
@@ -602,19 +607,22 @@ func runPluginRestore(ctx context.Context) error {
 			platform := runtime.GOOS + "_" + runtime.GOARCH
 			if expected, ok := entry.Checksums[platform]; ok {
 				if chkErr := loader.ValidateChecksum(dest, expected); chkErr == nil {
-					fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
+					printStatus(os.Stdout, "✓", "plugin", fmt.Sprintf("%s@%s already installed (checksum verified)", colors.Cyan(entry.Ref), entry.Version),
+						fmt.Sprintf("✓  %s@%s already installed\n", entry.Ref, entry.Version))
 					continue
 				}
 				// Checksum mismatch — fall through to re-download.
 				fmt.Printf("↻  %s binary present but checksum differs — updating to @%s\n", entry.Ref, entry.Version)
 			} else {
 				// No checksum for this platform — trust the existing file.
-				fmt.Printf("✓  %s@%s already installed\n", entry.Ref, entry.Version)
+				printStatus(os.Stdout, "✓", "plugin", fmt.Sprintf("%s@%s already installed (no checksum available)", colors.Cyan(entry.Ref), entry.Version),
+					fmt.Sprintf("✓  %s@%s already installed\n", entry.Ref, entry.Version))
 				continue
 			}
 		}
 
-		fmt.Printf("⬇  restoring %s@%s ...\n", entry.Ref, entry.Version)
+		printStatus(os.Stdout, "→", "plugin", fmt.Sprintf("restoring %s@%s", colors.Cyan(entry.Ref), entry.Version),
+			fmt.Sprintf("⬇  restoring %s@%s ...\n", entry.Ref, entry.Version))
 
 		binaryPath, dlErr := loader.ResolvePluginBinary(ctx, entry.Ref, entry.Version)
 		if dlErr != nil {
@@ -642,7 +650,8 @@ func runPluginRestore(ctx context.Context) error {
 			failed = append(failed, entry.Ref)
 			continue
 		}
-		fmt.Printf("✓  restored %s@%s → %s\n", entry.Ref, entry.Version, dest)
+		printStatus(os.Stdout, "✓", "plugin", fmt.Sprintf("restored %s@%s → %s", colors.Cyan(entry.Ref), entry.Version, dest),
+			fmt.Sprintf("✓  restored %s@%s → %s\n", entry.Ref, entry.Version, dest))
 
 		// Track the restore as a download — synchronous so the process doesn't
 		// exit before the HTTP request completes.
@@ -658,6 +667,9 @@ func runPluginRestore(ctx context.Context) error {
 
 	if len(failed) > 0 {
 		return fmt.Errorf("failed to restore %d plugin(s): %v", len(failed), failed)
+	}
+	if styledOutput {
+		writeStatus(os.Stdout, "✓", "lockfile", fmt.Sprintf("processed %d plugins from %s", len(lf.Plugins), LockFileName))
 	}
 	return nil
 }

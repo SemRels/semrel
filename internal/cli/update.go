@@ -88,7 +88,8 @@ func runUpdate(ctx context.Context, checkOnly bool) error {
 			return fmt.Errorf("cannot compare current version %q to the latest release", current)
 		}
 		if currentVersion.Compare(latestVersion) == 0 {
-			fmt.Printf("✔  Already up to date (%s)\n", release.TagName)
+			printStatus(os.Stdout, "✓", "update", fmt.Sprintf("already up to date (%s)", release.TagName),
+				fmt.Sprintf("✔  Already up to date (%s)\n", release.TagName))
 			return nil
 		}
 		fmt.Printf("Current version: v%s\n", current)
@@ -111,7 +112,8 @@ func runUpdate(ctx context.Context, checkOnly bool) error {
 		return err
 	}
 
-	fmt.Printf("Downloading %s for %s/%s…\n", release.TagName, runtime.GOOS, runtime.GOARCH)
+	printStatus(os.Stdout, "→", "update", fmt.Sprintf("downloading %s for %s/%s", release.TagName, runtime.GOOS, runtime.GOARCH),
+		fmt.Sprintf("Downloading %s for %s/%s…\n", release.TagName, runtime.GOOS, runtime.GOARCH))
 
 	tmpDir, err := os.MkdirTemp("", "semrel-update-*")
 	if err != nil {
@@ -134,7 +136,8 @@ func runUpdate(ctx context.Context, checkOnly bool) error {
 		return fmt.Errorf("installing update: %w", err)
 	}
 
-	fmt.Printf("✔  Updated to %s → %s\n", release.TagName, execPath)
+	printStatus(os.Stdout, "✓", "update", fmt.Sprintf("updated to %s → %s", release.TagName, execPath),
+		fmt.Sprintf("✔  Updated to %s → %s\n", release.TagName, execPath))
 	return nil
 }
 
