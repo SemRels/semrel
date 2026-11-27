@@ -30,7 +30,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Update the Debian 12 OpenSSL package until the distroless base includes it.
-FROM docker.io/library/debian:12-slim AS openssl-fix
+FROM docker.io/library/debian:13-slim AS openssl-fix
 RUN apt-get update && \
     apt-get install -y --no-install-recommends libssl3 && \
     cd /tmp && \
