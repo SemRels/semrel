@@ -29,10 +29,24 @@ RUN apt-get update && \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# Update the Debian 12 OpenSSL package until the distroless base includes it.
+FROM docker.io/library/debian:12-slim AS openssl-fix
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libssl3 && \
+    cd /tmp && \
+    apt-get download "libssl3=$(dpkg-query -W -f='${Version}' libssl3)" && \
+    dpkg-deb --extract ./libssl3_*.deb /patched && \
+    dpkg-deb --control ./libssl3_*.deb /tmp/libssl-control && \
+    mkdir -p /patched/var/lib/dpkg/status.d && \
+    dpkg-query -s libssl3 > /patched/var/lib/dpkg/status.d/libssl3 && \
+    cp /tmp/libssl-control/md5sums /patched/var/lib/dpkg/status.d/libssl3.md5sums
+
 # ── distroless release image ───────────────────────────────────────────────────
 # gcr.io/distroless/base-debian12 provides glibc so dynamically-linked git works.
 # Runs as nonroot (uid 65532) — no shell, no package manager, minimal attack surface.
 FROM gcr.io/distroless/base-debian12:nonroot@sha256:7f0c72cd138b442ae0deeb69c08b1acf5525439ba251a49ad93c320a061567e5 AS release
+
+COPY --from=openssl-fix /patched/ /
 
 ARG VERSION=dev
 ARG BUILD_DATE
