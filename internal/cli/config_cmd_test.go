@@ -258,6 +258,24 @@ func TestRunConfigInit_NoInteractive(t *testing.T) {
 	if len(cfg.Branches) == 0 {
 		t.Error("expected at least one branch in default config")
 	}
+	var changelogPlugin *config.PluginConfig
+	for i := range cfg.Plugins {
+		if cfg.Plugins[i].Uses == "generator-changelog-md" {
+			changelogPlugin = &cfg.Plugins[i]
+			break
+		}
+	}
+	if changelogPlugin == nil {
+		t.Fatal("expected default changelog generator")
+	}
+	if changelogPlugin.Phase != "generator" {
+		t.Errorf("default changelog phase = %q, want generator", changelogPlugin.Phase)
+	}
+	for _, key := range []string{"ai_disclosure", "ai_disclosure_section", "mvp"} {
+		if got := changelogPlugin.Args[key]; got != "true" {
+			t.Errorf("default changelog arg %q = %v, want true", key, got)
+		}
+	}
 }
 
 func TestMarshalConfigYAML_ContainsComment(t *testing.T) {
@@ -344,6 +362,36 @@ func TestRunConfigInit_NoInteractiveKeepsGitHubDefaults(t *testing.T) {
 	joined := strings.Join(uses, ",")
 	if !strings.Contains(joined, "condition-github-actions") || !strings.Contains(joined, "@semrel/github") {
 		t.Fatalf("non-interactive default should keep GitHub plugins, got %v", uses)
+	}
+}
+
+func TestRunConfigWizard_EnablesChangelogFeatures(t *testing.T) {
+	input := "main\nn\nv\ngithub\ngithub\nchangelog-md\nskip\n"
+	restore := stubStdin(t, input)
+	defer restore()
+
+	cfg, err := runConfigWizard(defaultConfig())
+	if err != nil {
+		t.Fatalf("runConfigWizard: %v", err)
+	}
+
+	var changelogPlugin *config.PluginConfig
+	for i := range cfg.Plugins {
+		if cfg.Plugins[i].Uses == "@semrel/generator-changelog-md" {
+			changelogPlugin = &cfg.Plugins[i]
+			break
+		}
+	}
+	if changelogPlugin == nil {
+		t.Fatal("expected selected changelog generator")
+	}
+	if changelogPlugin.Phase != "generator" {
+		t.Errorf("changelog phase = %q, want generator", changelogPlugin.Phase)
+	}
+	for _, key := range []string{"ai_disclosure", "ai_disclosure_section", "mvp"} {
+		if got := changelogPlugin.Args[key]; got != "true" {
+			t.Errorf("changelog arg %q = %v, want true", key, got)
+		}
 	}
 }
 
