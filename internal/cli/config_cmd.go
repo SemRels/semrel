@@ -61,6 +61,7 @@ Example .semrel.yaml:
   plugins:
     - uses: @semrel/provider-github
     - uses: @semrel/generator-changelog-md
+      phase: generator
 
 Quick start:
   semrel config init      — interactive wizard to create .semrel.yaml
@@ -225,8 +226,16 @@ func defaultConfig() *config.Config {
 		Plugins: []config.PluginConfig{
 			{Uses: "condition-github-actions", Phase: "condition"},
 			{Uses: "@semrel/github", Phase: "release"},
-			{Uses: "generator-changelog-md"},
+			{Uses: "generator-changelog-md", Phase: "generator", Args: defaultChangelogArgs()},
 		},
+	}
+}
+
+func defaultChangelogArgs() map[string]interface{} {
+	return map[string]interface{}{
+		"ai_disclosure":         "true",
+		"ai_disclosure_section": "true",
+		"mvp":                   "true",
 	}
 }
 
@@ -376,9 +385,9 @@ func runConfigWizard(cfg *config.Config) (*config.Config, error) {
 	gen = strings.ToLower(gen)
 	switch {
 	case strings.Contains(gen, "html"):
-		out.Plugins = append(out.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-html"})
+		out.Plugins = append(out.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-html", Phase: "generator", Args: defaultChangelogArgs()})
 	case strings.Contains(gen, "md") || gen == "changelog":
-		out.Plugins = append(out.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-md"})
+		out.Plugins = append(out.Plugins, config.PluginConfig{Uses: "@semrel/generator-changelog-md", Phase: "generator", Args: defaultChangelogArgs()})
 	}
 
 	// Notification hook.
@@ -466,6 +475,18 @@ func marshalConfigYAML(cfg *config.Config) ([]byte, error) {
 				sb.WriteString(fmt.Sprintf("  - uses: %s\n    phase: %s\n", uses, p.Phase))
 			} else {
 				sb.WriteString(fmt.Sprintf("  - uses: %s\n", uses))
+			}
+			if len(p.Args) > 0 {
+				argsYAML, err := yaml.Marshal(p.Args)
+				if err != nil {
+					return nil, fmt.Errorf("marshalling args for plugin %q: %w", uses, err)
+				}
+				sb.WriteString("    args:\n")
+				for _, line := range strings.Split(strings.TrimSuffix(string(argsYAML), "\n"), "\n") {
+					sb.WriteString("      ")
+					sb.WriteString(line)
+					sb.WriteByte('\n')
+				}
 			}
 		}
 	}
